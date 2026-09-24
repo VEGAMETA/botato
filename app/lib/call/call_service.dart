@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
@@ -22,7 +23,9 @@ enum CallPhase { idle, outgoing, incoming, connecting, active, ended }
 /// sharing, device switches and audio modes change tracks/parameters without renegotiation.
 class CallService extends ChangeNotifier {
   CallService(this.relay, this.navigatorKey, this.settings) {
-    _sub = relay.signals.listen(_onSignal);
+    // Strictly one signal at a time: an ICE candidate must never be applied while the
+    // (re)offer/answer it belongs to is still being set.
+    _sub = relay.signals.listen((s) => _signalQueue = _signalQueue.then((_) => _onSignal(s)).catchError((_) {}));
     notifier.onAction = (a) {
       if (a == 'mute') toggleMute();
       if (a == 'hangup') phase == CallPhase.incoming ? decline() : hangup();
@@ -79,6 +82,11 @@ class CallService extends ChangeNotifier {
   Timer? _ringTimer;
   Timer? _statsTimer;
   Timer? _restartTimer;
+  Future<void> _signalQueue = Future.value();
+  String? _pendingReoffer; // caller: ICE-restart offer still waiting for its answer
+  DateTime _lastRestart = DateTime(0);
+  String? _lastReoffer; // callee: last reoffer applied, and our answer to it
+  String? _lastReanswer;
   Timer? _deadline;
   CallStatsSampler? _sampler;
   bool _screenShown = false;
@@ -106,7 +114,7 @@ class CallService extends ChangeNotifier {
     try {
       await _preparePeer(camera: video);
       final offer = await _pc!.createOffer();
-      final sdp = tuneOpus(offer.sdp!);
+      final sdp = tuneSdp(offer.sdp!);
       await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
       for (final d in contact.devices) {
         _ringing.add(d);
@@ -142,7 +150,7 @@ class CallService extends ChangeNotifier {
       }
       await _remoteDescriptionSet();
       final answer = await _pc!.createAnswer();
-      final sdp = tuneOpus(answer.sdp!);
+      final sdp = tuneSdp(answer.sdp!);
       await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'answer'));
       relay.signal(_peerDevice!, {'type': 'answer', 'call': _callId, 'sdp': sdp});
       await _applyAudioBitrate();
@@ -309,6 +317,7 @@ class CallService extends ChangeNotifier {
       _ringTimer = Timer(_ringTimeout, () => _end('пропущенный вызов'));
       _showScreen();
       notifier.showIncoming(peerName, video: videoCall);
+      _bringToFront();
       notifyListeners();
       return;
     }
@@ -341,14 +350,25 @@ class CallService extends ChangeNotifier {
         _sendMediaState();
       case 'reoffer':
         if (_isCaller || _pc == null) return;
-        await _pc!.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, 'offer'));
-        final answer = await _pc!.createAnswer();
-        final sdp = tuneOpus(answer.sdp!);
-        await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'answer'));
-        relay.signal(_peerDevice!, {'type': 'reanswer', 'call': call, 'sdp': sdp});
+        final offerSdp = d['sdp'] as String;
+        // A re-sent copy of an offer we already answered: just answer again.
+        if (offerSdp != _lastReoffer) {
+          _lastReoffer = offerSdp;
+          _remoteSet = false; // buffer candidates until the new description is in
+          await _pc!.setRemoteDescription(RTCSessionDescription(offerSdp, 'offer'));
+          final answer = await _pc!.createAnswer();
+          _lastReanswer = tuneSdp(answer.sdp!);
+          await _pc!.setLocalDescription(RTCSessionDescription(_lastReanswer!, 'answer'));
+          await _remoteDescriptionSet();
+        }
+        relay.signal(_peerDevice!, {'type': 'reanswer', 'call': call, 'sdp': _lastReanswer});
       case 'reanswer':
-        if (!_isCaller || _pc == null) return;
+        // Only the answer to the offer we are waiting for; duplicates are ignored.
+        if (!_isCaller || _pc == null || _pendingReoffer == null) return;
+        _pendingReoffer = null;
+        _remoteSet = false;
         await _pc!.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, 'answer'));
+        await _remoteDescriptionSet();
       case 'ice':
         final c = RTCIceCandidate(d['candidate'] as String?, d['mid'] as String?, d['mline'] as int?);
         if (_remoteSet) {
@@ -646,13 +666,19 @@ class CallService extends ChangeNotifier {
       _end('соединение потеряно');
     });
     if (!_isCaller || _restartTimer?.isActive == true) return;
-    // "disconnected" often heals by itself; "failed" never does. A reoffer can be lost
-    // while the relay reconnects, so keep re-sending until media flows again.
+    // "disconnected" often heals by itself; "failed" never does.
     _restartTimer = Timer(soft ? const Duration(seconds: 2) : Duration.zero, () {
       _restartIce();
-      _restartTimer = Timer.periodic(const Duration(seconds: 6), (t) {
+      _restartTimer = Timer.periodic(const Duration(seconds: 5), (t) {
         if (!reconnecting) return t.cancel();
-        _restartIce();
+        final pending = _pendingReoffer;
+        if (pending != null) {
+          // No answer yet (the relay may have been reconnecting): re-send the same offer,
+          // don't start over; restarting again would abort candidate gathering.
+          relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': pending});
+        } else if (DateTime.now().difference(_lastRestart) > const Duration(seconds: 15)) {
+          _restartIce(); // answered, but still no media: try a fresh restart
+        }
       });
     });
   }
@@ -661,9 +687,11 @@ class CallService extends ChangeNotifier {
     final pc = _pc;
     if (pc == null || _peerDevice == null) return;
     try {
+      _lastRestart = DateTime.now();
       final offer = await pc.createOffer({'iceRestart': true});
-      final sdp = tuneOpus(offer.sdp!);
+      final sdp = tuneSdp(offer.sdp!);
       await pc.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
+      _pendingReoffer = sdp;
       relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': sdp});
     } catch (_) {}
   }
@@ -721,6 +749,9 @@ class CallService extends ChangeNotifier {
 
   void _reset() {
     _ringTimer?.cancel();
+    _pendingReoffer = null;
+    _lastReoffer = null;
+    _lastReanswer = null;
     _callId = null;
     _peerDevice = null;
     _ringing.clear();
@@ -747,6 +778,20 @@ class CallService extends ChangeNotifier {
             _ => 'соединение…',
           };
     notifier.show(peerName, status, muted: muted);
+  }
+
+  /// Desktop: an incoming call raises and focuses the window (Windows only lets a
+  /// background app take focus when it is briefly always-on-top).
+  Future<void> _bringToFront() async {
+    if (!isDesktop) return;
+    try {
+      if (await windowManager.isMinimized()) await windowManager.restore();
+      await windowManager.show();
+      await windowManager.setAlwaysOnTop(true);
+      await windowManager.focus();
+      await Future<void>.delayed(const Duration(seconds: 2));
+      await windowManager.setAlwaysOnTop(false);
+    } catch (_) {}
   }
 
   void _toast(String text) {

@@ -1,5 +1,11 @@
 /// SDP adjustments applied before setLocalDescription.
-///
+String tuneSdp(String sdp) => _dropVideoOrientation(tuneOpus(sdp));
+
+/// Without the CVO extension the sender rotates frames before encoding, so every
+/// receiver shows them upright (the Windows renderer does not always honour CVO).
+String _dropVideoOrientation(String sdp) =>
+    sdp.replaceAll(RegExp(r'^a=extmap:\d+(/\w+)? urn:3gpp:video-orientation\r?\n', multiLine: true), '');
+
 /// Opus `stereo=1`/`sprop-stereo=1` must be negotiated at call setup, otherwise the
 /// "clean sound" mode can't switch to stereo later without renegotiation.
 /// In-band FEC stays on in every mode.
