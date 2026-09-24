@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../call/call_notifier.dart';
 import '../src/rust/api/client.dart' as core;
 import '../theme.dart';
 
@@ -187,8 +188,18 @@ class _PhotoViewerState extends State<PhotoViewer> {
     final id = widget.ids[_index];
     final data = await loadPhoto(id);
     if (data == null) return;
+    final name = 'botato-${id.substring(0, 8)}.jpg';
+    if (Platform.isAndroid) {
+      try {
+        await CallNotifier.saveToGallery(name, data);
+        messenger.showSnackBar(const SnackBar(content: Text('Сохранено в галерею (Pictures/botato)')));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Не сохранилось: $e')));
+      }
+      return;
+    }
     final loc = await getSaveLocation(
-      suggestedName: 'botato-${id.substring(0, 8)}.jpg',
+      suggestedName: name,
       acceptedTypeGroups: const [
         XTypeGroup(label: 'JPEG', extensions: ['jpg']),
       ],
@@ -228,7 +239,12 @@ class _PhotoViewerState extends State<PhotoViewer> {
                   _turns[id] = ((_turns[id] ?? 0) + 1) % 4;
                 }),
               ),
-              if (_desktop) IconButton(tooltip: 'Сохранить как…', icon: const Icon(Icons.save_alt), onPressed: _save),
+              if (_desktop || Platform.isAndroid)
+                IconButton(
+                  tooltip: _desktop ? 'Сохранить как…' : 'Сохранить в галерею',
+                  icon: const Icon(Icons.save_alt),
+                  onPressed: _save,
+                ),
             ],
           ),
           body: Stack(

@@ -90,6 +90,16 @@ object CallChannel {
                     Proximity.set(ctx, call.arguments as Boolean)
                     result.success(null)
                 }
+                "saveImage" -> {
+                    val name = call.argument<String>("name") ?: "botato.jpg"
+                    val data = call.argument<ByteArray>("data") ?: ByteArray(0)
+                    Thread {
+                        val err = runCatching { Gallery.saveJpeg(app, name, data) }.exceptionOrNull()
+                        main.post {
+                            if (err == null) result.success(null) else result.error("save", err.message, null)
+                        }
+                    }.start()
+                }
                 "pendingChat" -> {
                     result.success(pendingChat)
                     pendingChat = null

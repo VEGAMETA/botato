@@ -91,6 +91,15 @@ class CallNotifier {
     await _invoke('proximity', on);
   }
 
+  /// Android: saves a JPEG to the gallery (Pictures/botato). Throws with a readable message.
+  static Future<void> saveToGallery(String name, Uint8List data) async {
+    try {
+      await _channel.invokeMethod('saveImage', {'name': name, 'data': data});
+    } on PlatformException catch (e) {
+      throw e.message ?? e.code;
+    }
+  }
+
   Future<void> hide() {
     _camera = false;
     _screen = false;
