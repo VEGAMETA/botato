@@ -185,7 +185,7 @@ UTF-8 JSON object. Receivers drop signals with `|now − sent_at| > 120 s`.
 
 | `type` | Fields | Meaning |
 |---|---|---|
-| `offer` | `call`, `sdp`, `video` (bool) | start a call; sent to every device of the callee |
+| `offer` | `call`, `sdp`, `video` (bool), `vcodec`? (e.g. `H264`) | start a call; sent to every device of the callee. `vcodec`: the caller's preferred video codec; the callee puts it first in its answer if it has it |
 | `answer` | `call`, `sdp` | accepted on this device |
 | `ice` | `call`, `candidate`, `mid`, `mline` | trickle ICE candidate |
 | `hangup` | `call`, `reason` (`hangup`, `declined`, `busy`, `answered_elsewhere`, `failed`) | end or reject |

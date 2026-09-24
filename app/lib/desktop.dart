@@ -223,8 +223,17 @@ class _TitleBarState extends State<TitleBar> with WindowListener {
   @override
   void onWindowUnmaximize() => setState(() => _maximized = false);
 
+  bool _fullscreen = false;
+
+  @override
+  void onWindowEnterFullScreen() => setState(() => _fullscreen = true);
+
+  @override
+  void onWindowLeaveFullScreen() => setState(() => _fullscreen = false);
+
   @override
   Widget build(BuildContext context) {
+    if (_fullscreen) return const SizedBox.shrink();
     final brightness = Theme.of(context).brightness;
     return Material(
       color: BotatoColors.night,

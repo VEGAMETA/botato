@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import 'call/call_banner.dart';
 import 'call/call_service.dart';
 import 'call/media_settings.dart';
 import 'desktop.dart';
@@ -120,14 +121,16 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'botato',
       navigatorKey: s.navigator,
-      builder: isDesktop
-          ? (context, child) => Column(
-              children: [
-                const TitleBar(),
-                Expanded(child: child!),
-              ],
-            )
-          : null,
+      builder: (context, child) {
+        final app = CallBanner(calls: s.calls, child: child!);
+        if (!isDesktop) return app;
+        return Column(
+          children: [
+            const TitleBar(),
+            Expanded(child: app),
+          ],
+        );
+      },
       theme: botatoTheme(Brightness.light),
       darkTheme: botatoTheme(Brightness.dark),
       themeMode: ThemeMode.dark,

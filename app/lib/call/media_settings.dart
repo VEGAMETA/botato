@@ -46,6 +46,15 @@ class MediaSettings {
     return v;
   }
 
+  /// Screen sharing frame rate: 30 or 60.
+  int get screenFps => _prefs.getInt('screen_fps') ?? 30;
+  set screenFps(int v) => _prefs.setInt('screen_fps', v);
+
+  /// Preferred video codec (mime subtype, e.g. "H264"); null = WebRTC's default order.
+  /// The caller's choice is sent with the offer and used by both sides.
+  String? get videoCodec => _prefs.getString('video_codec');
+  set videoCodec(String? v) => _set('video_codec', v);
+
   /// Android: the phone's own echo/noise processing (applied at app start).
   bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? true;
   set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);

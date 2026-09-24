@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:window_manager/window_manager.dart';
 
-import 'call_service.dart';
+import '../screens/chat_screen.dart';
 import '../theme.dart';
+import 'call_service.dart';
 import 'media_settings.dart';
 
 class CallScreen extends StatefulWidget {
@@ -20,6 +23,12 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   Timer? _tick;
 
+  /// Buttons and labels are shown; a tap on the video toggles them, and they hide by
+  /// themselves after a few seconds while the peer's video is on screen.
+  bool _chrome = true;
+  Timer? _hide;
+  bool _fullscreen = false;
+
   @override
   void initState() {
     super.initState();
@@ -31,13 +40,57 @@ class _CallScreenState extends State<CallScreen> {
   void dispose() {
     widget.calls.removeListener(_onChange);
     _tick?.cancel();
+    _hide?.cancel();
+    if (_fullscreen) windowManager.setFullScreen(false);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  bool get _videoOnScreen {
+    final c = widget.calls;
+    return (c.phase == CallPhase.active || c.phase == CallPhase.connecting) && c.peerVideo;
+  }
+
+  void _setChrome(bool on) {
+    _hide?.cancel();
+    if (!on && !_videoOnScreen) on = true;
+    if (on && _videoOnScreen) _hide = Timer(const Duration(seconds: 4), () => _setChrome(false));
+    if (on == _chrome) return;
+    setState(() => _chrome = on);
+    if (Platform.isAndroid) {
+      SystemChrome.setEnabledSystemUIMode(on ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky);
+    }
+  }
+
+  Future<void> _toggleFullscreen() async {
+    _fullscreen = !_fullscreen;
+    await windowManager.setFullScreen(_fullscreen);
+    if (_fullscreen) _setChrome(false);
+    setState(() {});
+  }
+
+  /// Leaves the call running and shows the chat with the peer; the banner leads back.
+  void _openChat() {
+    final c = widget.calls;
+    final contact = c.peerUser == null ? null : c.relay.contacts.where((x) => x.userId == c.peerUser).firstOrNull;
+    final nav = Navigator.of(context);
+    nav.pop();
+    if (contact != null) {
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(contact: contact, relay: c.relay, calls: c),
+        ),
+      );
+    }
   }
 
   void _onChange() {
     if (widget.calls.phase == CallPhase.idle && mounted) {
       Navigator.of(context).maybePop();
     } else {
+      // Video just appeared: start the auto-hide; it went away: bring the buttons back.
+      if (_videoOnScreen && _chrome && !(_hide?.isActive ?? false)) _setChrome(true);
+      if (!_videoOnScreen && !_chrome) _setChrome(true);
       setState(() {});
     }
   }
@@ -75,107 +128,158 @@ class _CallScreenState extends State<CallScreen> {
     final live = c.phase == CallPhase.active || c.phase == CallPhase.connecting;
     final showRemote = live && c.peerVideo;
     final showLocal = live && (c.cameraOn || c.screenOn);
-    return PopScope(
-      canPop: c.phase == CallPhase.idle || c.phase == CallPhase.ended,
-      child: Scaffold(
-        backgroundColor: BotatoColors.night,
-        body: Stack(
-          children: [
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF123444), BotatoColors.night],
-                  ),
-                ),
-              ),
-            ),
-            if (!showRemote)
-              Align(
-                alignment: const Alignment(0, -0.2),
-                child: _PulsingAvatar(
-                  name: c.peerName,
-                  pulsing: c.phase == CallPhase.outgoing || c.phase == CallPhase.incoming || c.reconnecting,
-                ),
-              ),
-            if (showRemote)
-              Positioned.fill(
-                child: RTCVideoView(c.remoteRenderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain),
-              ),
-            if (showLocal)
-              Positioned(
-                right: 16,
-                top: 48,
-                width: 120,
-                height: 170,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: RTCVideoView(
-                    c.localRenderer,
-                    mirror: c.cameraOn && !c.screenOn,
-                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                  ),
-                ),
-              ),
-            SafeArea(
-              child: Column(
-                children: [
-                  const SizedBox(height: 48),
-                  Text(c.peerName, style: const TextStyle(color: Colors.white, fontSize: 32)),
-                  const SizedBox(height: 8),
-                  Text(_status(c), style: const TextStyle(color: Colors.white70, fontSize: 18)),
-                  const Spacer(),
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+    final chrome = _chrome || !showRemote;
+    final canMinimize = c.phase != CallPhase.incoming && c.phase != CallPhase.ended && c.phase != CallPhase.idle;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_fullscreen) _toggleFullscreen();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: PopScope(
+          // Back minimizes a running call (the banner brings it back); only ringing can't be left.
+          canPop: c.phase != CallPhase.incoming,
+          child: Scaffold(
+            backgroundColor: BotatoColors.night,
+            body: Stack(
+              children: [
+                const Positioned.fill(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    child: _buttons(c),
-                  ),
-                ],
-              ),
-            ),
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Статистика',
-                      icon: const Icon(Icons.insights, color: Colors.white54),
-                      onPressed: c.toggleStats,
-                    ),
-                    if (live)
-                      IconButton(
-                        tooltip: 'Настройки',
-                        icon: const Icon(Icons.tune, color: Colors.white54),
-                        onPressed: () => showMediaSettings(context, c),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF123444), BotatoColors.night],
                       ),
-                  ],
-                ),
-              ),
-            ),
-            if (c.showStats && c.stats != null)
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12, top: 140, right: 12),
-                  child: Container(
-                    color: Colors.black54,
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      c.stats.toString(),
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
                     ),
                   ),
                 ),
-              ),
-          ],
+                if (!showRemote)
+                  Align(
+                    alignment: const Alignment(0, -0.2),
+                    child: _PulsingAvatar(
+                      name: c.peerName,
+                      pulsing: c.phase == CallPhase.outgoing || c.phase == CallPhase.incoming || c.reconnecting,
+                    ),
+                  ),
+                if (showRemote)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _setChrome(!_chrome),
+                      child: RTCVideoView(
+                        c.remoteRenderer,
+                        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                      ),
+                    ),
+                  ),
+                if (showLocal && chrome)
+                  Positioned(
+                    right: 16,
+                    top: 48,
+                    width: 120,
+                    height: 170,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: RTCVideoView(
+                        c.localRenderer,
+                        mirror: c.cameraOn && !c.screenOn,
+                        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                      ),
+                    ),
+                  ),
+                if (chrome)
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 48),
+                        Text(c.peerName, style: const TextStyle(color: Colors.white, fontSize: 32)),
+                        const SizedBox(height: 8),
+                        Text(_status(c), style: const TextStyle(color: Colors.white70, fontSize: 18)),
+                        const Spacer(),
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: _buttons(c),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (chrome)
+                  SafeArea(
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (canMinimize && c.peerUser != null)
+                            IconButton(
+                              tooltip: 'Чат',
+                              icon: const Icon(Icons.chat_bubble_outline, color: Colors.white70),
+                              onPressed: _openChat,
+                            ),
+                          if (showRemote && c.isDesktop)
+                            IconButton(
+                              tooltip: _fullscreen ? 'Выйти из полного экрана (Esc)' : 'Полный экран',
+                              icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white70),
+                              onPressed: _toggleFullscreen,
+                            ),
+                          if (canMinimize)
+                            IconButton(
+                              tooltip: 'Свернуть',
+                              icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70),
+                              onPressed: () => Navigator.of(context).maybePop(),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (chrome)
+                  SafeArea(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Статистика',
+                            icon: const Icon(Icons.insights, color: Colors.white54),
+                            onPressed: c.toggleStats,
+                          ),
+                          if (live)
+                            IconButton(
+                              tooltip: 'Настройки',
+                              icon: const Icon(Icons.tune, color: Colors.white54),
+                              onPressed: () => showMediaSettings(context, c),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (chrome && c.showStats && c.stats != null)
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 140, right: 12),
+                      child: Container(
+                        color: Colors.black54,
+                        padding: const EdgeInsets.all(8),
+                        child: Text(
+                          c.stats.toString(),
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -309,12 +413,16 @@ class _MediaSettingsSheet extends StatefulWidget {
 
 class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
   List<MediaDeviceInfo> _devices = [];
+  List<String> _codecs = [];
 
   @override
   void initState() {
     super.initState();
     navigator.mediaDevices.enumerateDevices().then((d) {
       if (mounted) setState(() => _devices = d);
+    });
+    CallService.availableVideoCodecs().then((c) {
+      if (mounted) setState(() => _codecs = c);
     });
   }
 
@@ -348,7 +456,7 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
     final c = widget.calls;
     final s = c.settings;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -385,6 +493,41 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 title: const Text('Сменить камеру'),
                 onTap: c.switchCamera,
               ),
+            const SizedBox(height: 16),
+            const Text('Видео', style: TextStyle(fontSize: 18)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(child: Text('Показ экрана')),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 30, label: Text('30 fps')),
+                    ButtonSegment(value: 60, label: Text('60 fps')),
+                  ],
+                  selected: {s.screenFps},
+                  onSelectionChanged: (v) => setState(() => s.screenFps = v.first),
+                ),
+              ],
+            ),
+            if (_codecs.isNotEmpty)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Видеокодек'),
+                subtitle: DropdownButton<String?>(
+                  isExpanded: true,
+                  value: _codecs.contains(s.videoCodec) ? s.videoCodec : null,
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('авто')),
+                    for (final name in _codecs) DropdownMenuItem(value: name, child: Text(name)),
+                  ],
+                  onChanged: (v) => setState(() => s.videoCodec = v),
+                ),
+              ),
+            const Text(
+              'Кодек выбирает тот, кто звонит; применяется со следующего звонка. '
+              'Если у собеседника такого нет — будет другой.',
+              style: TextStyle(color: BotatoColors.smoke, fontSize: 12),
+            ),
             if (Platform.isAndroid)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

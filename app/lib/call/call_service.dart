@@ -99,6 +99,12 @@ class CallService extends ChangeNotifier {
   CallStatsSampler? _sampler;
   bool _screenShown = false;
 
+  /// The call screen is on top (otherwise the app shows a "back to the call" banner).
+  bool get screenShown => _screenShown;
+
+  /// User id of the other side, for "open the chat" from the call.
+  String? peerUser;
+
   bool get busy => phase != CallPhase.idle;
   bool get isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -112,6 +118,7 @@ class CallService extends ChangeNotifier {
   Future<void> startCall(core.ContactInfo contact, {bool video = false}) async {
     if (busy || contact.devices.isEmpty) return;
     _reset();
+    peerUser = contact.userId;
     _callId = _newCallId();
     _isCaller = true;
     videoCall = video;
@@ -126,7 +133,7 @@ class CallService extends ChangeNotifier {
       await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
       for (final d in contact.devices) {
         _ringing.add(d);
-        relay.signal(d, {'type': 'offer', 'call': _callId, 'sdp': sdp, 'video': video});
+        relay.signal(d, {'type': 'offer', 'call': _callId, 'sdp': sdp, 'video': video, 'vcodec': ?settings.videoCodec});
       }
       _ringTimer = Timer(_ringTimeout, () => hangup(reason: 'no_answer'));
       notifier.show(peerName, 'вызов…', muted: muted);
@@ -154,6 +161,7 @@ class CallService extends ChangeNotifier {
         } else if (kind == 'video') {
           _videoSender = t.sender;
           await t.sender.replaceTrack(_cameraTrack);
+          await _preferCodec(t, _offer!['vcodec'] as String?);
         }
       }
       await _remoteDescriptionSet();
@@ -213,6 +221,7 @@ class CallService extends ChangeNotifier {
       if (_cameraStream == null) return;
       cameraOn = true;
       if (!screenOn) await _videoSender?.replaceTrack(_cameraTrack);
+      if (!screenOn) await _applyVideoParams();
       await notifier.update(camera: true);
     }
     _refreshLocalView();
@@ -239,7 +248,7 @@ class CallService extends ChangeNotifier {
             ? true
             : {
                 'deviceId': {'exact': sourceId},
-                'mandatory': {'frameRate': 15.0},
+                'mandatory': {'frameRate': settings.screenFps.toDouble()},
               },
       });
     } catch (e) {
@@ -250,6 +259,7 @@ class CallService extends ChangeNotifier {
     screenOn = true;
     _screenTrack?.onEnded = stopScreenShare;
     await _videoSender?.replaceTrack(_screenTrack);
+    await _applyVideoParams();
     _refreshLocalView();
     _sendMediaState();
   }
@@ -260,6 +270,7 @@ class CallService extends ChangeNotifier {
     _screenStream = null;
     screenOn = false;
     await _videoSender?.replaceTrack(cameraOn ? _cameraTrack : null);
+    await _applyVideoParams();
     await _disposeStream(s);
     if (Platform.isAndroid) await notifier.update(screen: false);
     _refreshLocalView();
@@ -321,6 +332,7 @@ class CallService extends ChangeNotifier {
       videoCall = d['video'] == true;
       peerVideo = videoCall;
       peerName = relay.contactOfDevice(s.fromDevice)?.name ?? 'неизвестный';
+      peerUser = s.fromUser;
       phase = CallPhase.incoming;
       _ringTimer = Timer(_ringTimeout, () => _end('пропущенный вызов'));
       _showScreen();
@@ -513,6 +525,62 @@ class CallService extends ChangeNotifier {
     await _applyAudioBitrate();
   }
 
+  /// Screen: smooth motion first (games), high bitrate. Camera: WebRTC's balanced default.
+  Future<void> _applyVideoParams() async {
+    final s = _videoSender;
+    if (s == null) return;
+    try {
+      final p = s.parameters;
+      final enc = p.encodings;
+      if (enc == null || enc.isEmpty) return;
+      final fps = settings.screenFps;
+      if (screenOn) {
+        enc.first.maxBitrate = fps >= 60 ? 12000000 : 8000000;
+        enc.first.maxFramerate = fps;
+        enc.first.scaleResolutionDownBy = 1.0;
+        p.degradationPreference = RTCDegradationPreference.MAINTAIN_FRAMERATE;
+      } else {
+        enc.first.maxBitrate = 2500000;
+        enc.first.maxFramerate = 30;
+        p.degradationPreference = RTCDegradationPreference.BALANCED;
+      }
+      await s.setParameters(p);
+    } catch (_) {
+      // Not supported on this platform: WebRTC defaults stay.
+    }
+  }
+
+  /// Puts [mime] (e.g. "H264") first in the transceiver's codec list, if this device has it.
+  /// The rest stay as fallbacks, so a peer without it still gets video.
+  static Future<void> _preferCodec(RTCRtpTransceiver t, String? mime) async {
+    if (mime == null) return;
+    try {
+      final caps = await getRtpSenderCapabilities('video');
+      final codecs = caps.codecs ?? [];
+      final want = [
+        for (final c in codecs)
+          if (c.mimeType.toLowerCase() == 'video/${mime.toLowerCase()}') c,
+      ];
+      if (want.isEmpty) return;
+      await t.setCodecPreferences([...want, ...codecs.where((c) => !want.contains(c))]);
+    } catch (_) {}
+  }
+
+  /// Video codecs this device can send (mime subtypes), for the settings.
+  static Future<List<String>> availableVideoCodecs() async {
+    try {
+      final caps = await getRtpSenderCapabilities('video');
+      final names = <String>{};
+      for (final c in caps.codecs ?? <RTCRtpCodecCapability>[]) {
+        final n = c.mimeType.split('/').last;
+        if (!const {'rtx', 'red', 'ulpfec', 'flexfec-03'}.contains(n.toLowerCase())) names.add(n);
+      }
+      return names.toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> _applyAudioBitrate() async {
     final s = _audioSender;
     if (s == null) return;
@@ -574,6 +642,7 @@ class CallService extends ChangeNotifier {
       );
       _audioSender = a.sender;
       _videoSender = v.sender;
+      await _preferCodec(v, settings.videoCodec);
       if (_cameraTrack != null) await _videoSender!.replaceTrack(_cameraTrack);
     }
     _refreshLocalView();
@@ -813,12 +882,19 @@ class CallService extends ChangeNotifier {
     if (busy && phase != CallPhase.ended) _showScreen();
   }
 
+  /// Back to the call screen (from the banner).
+  void showScreen() => _showScreen();
+
   void _showScreen() {
     if (_screenShown) return;
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     _screenShown = true;
-    nav.push(MaterialPageRoute(builder: (_) => CallScreen(calls: this))).then((_) => _screenShown = false);
+    notifyListeners();
+    nav.push(MaterialPageRoute(builder: (_) => CallScreen(calls: this))).then((_) {
+      _screenShown = false;
+      notifyListeners();
+    });
   }
 
   @override
