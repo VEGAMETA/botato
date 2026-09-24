@@ -122,8 +122,29 @@ async fn recv(ws: &mut Ws, last_rx: &mut tokio::time::Instant) -> anyhow::Result
     }
 }
 
+/// Dials the relay by name; if that fails (DNS broken under some VPNs, poisoned
+/// records) and the manifest has an IP, dials the IP with TLS still bound to the name.
+/// The server key check in the handshake makes the IP path as safe as the name path.
+async fn dial(server: &ServerEntry) -> anyhow::Result<Ws> {
+    let direct = tokio_tungstenite::connect_async(&server.url).await;
+    let err = match direct {
+        Ok((ws, _)) => return Ok(ws),
+        Err(e) => e,
+    };
+    if server.ip_fallback.is_empty() {
+        return Err(err.into());
+    }
+    let uri: tokio_tungstenite::tungstenite::http::Uri = server.url.parse()?;
+    let port = uri.port_u16().unwrap_or(443);
+    let tcp = tokio::net::TcpStream::connect((server.ip_fallback.as_str(), port))
+        .await
+        .map_err(|e2| anyhow::anyhow!("{err}; по IP тоже не вышло: {e2}"))?;
+    let (ws, _) = tokio_tungstenite::client_async_tls(server.url.as_str(), tcp).await?;
+    Ok(ws)
+}
+
 async fn handshake(shared: &Shared, server: &ServerEntry) -> anyhow::Result<Ws> {
-    let (mut ws, _) = tokio_tungstenite::connect_async(&server.url).await?;
+    let mut ws = dial(server).await?;
     let mut last = tokio::time::Instant::now();
     let cn: Nonce = proto::random_bytes();
     send(&mut ws, &ClientFrame::Hello { v: PROTOCOL_VERSION, nonce: cn.to_vec() }).await?;
