@@ -22,6 +22,14 @@ class MediaSettings {
   AudioMode get audioMode => _prefs.getString('audio_mode') == 'clean' ? AudioMode.clean : AudioMode.voice;
   set audioMode(AudioMode m) => _prefs.setString('audio_mode', m.name);
 
+  /// Contacts the user chose to forget (user ids). Local only.
+  Set<String> get hiddenContacts => (_prefs.getStringList('hidden_contacts') ?? const []).toSet();
+  set hiddenContacts(Set<String> v) => _prefs.setStringList('hidden_contacts', v.toList());
+
+  /// Android: the phone's own echo/noise processing (applied at app start).
+  bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? true;
+  set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);
+
   void _set(String key, String? v) => v == null ? _prefs.remove(key) : _prefs.setString(key, v);
 }
 

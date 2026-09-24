@@ -49,3 +49,7 @@ app.*.map.json
 
 # Built-in manifest (contains server address); copy from the admin dir.
 /assets/manifest.bin
+
+# Firebase config (project ids, API key) and Android release signing
+/android/app/google-services.json
+/android/key.properties

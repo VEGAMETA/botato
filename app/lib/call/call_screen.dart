@@ -385,6 +385,17 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 title: const Text('Сменить камеру'),
                 onTap: c.switchCamera,
               ),
+            if (Platform.isAndroid)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s.hwAudioProcessing,
+                onChanged: (v) => setState(() => s.hwAudioProcessing = v),
+                title: const Text('Шумоподавление телефона'),
+                subtitle: const Text(
+                  'Встроенная обработка микрофона. Если голос тихий или слышно только вблизи — выключите. '
+                  'Применится после перезапуска приложения.',
+                ),
+              ),
           ],
         ),
       ),

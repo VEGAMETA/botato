@@ -55,6 +55,10 @@ List<ConversationInfo> clientConversations() => RustLib.instance.api.crateApiCli
 void clientMarkRead({required String peerUser}) =>
     RustLib.instance.api.crateApiClientClientMarkRead(peerUser: peerUser);
 
+/// Forgets the local history with `peer_user` (both directions, and pending copies).
+void clientDeleteHistory({required String peerUser}) =>
+    RustLib.instance.api.crateApiClientClientDeleteHistory(peerUser: peerUser);
+
 @freezed
 sealed class ClientEvent with _$ClientEvent {
   const ClientEvent._();

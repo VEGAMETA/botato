@@ -232,6 +232,18 @@ impl Store {
         self.db.execute("UPDATE messages SET read = 1 WHERE peer_user = ?1 AND read = 0", [&peer_user.0[..]])?;
         Ok(())
     }
+
+    /// Deletes a conversation and any undelivered copies of its messages (secure_delete is on).
+    pub fn delete_conversation(&self, peer_user: &Id) -> anyhow::Result<()> {
+        let tx = self.db.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM outbox WHERE msg_id IN (SELECT msg_id FROM messages WHERE peer_user = ?1)",
+            [&peer_user.0[..]],
+        )?;
+        tx.execute("DELETE FROM messages WHERE peer_user = ?1", [&peer_user.0[..]])?;
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -290,6 +302,8 @@ mod tests {
         assert_eq!((c[1].peer_user, c[1].unread), (b, 0));
         s.mark_read(&a).unwrap();
         assert_eq!(s.conversations().unwrap()[0].unread, 0);
+        s.delete_conversation(&b).unwrap();
+        assert_eq!(s.conversations().unwrap().len(), 1);
         // Wrong key can't read bodies.
         let s2 = Store { db: Connection::open(s.db.path().unwrap()).unwrap(), key: [8; 32] };
         assert!(s2.messages(&a, None, 1).unwrap()[0].text.starts_with('⚠'));

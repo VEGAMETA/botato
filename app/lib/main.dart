@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'call/call_service.dart';
@@ -19,6 +20,10 @@ Future<void> main() async {
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) await windowManager.ensureInitialized();
   await RustLib.init();
   final media = await MediaSettings.load();
+  if (Platform.isAndroid) {
+    // The phone's own AEC/NS is chosen when WebRTC starts and can't change mid-call.
+    await WebRTC.initialize(options: {'androidUseHardwareAudioProcessing': media.hwAudioProcessing});
+  }
   final store = IdentityStore();
   final secret = await store.deviceSecret();
   String? cert = await store.cert();
@@ -50,7 +55,7 @@ class BotatoApp extends StatefulWidget {
 }
 
 class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
-  final _relay = RelayService();
+  late final _relay = RelayService(widget.media);
   final _navigator = GlobalKey<NavigatorState>();
   late final _calls = CallService(_relay, _navigator, widget.media);
   late core.CertInfo? _info = widget.info;

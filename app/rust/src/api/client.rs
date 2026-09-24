@@ -246,3 +246,10 @@ pub fn client_mark_read(peer_user: String) -> anyhow::Result<()> {
     let peer = parse_id(&peer_user)?;
     with(|r| r.shared.store.lock().unwrap().mark_read(&peer))?
 }
+
+/// Forgets the local history with `peer_user` (both directions, and pending copies).
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_delete_history(peer_user: String) -> anyhow::Result<()> {
+    let peer = parse_id(&peer_user)?;
+    with(|r| r.shared.store.lock().unwrap().delete_conversation(&peer))?
+}

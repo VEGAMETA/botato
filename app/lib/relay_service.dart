@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show PlatformInt64Util;
 import 'package:path_provider/path_provider.dart';
 
+import 'call/media_settings.dart';
 import 'src/rust/api/client.dart' as core;
 
 enum ConnState { connecting, online, offline }
@@ -27,6 +28,38 @@ class TurnCreds {
 
 /// Owns the Rust relay client and exposes its state to the UI.
 class RelayService extends ChangeNotifier {
+  RelayService(this.settings);
+
+  final MediaSettings settings;
+
+  /// Contacts shown in the list: everyone in the directory except us and forgotten ones.
+  List<core.ContactInfo> get visibleContacts {
+    final hidden = settings.hiddenContacts;
+    return contacts.where((c) => !c.isMe && !hidden.contains(c.userId)).toList();
+  }
+
+  /// Directory users that were forgotten (can be added back).
+  List<core.ContactInfo> get hiddenContacts {
+    final hidden = settings.hiddenContacts;
+    return contacts.where((c) => !c.isMe && hidden.contains(c.userId)).toList();
+  }
+
+  void forget(String userId, {required bool deleteHistory}) {
+    settings.hiddenContacts = settings.hiddenContacts..add(userId);
+    if (deleteHistory) {
+      core.clientDeleteHistory(peerUser: userId);
+      _loadConversations();
+    }
+    notifyListeners();
+  }
+
+  void unhide(String userId) {
+    final h = settings.hiddenContacts;
+    if (!h.remove(userId)) return;
+    settings.hiddenContacts = h;
+    notifyListeners();
+  }
+
   ConnState state = ConnState.connecting;
   String detail = '';
   List<core.ContactInfo> contacts = [];
@@ -89,6 +122,7 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_ContactsChanged():
         contacts = core.clientContacts();
       case core.ClientEvent_Signal(:final fromUser, :final fromDevice, :final payload):
+        unhide(fromUser);
         try {
           final data = jsonDecode(payload) as Map<String, dynamic>;
           _signals.add(IncomingSignal(fromUser, fromDevice, data));
@@ -103,6 +137,7 @@ class RelayService extends ChangeNotifier {
         _loadConversations();
         _messageUpdates.add(peerUser);
       case core.ClientEvent_NewMessage(:final peerUser, :final text):
+        unhide(peerUser); // a forgotten contact who writes comes back
         if (!foreground || activeChat != peerUser) {
           final name = contacts.where((c) => c.userId == peerUser).firstOrNull?.name ?? 'сообщение';
           onNewMessage?.call(peerUser, name, text);

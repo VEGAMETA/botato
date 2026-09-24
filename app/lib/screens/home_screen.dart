@@ -73,6 +73,81 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _forget(BuildContext context, core.ContactInfo c) async {
+    var deleteHistory = false;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: Text('Забыть «${c.name}»?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Контакт пропадёт из списка. Если он напишет или позвонит — вернётся сам.'),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: deleteHistory,
+                onChanged: (v) => set(() => deleteHistory = v ?? false),
+                title: const Text('Удалить переписку на этом устройстве'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Забыть')),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) widget.relay.forget(c.userId, deleteHistory: deleteHistory);
+  }
+
+  Future<void> _addContact(BuildContext context) async {
+    widget.relay.refreshContacts();
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => ListenableBuilder(
+        listenable: widget.relay,
+        builder: (ctx, _) {
+          final hidden = widget.relay.hiddenContacts;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('Добавить контакт', style: TextStyle(fontSize: 18)),
+                  const SizedBox(height: 8),
+                  if (hidden.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        'Все, кого знает сервер, уже в списке. Новые люди появляются здесь, когда админ выдаст им '
+                        'сертификат и они подключатся.',
+                        style: TextStyle(color: BotatoColors.smoke),
+                      ),
+                    ),
+                  for (final c in hidden)
+                    ListTile(
+                      leading: Avatar(c.name),
+                      title: Text(c.name),
+                      trailing: const Icon(Icons.add),
+                      onTap: () {
+                        widget.relay.unhide(c.userId);
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _ping(core.ContactInfo c) {
     for (final d in c.devices) {
       _pingSent[d] = DateTime.now();
@@ -93,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ConnState.connecting => (Colors.amber, 'подключение…'),
           ConnState.offline => (BotatoColors.danger, 'нет связи'),
         };
-        final others = r.contacts.where((c) => !c.isMe).toList()
+        final others = r.visibleContacts
           // Recent conversations first, then alphabetically.
           ..sort((a, b) {
             final ta = r.conversations[a.userId]?.lastAt.toInt() ?? 0;
@@ -129,6 +204,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             actions: [
               IconButton(
+                tooltip: 'Добавить контакт',
+                icon: const Icon(Icons.person_add_alt),
+                onPressed: () => _addContact(context),
+              ),
+              IconButton(
                 tooltip: 'Звук и камера',
                 icon: const Icon(Icons.tune),
                 onPressed: () => showMediaSettings(context, widget.calls),
@@ -150,6 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onCall: () => widget.calls.startCall(c),
                         onVideo: () => widget.calls.startCall(c, video: true),
                         onPing: () => _ping(c),
+                        onForget: () => _forget(context, c),
                       ),
                   ],
                 ),
@@ -168,12 +249,13 @@ class _ContactCard extends StatelessWidget {
     required this.onCall,
     required this.onVideo,
     required this.onPing,
+    required this.onForget,
   });
 
   final core.ContactInfo contact;
   final core.ConversationInfo? conversation;
   final bool enabled;
-  final VoidCallback onOpen, onCall, onVideo, onPing;
+  final VoidCallback onOpen, onCall, onVideo, onPing, onForget;
 
   @override
   Widget build(BuildContext context) {
@@ -229,9 +311,10 @@ class _ContactCard extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: BotatoColors.smoke),
-                onSelected: (_) => onPing(),
+                onSelected: (v) => v == 'ping' ? onPing() : onForget(),
                 itemBuilder: (_) => [
                   PopupMenuItem(value: 'ping', enabled: enabled, child: const Text('Проверить связь')),
+                  const PopupMenuItem(value: 'forget', child: Text('Забыть…')),
                 ],
               ),
             ],
