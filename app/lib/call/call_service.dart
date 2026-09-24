@@ -26,6 +26,9 @@ class CallService extends ChangeNotifier {
     notifier.onAction = (a) {
       if (a == 'mute') toggleMute();
       if (a == 'hangup') phase == CallPhase.incoming ? decline() : hangup();
+      // Answering from the notification never turns the camera on.
+      if (a == 'accept') accept(video: false);
+      if (a == 'decline') decline();
     };
   }
 
@@ -36,7 +39,7 @@ class CallService extends ChangeNotifier {
   late final StreamSubscription<IncomingSignal> _sub;
 
   static const _ringTimeout = Duration(seconds: 45);
-  static const _reconnectDeadline = Duration(seconds: 25);
+  static const _reconnectDeadline = Duration(seconds: 40);
 
   CallPhase phase = CallPhase.idle;
   String peerName = '';
@@ -119,6 +122,7 @@ class CallService extends ChangeNotifier {
   Future<void> accept({bool? video}) async {
     if (phase != CallPhase.incoming || _offer == null) return;
     _ringTimer?.cancel();
+    notifier.cancelIncoming();
     phase = CallPhase.connecting;
     notifyListeners();
     try {
@@ -304,6 +308,7 @@ class CallService extends ChangeNotifier {
       phase = CallPhase.incoming;
       _ringTimer = Timer(_ringTimeout, () => _end('пропущенный вызов'));
       _showScreen();
+      notifier.showIncoming(peerName, video: videoCall);
       notifyListeners();
       return;
     }
@@ -629,6 +634,8 @@ class CallService extends ChangeNotifier {
     if (phase != CallPhase.active && phase != CallPhase.connecting) return;
     if (!reconnecting) {
       reconnecting = true;
+      // The relay socket probably died with the old network too; don't wait to notice.
+      relay.reconnect();
       _updateNotification();
       notifyListeners();
     }
@@ -638,10 +645,16 @@ class CallService extends ChangeNotifier {
       }
       _end('соединение потеряно');
     });
-    if (!_isCaller) return;
-    _restartTimer?.cancel();
-    // "disconnected" often heals by itself; "failed" never does.
-    _restartTimer = Timer(soft ? const Duration(seconds: 2) : Duration.zero, _restartIce);
+    if (!_isCaller || _restartTimer?.isActive == true) return;
+    // "disconnected" often heals by itself; "failed" never does. A reoffer can be lost
+    // while the relay reconnects, so keep re-sending until media flows again.
+    _restartTimer = Timer(soft ? const Duration(seconds: 2) : Duration.zero, () {
+      _restartIce();
+      _restartTimer = Timer.periodic(const Duration(seconds: 6), (t) {
+        if (!reconnecting) return t.cancel();
+        _restartIce();
+      });
+    });
   }
 
   Future<void> _restartIce() async {

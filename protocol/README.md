@@ -189,7 +189,7 @@ Camera, screen sharing, device changes and audio modes swap tracks (`replaceTrac
 parameters without renegotiation; `media` tells the peer what to render. Opus fmtp at setup:
 `stereo=1; sprop-stereo=1; useinbandfec=1; maxaveragebitrate=128000; maxplaybackrate=48000`
 (the actual audio bitrate per mode is set with `setParameters`). On ICE `disconnected`/`failed` the
-caller sends `reoffer`; both sides give up after 25 s without connectivity.
+caller sends `reoffer` (repeated every 6 s until media flows); both sides give up after 40 s.
 
 `call` is a random 128-bit id (hex). SDP needs no separate signature: the envelope signature authenticates
 it, and WebRTC checks the peer's DTLS certificate against the fingerprint in that SDP.

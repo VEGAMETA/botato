@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -34,6 +35,8 @@ class RelayService extends ChangeNotifier {
 
   final _turn = StreamController<TurnCreds>.broadcast();
   StreamSubscription<core.ClientEvent>? _sub;
+  StreamSubscription<List<ConnectivityResult>>? _net;
+  List<ConnectivityResult>? _lastNet;
 
   String? get myDevice => core.clientMyDevice();
 
@@ -41,6 +44,11 @@ class RelayService extends ChangeNotifier {
     final dir = await getApplicationSupportDirectory();
     await _sub?.cancel();
     _sub = core.clientStart(dataDir: dir.path, secret: secret, cert: cert).listen(_onEvent);
+    // Wi-Fi <-> LTE, VPN on/off: the old socket may be silently dead, dial again right away.
+    _net ??= Connectivity().onConnectivityChanged.listen((r) {
+      if (_lastNet != null && !listEquals(r, _lastNet)) reconnect();
+      _lastNet = r;
+    });
     contacts = core.clientContacts();
     notifyListeners();
   }
@@ -83,6 +91,8 @@ class RelayService extends ChangeNotifier {
 
   void refreshContacts() => core.clientRefreshDirectory();
 
+  void reconnect() => core.clientReconnect();
+
   /// Fresh TURN credentials from the relay (2 h TTL).
   Future<TurnCreds?> turnCreds() async {
     final next = _turn.stream.first.timeout(const Duration(seconds: 5));
@@ -106,6 +116,7 @@ class RelayService extends ChangeNotifier {
   @override
   void dispose() {
     _sub?.cancel();
+    _net?.cancel();
     core.clientStop();
     super.dispose();
   }

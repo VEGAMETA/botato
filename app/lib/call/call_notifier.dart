@@ -16,7 +16,7 @@ class CallNotifier {
 
   static const _channel = MethodChannel('botato/call');
 
-  /// 'mute' or 'hangup' from the notification buttons.
+  /// 'mute', 'hangup', 'accept' or 'decline' from the notifications.
   void Function(String action)? onAction;
 
   bool _camera = false;
@@ -37,6 +37,11 @@ class CallNotifier {
     _screen = screen ?? _screen;
     await _invoke('types', {'camera': _camera, 'screen': _screen});
   }
+
+  /// Ringing notification with accept / decline (full-screen over the lock screen).
+  Future<void> showIncoming(String peer, {required bool video}) => _invoke('incoming', {'peer': peer, 'video': video});
+
+  Future<void> cancelIncoming() => _invoke('incomingCancel', null);
 
   Future<void> hide() {
     _camera = false;

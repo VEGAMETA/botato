@@ -24,6 +24,9 @@ List<ContactInfo> clientContacts() => RustLib.instance.api.crateApiClientClientC
 void clientSignal({required String toDevice, required String payload}) =>
     RustLib.instance.api.crateApiClientClientSignal(toDevice: toDevice, payload: payload);
 
+/// Network changed: drop the (possibly silently dead) relay connection and dial again now.
+void clientReconnect() => RustLib.instance.api.crateApiClientClientReconnect();
+
 void clientRequestTurn() => RustLib.instance.api.crateApiClientClientRequestTurn();
 
 void clientRefreshDirectory() => RustLib.instance.api.crateApiClientClientRefreshDirectory();

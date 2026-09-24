@@ -77,7 +77,13 @@ pub fn client_start(data_dir: String, secret: Vec<u8>, cert: String, sink: Strea
     let now = config::now();
     let mut contacts = Contacts::load(std::path::Path::new(&data_dir).join("contacts.json"), config::root_pub(), now);
     contacts.merge(std::slice::from_ref(&cert), now, &manifest);
-    let shared = Arc::new(Shared { me, cert, contacts: Mutex::new(contacts), manifest });
+    let shared = Arc::new(Shared {
+        me,
+        cert,
+        contacts: Mutex::new(contacts),
+        manifest,
+        reconnect: tokio::sync::Notify::new(),
+    });
 
     let (tx, rx) = mpsc::unbounded_channel();
     let emit: client::Emit = Arc::new(move |e| {
@@ -131,6 +137,12 @@ pub fn client_contacts() -> Vec<ContactInfo> {
 pub fn client_signal(to_device: String, payload: String) -> anyhow::Result<()> {
     let to = parse_id(&to_device)?;
     with(|r| r.tx.send(Cmd::Signal { to, payload: payload.into_bytes() }))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
+}
+
+/// Network changed: drop the (possibly silently dead) relay connection and dial again now.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_reconnect() {
+    let _ = with(|r| r.shared.reconnect.notify_one());
 }
 
 #[flutter_rust_bridge::frb(sync)]

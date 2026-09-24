@@ -23,7 +23,9 @@ use contacts::Contacts;
 /// Signals older (or further in the future) than this are dropped.
 const SIGNAL_MAX_AGE_SECS: u64 = 120;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-const PING_EVERY: Duration = Duration::from_secs(25);
+const PING_EVERY: Duration = Duration::from_secs(10);
+/// No frame (incl. pong) for this long = the socket died silently (typical after a network change).
+const LIVENESS: Duration = Duration::from_secs(25);
 /// New users appear only in the directory; poll it now and then.
 const DIRECTORY_EVERY: Duration = Duration::from_secs(300);
 
@@ -44,11 +46,18 @@ pub enum Cmd {
     Turn,
 }
 
+enum Exit {
+    Stopped,
+    Reconnect,
+}
+
 pub struct Shared {
     pub me: DeviceSecret,
     pub cert: Vec<u8>,
     pub contacts: Mutex<Contacts>,
     pub manifest: Manifest,
+    /// Drop the current connection and dial again at once (network changed).
+    pub reconnect: tokio::sync::Notify,
 }
 
 pub type Emit = Arc<dyn Fn(Event) + Send + Sync>;
@@ -72,13 +81,22 @@ pub async fn run(shared: Arc<Shared>, mut cmds: mpsc::UnboundedReceiver<Cmd>, em
         for server in shared.manifest.servers.clone() {
             emit(Event::Connecting { server: server.url.clone() });
             match session(&shared, &server, &mut cmds, &emit).await {
-                Ok(()) => return, // command channel closed: the app stopped the client
+                Ok(Exit::Stopped) => return, // command channel closed: the app stopped the client
+                Ok(Exit::Reconnect) => {
+                    backoff = 0;
+                    continue;
+                }
                 Err(e) => emit(Event::Offline { reason: e.to_string() }),
             }
-            backoff = 1; // a server that got as far as failing is tried again quickly next round
         }
-        tokio::time::sleep(Duration::from_secs(backoff)).await;
-        backoff = (backoff * 2).min(30);
+        // Queued commands stay queued; a reconnect request skips the wait.
+        let wait = tokio::time::sleep(Duration::from_secs(backoff));
+        tokio::pin!(wait);
+        tokio::select! {
+            _ = &mut wait => {}
+            _ = shared.reconnect.notified() => backoff = 0,
+        }
+        backoff = (backoff * 2).clamp(1, 30);
     }
 }
 
@@ -89,9 +107,12 @@ async fn send(ws: &mut Ws, f: &ClientFrame) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn recv(ws: &mut Ws) -> anyhow::Result<ServerFrame> {
+/// Next JSON frame; every received message (pongs included) refreshes `last_rx`.
+async fn recv(ws: &mut Ws, last_rx: &mut tokio::time::Instant) -> anyhow::Result<ServerFrame> {
     loop {
-        match ws.next().await {
+        let msg = ws.next().await;
+        *last_rx = tokio::time::Instant::now();
+        match msg {
             Some(Ok(Message::Text(t))) => return Ok(serde_json::from_str(t.as_str())?),
             Some(Ok(Message::Close(f))) => anyhow::bail!("закрыто сервером: {}", f.map(|f| f.code.to_string()).unwrap_or_default()),
             Some(Ok(_)) => continue,
@@ -103,9 +124,10 @@ async fn recv(ws: &mut Ws) -> anyhow::Result<ServerFrame> {
 
 async fn handshake(shared: &Shared, server: &ServerEntry) -> anyhow::Result<Ws> {
     let (mut ws, _) = tokio_tungstenite::connect_async(&server.url).await?;
+    let mut last = tokio::time::Instant::now();
     let cn: Nonce = proto::random_bytes();
     send(&mut ws, &ClientFrame::Hello { v: PROTOCOL_VERSION, nonce: cn.to_vec() }).await?;
-    let ServerFrame::Challenge { nonce, server_pub, sig } = recv(&mut ws).await? else {
+    let ServerFrame::Challenge { nonce, server_pub, sig } = recv(&mut ws, &mut last).await? else {
         anyhow::bail!("сервер нарушил протокол");
     };
     // Verify the server before revealing who we are.
@@ -116,19 +138,20 @@ async fn handshake(shared: &Shared, server: &ServerEntry) -> anyhow::Result<Ws> 
     auth::verify_server(&server_pub, &cn, &sn, &sig).map_err(|_| anyhow::anyhow!("сервер не подтвердил ключ"))?;
     let csig = auth::sign_client(shared.me.signing_key(), &sn, &server.server_pub, &cn);
     send(&mut ws, &ClientFrame::Auth { cert: shared.cert.clone(), device_id: shared.me.device_id, sig: csig.to_vec() }).await?;
-    match recv(&mut ws).await? {
+    match recv(&mut ws, &mut last).await? {
         ServerFrame::Ready { .. } => Ok(ws),
         other => anyhow::bail!("авторизация не прошла: {other:?}"),
     }
 }
 
-async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::UnboundedReceiver<Cmd>, emit: &Emit) -> anyhow::Result<()> {
+async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::UnboundedReceiver<Cmd>, emit: &Emit) -> anyhow::Result<Exit> {
     let mut ws = tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(shared, server))
         .await
         .map_err(|_| anyhow::anyhow!("таймаут подключения"))??;
     emit(Event::Online { server: server.url.clone() });
     send(&mut ws, &ClientFrame::Directory {}).await?;
 
+    let mut last_rx = tokio::time::Instant::now();
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.reset();
     let mut directory = tokio::time::interval(DIRECTORY_EVERY);
@@ -136,7 +159,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
     loop {
         tokio::select! {
             cmd = cmds.recv() => {
-                let Some(cmd) = cmd else { return Ok(()) };
+                let Some(cmd) = cmd else { return Ok(Exit::Stopped) };
                 let frame = match cmd {
                     Cmd::Directory => ClientFrame::Directory {},
                     Cmd::Turn => ClientFrame::Turn {},
@@ -147,8 +170,14 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                 };
                 send(&mut ws, &frame).await?;
             }
-            frame = recv(&mut ws) => handle(shared, &mut ws, frame?, emit).await?,
-            _ = ping.tick() => ws.send(Message::Ping(Default::default())).await?,
+            frame = recv(&mut ws, &mut last_rx) => handle(shared, &mut ws, frame?, emit).await?,
+            _ = ping.tick() => {
+                if last_rx.elapsed() > LIVENESS {
+                    anyhow::bail!("сервер не отвечает");
+                }
+                ws.send(Message::Ping(Default::default())).await?;
+            }
+            _ = shared.reconnect.notified() => return Ok(Exit::Reconnect),
             _ = directory.tick() => send(&mut ws, &ClientFrame::Directory {}).await?,
         }
     }
