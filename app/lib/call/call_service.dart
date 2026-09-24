@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
 import 'call_screen.dart';
+import 'call_stats.dart';
 import 'sdp.dart';
 
 enum CallPhase { idle, outgoing, incoming, connecting, active, ended }
@@ -32,6 +33,8 @@ class CallService extends ChangeNotifier {
   bool speaker = false;
   String? endReason;
   DateTime? connectedAt;
+  CallStats? stats;
+  bool showStats = false;
 
   final localRenderer = RTCVideoRenderer();
   final remoteRenderer = RTCVideoRenderer();
@@ -47,6 +50,8 @@ class CallService extends ChangeNotifier {
   final _localIce = <RTCIceCandidate>[]; // outgoing: gathered before the answer
   final _remoteIce = <RTCIceCandidate>[]; // arrived before the remote description
   Timer? _ringTimer;
+  Timer? _statsTimer;
+  CallStatsSampler? _sampler;
   bool _screenShown = false;
 
   bool get busy => phase != CallPhase.idle;
@@ -287,8 +292,27 @@ class CallService extends ChangeNotifier {
         default:
       }
     };
+    _startStats();
     speaker = video;
     if (Platform.isAndroid) await Helper.setSpeakerphoneOn(speaker);
+  }
+
+  void toggleStats() {
+    showStats = !showStats;
+    notifyListeners();
+  }
+
+  void _startStats() {
+    _statsTimer?.cancel();
+    _sampler = CallStatsSampler();
+    _statsTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final pc = _pc;
+      if (pc == null) return;
+      try {
+        stats = await _sampler!.sample(pc);
+        notifyListeners();
+      } catch (_) {}
+    });
   }
 
   void _connected() {
@@ -330,6 +354,9 @@ class CallService extends ChangeNotifier {
   }
 
   Future<void> _teardown() async {
+    _statsTimer?.cancel();
+    _statsTimer = null;
+    stats = null;
     final pc = _pc;
     final local = _local;
     _pc = null;

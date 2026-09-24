@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -86,6 +87,30 @@ class _CallScreenState extends State<CallScreen> {
                 ),
               ),
             SafeArea(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: IconButton(
+                  tooltip: 'Статистика',
+                  icon: const Icon(Icons.insights, color: Colors.white54),
+                  onPressed: c.toggleStats,
+                ),
+              ),
+            ),
+            if (c.showStats && c.stats != null)
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12, top: 140, right: 12),
+                  child: Container(
+                    color: Colors.black54,
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      c.stats.toString(),
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ),
+              ),
+            SafeArea(
               child: Column(
                 children: [
                   const SizedBox(height: 48),
@@ -125,6 +150,7 @@ class _CallScreenState extends State<CallScreen> {
           iconColor: c.muted ? Colors.black : Colors.white,
         ),
         _round(Icons.call_end, Colors.red, () => c.hangup(), 'Завершить'),
+        if (Platform.isAndroid)
         _round(
           c.speaker ? Icons.volume_up : Icons.hearing,
           c.speaker ? Colors.white : Colors.white24,
