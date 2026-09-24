@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'call/call_service.dart';
 import 'identity_store.dart';
 import 'relay_service.dart';
 import 'screens/home_screen.dart';
@@ -43,6 +44,8 @@ class BotatoApp extends StatefulWidget {
 
 class _BotatoAppState extends State<BotatoApp> {
   final _relay = RelayService();
+  final _navigator = GlobalKey<NavigatorState>();
+  late final _calls = CallService(_relay, _navigator);
   late core.CertInfo? _info = widget.info;
 
   @override
@@ -53,6 +56,7 @@ class _BotatoAppState extends State<BotatoApp> {
 
   @override
   void dispose() {
+    _calls.dispose();
     _relay.dispose();
     super.dispose();
   }
@@ -61,6 +65,7 @@ class _BotatoAppState extends State<BotatoApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'botato',
+      navigatorKey: _navigator,
       theme: ThemeData(colorSchemeSeed: Colors.deepPurple),
       darkTheme: ThemeData(colorSchemeSeed: Colors.deepPurple, brightness: Brightness.dark),
       home: _info == null
@@ -72,7 +77,7 @@ class _BotatoAppState extends State<BotatoApp> {
                 setState(() => _info = info);
               },
             )
-          : HomeScreen(info: _info!, relay: _relay),
+          : HomeScreen(info: _info!, relay: _relay, calls: _calls),
     );
   }
 }

@@ -83,8 +83,10 @@ pub fn client_start(data_dir: String, secret: Vec<u8>, cert: String, sink: Strea
     let emit: client::Emit = Arc::new(move |e| {
         let _ = sink.add(convert(e));
     });
-    let task = RT.spawn(client::run(shared.clone(), rx, emit));
+    let task = RT.spawn(client::run(shared.clone(), rx, emit.clone()));
     *RUNNING.lock().unwrap() = Some(Running { shared, tx, task });
+    // Dart can read contacts only now that the client is registered.
+    emit(Event::ContactsChanged);
     Ok(())
 }
 

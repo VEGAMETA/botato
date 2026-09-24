@@ -2,15 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
 import '../src/rust/api/identity.dart' as id;
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.info, required this.relay});
+  const HomeScreen({super.key, required this.info, required this.relay, required this.calls});
 
   final id.CertInfo info;
   final RelayService relay;
+  final CallService calls;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -72,9 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           appBar: AppBar(
             title: Text(widget.info.name),
-            actions: [
-              IconButton(icon: const Icon(Icons.refresh), onPressed: r.refreshContacts),
-            ],
+            actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: r.refreshContacts)],
           ),
           body: ListView(
             children: [
@@ -85,15 +85,34 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const Divider(),
               if (others.isEmpty)
-                const ListTile(title: Text('Контактов пока нет'), subtitle: Text('Они появятся, когда подключатся к серверу')),
+                const ListTile(
+                  title: Text('Контактов пока нет'),
+                  subtitle: Text('Они появятся, когда подключатся к серверу'),
+                ),
               for (final c in others)
                 ListTile(
                   leading: CircleAvatar(child: Text(c.name.isEmpty ? '?' : c.name[0].toUpperCase())),
                   title: Text(c.name),
                   subtitle: Text('устройств: ${c.devices.length}'),
-                  trailing: TextButton(
-                    onPressed: r.state == ConnState.online ? () => _ping(c) : null,
-                    child: const Text('Проверить связь'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Проверить связь',
+                        icon: const Icon(Icons.network_ping),
+                        onPressed: r.state == ConnState.online ? () => _ping(c) : null,
+                      ),
+                      IconButton(
+                        tooltip: 'Позвонить',
+                        icon: const Icon(Icons.call),
+                        onPressed: r.state == ConnState.online ? () => widget.calls.startCall(c) : null,
+                      ),
+                      IconButton(
+                        tooltip: 'Видеозвонок',
+                        icon: const Icon(Icons.videocam),
+                        onPressed: r.state == ConnState.online ? () => widget.calls.startCall(c, video: true) : null,
+                      ),
+                    ],
                   ),
                 ),
             ],

@@ -53,6 +53,7 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_Online(:final server):
         state = ConnState.online;
         detail = server;
+        contacts = core.clientContacts();
       case core.ClientEvent_Offline(:final reason):
         state = ConnState.offline;
         detail = reason;
