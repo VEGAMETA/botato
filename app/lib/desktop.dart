@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:local_notifier/local_notifier.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -32,6 +33,13 @@ class Desktop with TrayListener, WindowListener {
   /// The window is on screen and has focus.
   bool get focused => _focused;
 
+  static const _dndKey = 'desktop_dnd';
+  bool _dnd = false;
+
+  /// "Do not disturb" (tray menu): no system notifications and incoming calls don't raise
+  /// the window; calls still ring inside the app.
+  bool get dnd => _dnd;
+
   Future<void> init() async {
     await windowManager.ensureInitialized();
     await windowManager.waitUntilReadyToShow(
@@ -52,18 +60,40 @@ class Desktop with TrayListener, WindowListener {
 
     await localNotifier.setup(appName: 'botato', shortcutPolicy: ShortcutPolicy.requireCreate);
 
+    try {
+      _dnd = (await SharedPreferences.getInstance()).getBool(_dndKey) ?? false;
+    } catch (_) {}
     await trayManager.setIcon(Platform.isWindows ? 'assets/icon/tray.ico' : 'assets/icon/potato.png');
-    if (!Platform.isLinux) await trayManager.setToolTip('botato');
+    await _updateTray();
+    trayManager.addListener(this);
+  }
+
+  Future<void> _updateTray() async {
+    if (!Platform.isLinux) await trayManager.setToolTip(_dnd ? 'botato — не беспокоить' : 'botato');
     await trayManager.setContextMenu(
       Menu(
         items: [
           MenuItem(key: 'show', label: 'Открыть'),
+          MenuItem.checkbox(key: 'dnd', label: 'Не беспокоить', checked: _dnd),
           MenuItem.separator(),
           MenuItem(key: 'quit', label: 'Выход'),
         ],
       ),
     );
-    trayManager.addListener(this);
+  }
+
+  Future<void> setDnd(bool on) async {
+    _dnd = on;
+    try {
+      await (await SharedPreferences.getInstance()).setBool(_dndKey, on);
+    } catch (_) {}
+    if (on) {
+      for (final n in _messages.values) {
+        await n.close();
+      }
+      _messages.clear();
+    }
+    await _updateTray();
   }
 
   Future<void> showWindow() async {
@@ -82,6 +112,7 @@ class Desktop with TrayListener, WindowListener {
   // ---- notifications
 
   Future<void> showMessage(String peerUser, String name, String text) async {
+    if (_dnd) return;
     await _messages.remove(peerUser)?.close();
     final n = LocalNotification(identifier: 'msg-$peerUser', title: name, body: text);
     n.onClick = () {
@@ -96,6 +127,7 @@ class Desktop with TrayListener, WindowListener {
   Future<void> clearMessages(String peerUser) async => _messages.remove(peerUser)?.close();
 
   Future<void> showIncoming(String peer, {required bool video}) async {
+    if (_dnd) return;
     await _call?.close();
     final n = LocalNotification(
       identifier: 'call',
@@ -141,11 +173,14 @@ class Desktop with TrayListener, WindowListener {
   void onTrayIconMouseDown() => showWindow();
 
   @override
-  void onTrayIconRightMouseDown() => trayManager.popUpContextMenu();
+  // Foreground first, or Windows keeps the menu open after a click elsewhere.
+  // ignore: deprecated_member_use
+  void onTrayIconRightMouseDown() => trayManager.popUpContextMenu(bringAppToFront: true);
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
     if (menuItem.key == 'show') showWindow();
+    if (menuItem.key == 'dnd') setDnd(!_dnd);
     if (menuItem.key == 'quit') quit();
   }
 }

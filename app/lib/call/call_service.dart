@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
+import '../desktop.dart' show Desktop;
 import 'call_notifier.dart';
 import 'call_screen.dart';
 import 'call_stats.dart';
@@ -790,7 +791,7 @@ class CallService extends ChangeNotifier {
   /// Desktop: an incoming call raises and focuses the window (Windows only lets a
   /// background app take focus when it is briefly always-on-top).
   Future<void> _bringToFront() async {
-    if (!isDesktop) return;
+    if (!isDesktop || Desktop.instance.dnd) return;
     try {
       if (await windowManager.isMinimized()) await windowManager.restore();
       await windowManager.show();

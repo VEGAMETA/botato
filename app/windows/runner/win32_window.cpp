@@ -97,7 +97,8 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // Dark (theme "night"): no white flash before Flutter paints or when shown from the tray.
+    window_class.hbrBackground = CreateSolidBrush(RGB(0x0E, 0x1A, 0x22));
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
