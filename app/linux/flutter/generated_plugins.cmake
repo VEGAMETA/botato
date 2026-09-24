@@ -6,7 +6,9 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_linux
   flutter_secure_storage_linux
   flutter_webrtc
+  local_notifier
   screen_retriever_linux
+  tray_manager
   window_manager
 )
 

@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../desktop.dart';
+
 /// Android ongoing-call foreground service + notification (mute / hang up actions).
 /// The service also keeps the microphone, camera and screen capture alive in the
-/// background. No-op on other platforms.
+/// background. On desktop, message and incoming-call notifications go to the system
+/// notification center; the rest is a no-op there.
 class CallNotifier {
   CallNotifier() {
     if (Platform.isAndroid) {
@@ -14,6 +17,10 @@ class CallNotifier {
         if (call.method == 'pushToken') onPushToken?.call(call.arguments as String);
         if (call.method == 'wake') onWake?.call();
       });
+    }
+    if (isDesktop) {
+      Desktop.instance.onCallAction = (a) => onAction?.call(a);
+      Desktop.instance.onOpenChat = (p) => onOpenChat?.call(p);
     }
   }
 
@@ -42,10 +49,12 @@ class CallNotifier {
   void Function(String peerUser)? onOpenChat;
 
   /// New-message notification (Android). The text stays on the device.
-  Future<void> showMessage(String peerUser, String name, String text) =>
-      _invoke('message', {'peer': peerUser, 'name': name, 'text': text});
+  Future<void> showMessage(String peerUser, String name, String text) => isDesktop
+      ? Desktop.instance.showMessage(peerUser, name, text)
+      : _invoke('message', {'peer': peerUser, 'name': name, 'text': text});
 
-  Future<void> clearMessages(String peerUser) => _invoke('messageClear', {'peer': peerUser});
+  Future<void> clearMessages(String peerUser) =>
+      isDesktop ? Desktop.instance.clearMessages(peerUser) : _invoke('messageClear', {'peer': peerUser});
 
   /// Chat whose notification launched the app (cold start), if any.
   Future<String?> pendingChat() async {
@@ -77,9 +86,11 @@ class CallNotifier {
   }
 
   /// Ringing notification with accept / decline (full-screen over the lock screen).
-  Future<void> showIncoming(String peer, {required bool video}) => _invoke('incoming', {'peer': peer, 'video': video});
+  Future<void> showIncoming(String peer, {required bool video}) => isDesktop
+      ? Desktop.instance.showIncoming(peer, video: video)
+      : _invoke('incoming', {'peer': peer, 'video': video});
 
-  Future<void> cancelIncoming() => _invoke('incomingCancel', null);
+  Future<void> cancelIncoming() => isDesktop ? Desktop.instance.cancelIncoming() : _invoke('incomingCancel', null);
 
   bool _proximity = false;
 

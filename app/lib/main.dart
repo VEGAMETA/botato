@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'call/call_service.dart';
 import 'call/media_settings.dart';
+import 'desktop.dart';
 import 'identity_store.dart';
 import 'relay_service.dart';
 import 'screens/home_screen.dart';
@@ -46,6 +46,8 @@ class Services {
     relay.onNewMessage = (peer, name, text) => calls.notifier.showMessage(peer, name, text);
     calls.notifier.onPushToken = (token) => client.clientSetPushToken(token: token);
     calls.notifier.onWake = relay.reconnect;
+    // Desktop: "in front" means the window has focus (it may sit hidden in the tray).
+    if (isDesktop) Desktop.instance.onFocusChanged = (f) => relay.foreground = f;
 
     final saved = await store.cert();
     if (saved != null) {
@@ -70,7 +72,7 @@ class Services {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) await windowManager.ensureInitialized();
+  if (isDesktop) await Desktop.instance.init();
   await RustLib.init();
   final services = await Services.create();
   runApp(BotatoApp(services: services));
@@ -98,6 +100,7 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (isDesktop) return; // window focus decides, see Services.create
     s.relay.foreground = state == AppLifecycleState.resumed;
   }
 
@@ -113,6 +116,14 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'botato',
       navigatorKey: s.navigator,
+      builder: isDesktop
+          ? (context, child) => Column(
+              children: [
+                const TitleBar(),
+                Expanded(child: child!),
+              ],
+            )
+          : null,
       theme: botatoTheme(Brightness.light),
       darkTheme: botatoTheme(Brightness.dark),
       themeMode: ThemeMode.dark,
