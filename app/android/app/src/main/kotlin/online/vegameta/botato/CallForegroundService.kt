@@ -11,6 +11,8 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.content.ContextCompat
@@ -34,6 +36,8 @@ class CallForegroundService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_MUTE = "online.vegameta.botato.MUTE"
         private const val ACTION_HANGUP = "online.vegameta.botato.HANGUP"
+        private const val UNMUTED = 0xFF2EB3DC.toInt() // potato
+        private const val MUTED = 0xFF7C3AED.toInt() // ember
 
         /** Delivers "mute" / "hangup" to Dart. */
         var onAction: ((String) -> Unit)? = null
@@ -153,9 +157,16 @@ class CallForegroundService : Service() {
             .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, actionIntent(ACTION_HANGUP, 2)))
             .addAction(
                 if (s.muted) R.drawable.ic_call_mic_off else R.drawable.ic_call_mic,
-                if (s.muted) "Включить микрофон" else "Выключить микрофон",
+                filled(if (s.muted) "Включить микрофон" else "Выключить микрофон", if (s.muted) MUTED else UNMUTED),
                 actionIntent(ACTION_MUTE, 1),
             )
             .build()
     }
+
+    /**
+     * A title colored over its full length: CallStyle then fills the button with that color and
+     * picks a contrasting text color (the default fill is unreadable on some skins, e.g. One UI).
+     */
+    private fun filled(title: String, color: Int): CharSequence =
+        SpannableString(title).apply { setSpan(ForegroundColorSpan(color), 0, length, 0) }
 }

@@ -57,6 +57,13 @@ class CallService extends ChangeNotifier {
   CallStats? stats;
   bool showStats = false;
 
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    final live = phase == CallPhase.outgoing || phase == CallPhase.connecting || phase == CallPhase.active;
+    notifier.proximity(live && !speaker);
+  }
+
   /// Whether the call was started as a video call (UI hint for the incoming screen).
   bool videoCall = false;
 

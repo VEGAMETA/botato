@@ -32,20 +32,31 @@ class RelayService extends ChangeNotifier {
 
   final MediaSettings settings;
 
-  /// Contacts shown in the list: everyone in the directory except us and forgotten ones.
+  /// Contacts shown in the list: only those the user added (or who called or wrote).
   List<core.ContactInfo> get visibleContacts {
-    final hidden = settings.hiddenContacts;
-    return contacts.where((c) => !c.isMe && !hidden.contains(c.userId)).toList();
+    final added = settings.addedContacts ?? const {};
+    return contacts.where((c) => !c.isMe && added.contains(c.userId)).toList();
   }
 
-  /// Directory users that were forgotten (can be added back).
-  List<core.ContactInfo> get hiddenContacts {
-    final hidden = settings.hiddenContacts;
-    return contacts.where((c) => !c.isMe && hidden.contains(c.userId)).toList();
+  bool isAdded(String userId) => settings.addedContacts?.contains(userId) ?? false;
+
+  /// Known users (directory or local cache) whose name or user id matches [query] exactly,
+  /// ignoring case. Only people who have ever connected with a certificate can be found.
+  List<core.ContactInfo> findContacts(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return contacts.where((c) => !c.isMe && (c.name.toLowerCase() == q || c.userId == q)).toList();
+  }
+
+  void add(String userId) {
+    final a = settings.addedContacts ?? {};
+    if (!a.add(userId)) return;
+    settings.addedContacts = a;
+    notifyListeners();
   }
 
   void forget(String userId, {required bool deleteHistory}) {
-    settings.hiddenContacts = settings.hiddenContacts..add(userId);
+    settings.addedContacts = (settings.addedContacts ?? {})..remove(userId);
     if (deleteHistory) {
       core.clientDeleteHistory(peerUser: userId);
       _loadConversations();
@@ -53,11 +64,11 @@ class RelayService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void unhide(String userId) {
-    final h = settings.hiddenContacts;
-    if (!h.remove(userId)) return;
-    settings.hiddenContacts = h;
-    notifyListeners();
+  /// First run of the added-contacts scheme: keep whoever we already talked to.
+  void _migrateContacts() {
+    if (settings.addedContacts != null) return;
+    final hidden = settings.takeLegacyHidden();
+    settings.addedContacts = conversations.keys.where((u) => !hidden.contains(u)).toSet();
   }
 
   ConnState state = ConnState.connecting;
@@ -100,6 +111,7 @@ class RelayService extends ChangeNotifier {
     });
     contacts = core.clientContacts();
     _loadConversations();
+    _migrateContacts();
     notifyListeners();
   }
 
@@ -122,7 +134,7 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_ContactsChanged():
         contacts = core.clientContacts();
       case core.ClientEvent_Signal(:final fromUser, :final fromDevice, :final payload):
-        unhide(fromUser);
+        add(fromUser); // whoever calls us shows up in the list
         try {
           final data = jsonDecode(payload) as Map<String, dynamic>;
           _signals.add(IncomingSignal(fromUser, fromDevice, data));
@@ -137,7 +149,7 @@ class RelayService extends ChangeNotifier {
         _loadConversations();
         _messageUpdates.add(peerUser);
       case core.ClientEvent_NewMessage(:final peerUser, :final text):
-        unhide(peerUser); // a forgotten contact who writes comes back
+        add(peerUser); // whoever writes to us shows up in the list
         if (!foreground || activeChat != peerUser) {
           final name = contacts.where((c) => c.userId == peerUser).firstOrNull?.name ?? 'сообщение';
           onNewMessage?.call(peerUser, name, text);

@@ -81,9 +81,20 @@ class CallNotifier {
 
   Future<void> cancelIncoming() => _invoke('incomingCancel', null);
 
+  bool _proximity = false;
+
+  /// Screen off at the ear (Android): wanted during a call when the loudspeaker is off;
+  /// the native side also requires the earpiece to be the active route.
+  Future<void> proximity(bool on) async {
+    if (_proximity == on) return;
+    _proximity = on;
+    await _invoke('proximity', on);
+  }
+
   Future<void> hide() {
     _camera = false;
     _screen = false;
+    _proximity = false;
     return _invoke('hide', null);
   }
 

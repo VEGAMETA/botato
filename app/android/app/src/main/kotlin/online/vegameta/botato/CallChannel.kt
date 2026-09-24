@@ -53,6 +53,7 @@ object CallChannel {
                     call.argument<Boolean>("screen") ?: false,
                 ) { main.post { result.success(null) } }
                 "hide" -> {
+                    Proximity.set(ctx, false)
                     CallForegroundService.hide(ctx)
                     IncomingCallNotification.cancel(ctx)
                     activity?.showOverLockScreen(false)
@@ -83,6 +84,10 @@ object CallChannel {
                 }
                 "messageClear" -> {
                     MessageNotification.cancel(ctx, call.argument<String>("peer") ?: "")
+                    result.success(null)
+                }
+                "proximity" -> {
+                    Proximity.set(ctx, call.arguments as Boolean)
                     result.success(null)
                 }
                 "pendingChat" -> {

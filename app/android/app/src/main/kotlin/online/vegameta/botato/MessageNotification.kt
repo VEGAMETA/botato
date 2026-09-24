@@ -33,7 +33,7 @@ object MessageNotification {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_call)
+            .setSmallIcon(R.drawable.ic_stat_message)
             .setContentTitle(name)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../call/call_screen.dart';
 import '../call/call_service.dart';
@@ -105,45 +106,72 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _addContact(BuildContext context) async {
     widget.relay.refreshContacts();
-    await showModalBottomSheet<void>(
+    final field = TextEditingController();
+    String? error;
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => ListenableBuilder(
-        listenable: widget.relay,
-        builder: (ctx, _) {
-          final hidden = widget.relay.hiddenContacts;
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('Добавить контакт', style: TextStyle(fontSize: 18)),
-                  const SizedBox(height: 8),
-                  if (hidden.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Все, кого знает сервер, уже в списке. Новые люди появляются здесь, когда админ выдаст им '
-                        'сертификат и они подключатся.',
-                        style: TextStyle(color: BotatoColors.smoke),
-                      ),
-                    ),
-                  for (final c in hidden)
-                    ListTile(
-                      leading: Avatar(c.name),
-                      title: Text(c.name),
-                      trailing: const Icon(Icons.add),
-                      onTap: () {
-                        widget.relay.unhide(c.userId);
-                        Navigator.pop(ctx);
-                      },
-                    ),
-                ],
-              ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) {
+          void submit() {
+            final found = widget.relay.findContacts(field.text);
+            if (found.isEmpty) {
+              set(() => error = 'Такого пользователя нет. Он должен хотя бы раз подключиться с сертификатом.');
+              return;
+            }
+            for (final c in found) {
+              widget.relay.add(c.userId);
+            }
+            Navigator.pop(ctx);
+            _toast(found.length == 1 ? 'Добавлен: ${found.first.name}' : 'Добавлено: ${found.length}');
+          }
+
+          return AlertDialog(
+            title: const Text('Добавить контакт'),
+            content: TextField(
+              controller: field,
+              autofocus: true,
+              decoration: InputDecoration(labelText: 'Имя или ID', errorText: error, errorMaxLines: 3),
+              onChanged: (_) => error == null ? null : set(() => error = null),
+              onSubmitted: (_) => submit(),
             ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+              FilledButton(onPressed: submit, child: const Text('Добавить')),
+            ],
           );
         },
+      ),
+    );
+    field.dispose();
+  }
+
+  Future<void> _showMe(BuildContext context) async {
+    final device = core.clientMyDevice();
+    Widget row(String label, String value) => ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label, style: const TextStyle(color: BotatoColors.smoke, fontSize: 13)),
+      subtitle: SelectableText(value, style: const TextStyle(fontFamily: 'monospace', fontSize: 15)),
+      trailing: IconButton(
+        tooltip: 'Скопировать',
+        icon: const Icon(Icons.copy, size: 20),
+        onPressed: () {
+          Clipboard.setData(ClipboardData(text: value));
+          _toast('Скопировано');
+        },
+      ),
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(widget.info.name),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            row('ID пользователя', widget.info.userId),
+            if (device != null) row('ID этого устройства', device),
+          ],
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть'))],
       ),
     );
   }
@@ -183,21 +211,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 Image.asset('assets/icon/potato.png', width: 34, height: 34),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.info.name, style: theme.textTheme.titleMedium),
-                      Tooltip(
-                        message: r.detail,
-                        child: Row(
-                          children: [
-                            Icon(Icons.circle, color: color, size: 8),
-                            const SizedBox(width: 6),
-                            Text(label, style: theme.textTheme.bodySmall?.copyWith(color: BotatoColors.smoke)),
-                          ],
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _showMe(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(widget.info.name, style: theme.textTheme.titleMedium),
+                        Tooltip(
+                          message: r.detail,
+                          child: Row(
+                            children: [
+                              Icon(Icons.circle, color: color, size: 8),
+                              const SizedBox(width: 6),
+                              Text(label, style: theme.textTheme.bodySmall?.copyWith(color: BotatoColors.smoke)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -343,7 +375,7 @@ class _Empty extends StatelessWidget {
             Text('Пока никого', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 6),
             Text(
-              online ? 'Контакты появятся, когда подключатся к серверу' : 'Ждём связи с сервером…',
+              online ? 'Добавьте контакт по имени: кнопка вверху справа' : 'Ждём связи с сервером…',
               textAlign: TextAlign.center,
               style: const TextStyle(color: BotatoColors.smoke),
             ),
