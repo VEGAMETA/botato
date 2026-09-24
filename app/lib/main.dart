@@ -73,9 +73,10 @@ class Services {
   }
 }
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (isDesktop) await Desktop.instance.init();
+  // --minimized: started at Windows logon, stay in the tray.
+  if (isDesktop) await Desktop.instance.init(hidden: args.contains('--minimized'));
   await RustLib.init();
   final services = await Services.create();
   runApp(BotatoApp(services: services));

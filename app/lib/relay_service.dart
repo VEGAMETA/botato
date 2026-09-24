@@ -248,6 +248,19 @@ class RelayService extends ChangeNotifier {
 
   void refreshContacts() => core.clientRefreshDirectory();
 
+  /// The refresh button: dial again at once if we are not connected (no waiting for the
+  /// backoff after a timeout), otherwise re-ask who is online and fetch fresh certificates.
+  void refresh() {
+    if (state != ConnState.online) {
+      state = ConnState.connecting;
+      notifyListeners();
+      reconnect();
+      return;
+    }
+    _queryPresence();
+    refreshContacts();
+  }
+
   void reconnect() => core.clientReconnect();
 
   /// Fresh TURN credentials from the relay (2 h TTL).

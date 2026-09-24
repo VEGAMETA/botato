@@ -40,7 +40,7 @@ class Desktop with TrayListener, WindowListener {
   /// the window; calls still ring inside the app.
   bool get dnd => _dnd;
 
-  Future<void> init() async {
+  Future<void> init({bool hidden = false}) async {
     await windowManager.ensureInitialized();
     await windowManager.waitUntilReadyToShow(
       const WindowOptions(
@@ -51,6 +51,10 @@ class Desktop with TrayListener, WindowListener {
         center: true,
       ),
       () async {
+        if (hidden) {
+          _setFocused(false);
+          return;
+        }
         await windowManager.show();
         await windowManager.focus();
       },

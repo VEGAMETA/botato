@@ -83,6 +83,7 @@ cargo run --release -p botatoadmin   # GUI админа
 cd app && flutter run -d windows     # ПК; для логов: > target/pc-log.txt
 cd app && flutter build apk --debug --target-platform android-arm64   # + adb install -r (телефон по Wi-Fi-отладке)
 cd app && flutter test
+cd app && flutter build windows --release && "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" windows\installerotato.iss   # → build\installerotato-setup-<ver>.exe
 cd app && flutter_rust_bridge_codegen generate   # после изменений в app/rust/src/api
 
 # только из WSL (из /mnt/h ansible.cfg игнорируется, поэтому ANSIBLE_INVENTORY_ENABLED=ini в окружении):

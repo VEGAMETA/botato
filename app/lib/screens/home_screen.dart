@@ -217,7 +217,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: const Icon(Icons.tune),
                 onPressed: () => showMediaSettings(context, widget.calls),
               ),
-              IconButton(tooltip: 'Обновить контакты', icon: const Icon(Icons.refresh), onPressed: r.refreshContacts),
+              IconButton(
+                tooltip: 'Обновить подключение и статусы',
+                icon: const Icon(Icons.refresh),
+                onPressed: r.refresh,
+              ),
             ],
           ),
           body: others.isEmpty
@@ -275,9 +279,8 @@ class _ContactCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final conv = conversation;
     final unread = conv?.unread.toInt() ?? 0;
-    final devices = contact.devices.length;
     final subtitle = conv == null
-        ? (devices == 1 ? '1 устройство' : 'устройств: $devices')
+        ? (peerOnline ? 'в сети' : 'нет сообщений')
         : '${conv.lastFromMe ? 'Вы: ' : ''}${conv.lastText.replaceAll('\n', ' ')}';
     final theme = Theme.of(context);
     return Card(
