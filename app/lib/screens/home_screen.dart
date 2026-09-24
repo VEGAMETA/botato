@@ -136,6 +136,12 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Why "no connection": the last error from the relay client, copyable.
+            if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
+              row(
+                widget.relay.state == ConnState.connecting ? 'Подключение к' : 'Нет связи',
+                widget.relay.detail,
+              ),
             row('ID пользователя', widget.info.userId),
             if (device != null) row('ID этого устройства', device),
           ],

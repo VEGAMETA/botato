@@ -65,8 +65,11 @@ class Services {
     this.cert = cert;
     this.info = info;
     await relay.start(secret, cert, await store.dbKey());
-    final token = await calls.notifier.pushToken();
-    if (token != null) client.clientSetPushToken(token: token);
+    // Not awaited: on a fresh install the FCM token can take a long time (or never come
+    // without Google services), and the home screen must not wait for it.
+    calls.notifier.pushToken().then((token) {
+      if (token != null) client.clientSetPushToken(token: token);
+    });
   }
 }
 
