@@ -63,7 +63,7 @@ crates/proto/    Rust-реализация protocol/ (проверяется н�
 server/          relay: auth, mailbox, signaling, push, TURN-креды
 tools/admin/     CLI админа
 app/             Flutter-клиент
-infra/           compose.yml, Caddyfile, turnserver.conf, Dockerfile, ansible/ (inventory.ini, bootstrap.yml, deploy.yml, roles/)
+infra/           Dockerfile.relay; ansible/ (inventory.ini — gitignored, см. inventory.example.ini; bootstrap.yml, deploy.yml, roles/: base, docker, app — шаблоны compose/Caddyfile/turnserver.conf, fwknop, firewall)
 ```
 
 ## 5. Команды
@@ -75,9 +75,9 @@ cargo run -p relay -- --help
 cd app && flutter run
 cd app && flutter test
 
-# только из WSL:
+# только из WSL (из /mnt/h ansible.cfg игнорируется, поэтому ANSIBLE_INVENTORY_ENABLED=ini в окружении):
 ansible-playbook -i infra/ansible/inventory.ini infra/ansible/bootstrap.yml   # свежий VPS, под root
-ansible-playbook -i infra/ansible/inventory.ini infra/ansible/deploy.yml
+ansible-playbook -i infra/ansible/inventory.ini infra/ansible/deploy.yml                    # всё; на свежем сервере сначала --skip-tags firewall, потом --tags firewall
 ansible all -i infra/ansible/inventory.ini -m ping
 ```
 
@@ -235,12 +235,12 @@ nftables: входящие по умолчанию `drop` (молча, без re
 ### Текущий сервер
 
 - Провайдер VDSina, KVM, Debian 13. Адрес — в `infra/ansible/inventory.ini`; в код и документацию не хардкодить.
-- Домен relay — поддомен личного домена разработчика, DNS в reg.ru (A-запись). Имя задаётся в переменных Ansible и в манифесте, не в коде. TTL записи должен быть 60 с (для быстрого переезда).
+- Домен relay — поддомен личного домена разработчика, DNS в reg.ru (A-запись). Имя задаётся в переменных Ansible и в манифесте, не в коде. TTL записи — 3600 с (минимум у reg.ru). При переезде это не критично: клиент видит несовпадение ключа сервера и берёт новый манифест с зеркал.
 - Бутстрап сделан вручную:
   - `vegameta` — администратор, вход по ключу, sudo с паролем;
   - `deploy` — для Ansible и Claude Code, ключ `~/.ssh/deploy_ed25519`, `NOPASSWD` sudo через `/etc/sudoers.d/deploy`;
   - вход по паролю и для root закрыт (`/etc/ssh/sshd_config.d/00-hardening.conf`), пароль root заблокирован.
-- Сейчас наружу слушает только sshd:22. Файрвола, Docker и fwknop пока нет.
+- Применены роли base и docker (Docker 26 из Debian). Наружу слушает только sshd:22; файрвола и fwknop пока нет.
 - Инвентарь: `ansible_user=deploy`, `ansible_ssh_private_key_file=~/.ssh/deploy_ed25519`. SSH-алиас в WSL для диагностики — `vpn-srv`.
 
 ### Правила работы агента с сервером
@@ -264,7 +264,7 @@ nftables: входящие по умолчанию `drop` (молча, без re
 1. Новый VPS: **при создании в панели сразу указать SSH-ключ** → `bootstrap.yml` под root → `deploy.yml`.
 2. Всё ротируется: новый ключ сервера, новый TURN-секрет, новый FCM/APNs-ключ (старый отозвать). Со старого сервера ничего не переносится.
 3. `admin manifest bump` с новым `server_pub` и адресом → публикация во все каналы.
-4. Если домен жив — поменять A-запись (TTL 60 с). Клиент увидит несовпадение ключа, подтянет манифест с зеркал и переподключится.
+4. Если домен жив — поменять A-запись (TTL 1 ч). Клиент увидит несовпадение ключа, подтянет манифест с зеркал и переподключится.
 
 ## 12. Этапы
 

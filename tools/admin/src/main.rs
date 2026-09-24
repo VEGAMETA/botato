@@ -176,7 +176,11 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::RootPub => {
             let a = Admin::open(&dir)?;
-            println!("{}", hex::encode(unlock(&a)?.verifying_key().to_bytes()));
+            if a.state.root_pub.is_empty() {
+                println!("{}", hex::encode(unlock(&a)?.verifying_key().to_bytes()));
+            } else {
+                println!("{}", a.state.root_pub);
+            }
         }
         Cmd::Fingerprint { request } => {
             let r = parse_request(&request)?;

@@ -1,0 +1,80 @@
+- name: Remove agents and daemons we don't need
+  ansible.builtin.apt:
+    name: [qemu-guest-agent, haveged, rsyslog]
+    state: absent
+    purge: true
+
+- name: Base packages
+  ansible.builtin.apt:
+    name: [nftables, unattended-upgrades, ca-certificates, openssl]
+    update_cache: true
+    cache_valid_time: 3600
+
+# systemd-ssh-generator can expose sshd on vsock/AF_UNIX sockets.
+- name: Mask systemd-ssh-generator
+  block:
+    - ansible.builtin.file:
+        path: /etc/systemd/system-generators
+        state: directory
+        mode: "0755"
+    - ansible.builtin.file:
+        path: /etc/systemd/system-generators/systemd-ssh-generator
+        src: /dev/null
+        state: link
+        force: true
+
+# RAM must never reach the disk.
+- name: Swap off now
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+
+- name: No swap in fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^\S+\s+\S+\s+swap\s'
+    state: absent
+
+- name: journald drop-in dir
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: journald in RAM only
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/10-volatile.conf
+    content: |
+      [Journal]
+      Storage=volatile
+      RuntimeMaxUse=64M
+    mode: "0644"
+  register: journald_conf
+
+- name: Drop persisted journal
+  when: journald_conf.changed
+  block:
+    - ansible.builtin.file:
+        path: /var/log/journal
+        state: absent
+    - ansible.builtin.systemd:
+        name: systemd-journald
+        state: restarted
+
+- name: unattended-upgrades for security updates only
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52botato-unattended
+    content: |
+      #clear Unattended-Upgrade::Origins-Pattern;
+      Unattended-Upgrade::Origins-Pattern {
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+      };
+      Unattended-Upgrade::Automatic-Reboot "false";
+    mode: "0644"
+
+- name: Enable periodic unattended-upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"

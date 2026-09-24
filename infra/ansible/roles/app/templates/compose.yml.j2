@@ -1,0 +1,60 @@
+# Managed by Ansible.
+# Only Caddy publishes a port (443). Docker bypasses nftables for published ports,
+# so nothing else is published; coturn uses the host network behind nftables.
+name: botato
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+services:
+  caddy:
+    <<: *hardening
+    image: {{ caddy_image }}
+    cap_add: [NET_BIND_SERVICE]
+    ports: ["443:443/tcp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs: [/tmp]
+    networks: [web]
+    mem_limit: 128m
+
+  relay:
+    <<: *hardening
+    image: {{ relay_image }}:{{ relay_tag }}
+    user: "{{ relay_uid }}:{{ relay_uid }}"
+    environment:
+      RELAY_LISTEN: 0.0.0.0:8080
+      RELAY_KEY: /secrets/server.key
+      RELAY_ROOT_PUB: "{{ root_pub }}"
+      RELAY_MANIFEST: /config/manifest.bin
+      RELAY_TURN_SECRET_FILE: /secrets/turn_secret
+      RELAY_TURN_URLS: "turn:{{ relay_domain }}:3478?transport=udp,turn:{{ relay_domain }}:3478?transport=tcp,turns:{{ relay_domain }}:5349?transport=tcp"
+    volumes:
+      - ./relay:/secrets
+      - ./config:/config:ro
+    networks: [web]
+    mem_limit: 256m
+    pids_limit: 256
+
+  coturn:
+    <<: *hardening
+    image: {{ coturn_image }}
+    network_mode: host
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./coturn/certs:/etc/coturn/certs:ro
+    tmpfs: [/tmp, /var/tmp]
+    mem_limit: 256m
+
+networks:
+  web: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

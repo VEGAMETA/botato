@@ -1,0 +1,13 @@
+# Static musl build of the relay; runtime image has no shell or package manager.
+FROM rust:1.98-alpine AS build
+RUN apk add --no-cache musl-dev
+WORKDIR /src
+COPY . .
+RUN cargo build --release --locked -p relay \
+ && install -D target/release/relay /out/relay
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/relay /relay
+USER 65532:65532
+ENTRYPOINT ["/relay"]
+CMD ["serve"]

@@ -1,0 +1,23 @@
+- name: Docker from Debian
+  ansible.builtin.apt:
+    name: [docker.io, docker-compose]
+
+# Container logs go to journald, which lives in RAM (see base role).
+- name: Docker daemon config
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "journald",
+        "live-restore": true,
+        "userland-proxy": false,
+        "ipv6": false
+      }
+    mode: "0644"
+  register: daemon_json
+
+- name: Docker running
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: "{{ 'restarted' if daemon_json.changed else 'started' }}"

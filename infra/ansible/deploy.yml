@@ -1,0 +1,30 @@
+# Full deploy. Firewall and fwknop are tagged `firewall`: the first run on a fresh
+# server goes with `--skip-tags firewall`, then `--tags firewall` after review.
+- name: Deploy botato relay
+  hosts: relay
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Knock (fwknop SPA) so SSH is reachable
+      ansible.builtin.include_tasks:
+        file: tasks/knock.yml
+        apply:
+          tags: [always]
+      tags: [always]
+
+    - name: Gather facts
+      ansible.builtin.setup:
+      tags: [always]
+
+  roles:
+    - role: base
+      tags: [base]
+    - role: docker
+      tags: [docker]
+    - role: app
+      tags: [app]
+    - role: fwknop
+      tags: [firewall]
+    - role: firewall
+      tags: [firewall]

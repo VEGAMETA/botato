@@ -1,0 +1,70 @@
+# fwknopd sniffs SPA packets with libpcap (it sees them even though nftables drops them)
+# and adds the knocking IP to the nftables set `ssh_allowed` for 30 s.
+# Keys come from the control machine's ~/.fwknoprc stanza — one source of truth.
+- name: Read SPA keys from the control machine
+  ansible.builtin.set_fact:
+    fwknop_key: "{{ lookup('ansible.builtin.ini', 'KEY_BASE64', section=fwknop_stanza, file=fwknop_rc) }}"
+    fwknop_hmac: "{{ lookup('ansible.builtin.ini', 'HMAC_KEY_BASE64', section=fwknop_stanza, file=fwknop_rc) }}"
+  no_log: true
+
+- name: Keys present
+  ansible.builtin.assert:
+    that: [fwknop_key | length > 0, fwknop_hmac | length > 0]
+    fail_msg: "no [{{ fwknop_stanza }}] stanza with KEY_BASE64/HMAC_KEY_BASE64 in {{ fwknop_rc }}"
+  no_log: true
+
+- name: fwknop server
+  ansible.builtin.apt:
+    name: fwknop-server
+
+- name: fwknopd.conf
+  ansible.builtin.copy:
+    dest: /etc/fwknop/fwknopd.conf
+    content: |
+      # Managed by Ansible.
+      PCAP_INTF               {{ ansible_default_ipv4.interface }};
+      PCAP_FILTER             udp port {{ fwknop_port }};
+      ENABLE_PCAP_PROMISC     N;
+      ENABLE_SPA_PACKET_AGING Y;
+      MAX_SPA_PACKET_AGE      60;
+      ENABLE_DIGEST_PERSISTENCE N;
+      ENABLE_IPT_FORWARDING   N;
+      ENABLE_IPT_LOCAL_NAT    N;
+      SYSLOG_IDENTITY         fwknopd;
+    mode: "0600"
+  notify: Restart fwknopd
+
+- name: access.conf
+  ansible.builtin.copy:
+    dest: /etc/fwknop/access.conf
+    content: |
+      # Managed by Ansible.
+      SOURCE                  ANY
+      REQUIRE_SOURCE_ADDRESS  Y
+      OPEN_PORTS              tcp/{{ ssh_port }}
+      KEY_BASE64              {{ fwknop_key }}
+      HMAC_KEY_BASE64         {{ fwknop_hmac }}
+      CMD_CYCLE_OPEN          /usr/sbin/nft add element inet botato ssh_allowed { $SRC timeout 30s }
+      CMD_CYCLE_CLOSE         NONE
+      CMD_CYCLE_TIMER         30
+    mode: "0600"
+  no_log: true
+  notify: Restart fwknopd
+
+- name: Start fwknopd at boot
+  ansible.builtin.lineinfile:
+    path: /etc/default/fwknop-server
+    regexp: '^START_DAEMON='
+    line: 'START_DAEMON="yes"'
+    create: true
+    mode: "0644"
+  notify: Restart fwknopd
+
+- name: fwknopd running
+  ansible.builtin.systemd:
+    name: fwknop-server
+    enabled: true
+    state: started
+
+- name: Apply fwknopd changes before the firewall
+  ansible.builtin.meta: flush_handlers

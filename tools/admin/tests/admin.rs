@@ -151,3 +151,13 @@ fn removing_last_device_issues_nothing() {
     );
     assert_eq!(a.revoked(), vec![r.device_id]);
 }
+
+#[test]
+fn root_pub_is_readable_without_password() {
+    let (dir, _a, root) = setup();
+    let a = Admin::open(dir.path()).unwrap();
+    assert_eq!(
+        a.state.root_pub,
+        hex::encode(root.verifying_key().to_bytes())
+    );
+}

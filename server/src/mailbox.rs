@@ -13,6 +13,8 @@ pub struct Limits {
     pub per_sender_bytes: usize,
     pub per_rcpt_count: usize,
     pub per_rcpt_bytes: usize,
+    /// All mailboxes together; the relay runs on small VPSes.
+    pub total_bytes: usize,
 }
 
 impl Default for Limits {
@@ -23,6 +25,7 @@ impl Default for Limits {
             per_sender_bytes: 16 << 20,
             per_rcpt_count: 2000,
             per_rcpt_bytes: 32 << 20,
+            total_bytes: 128 << 20,
         }
     }
 }
@@ -90,6 +93,7 @@ impl Mailbox {
             || s.bytes + size > l.per_sender_bytes
             || rc + 1 > l.per_rcpt_count
             || rb + size > l.per_rcpt_bytes
+            || self.senders.values().map(|u| u.bytes).sum::<usize>() + size > l.total_bytes
         {
             return Err(QuotaExceeded);
         }
@@ -241,6 +245,13 @@ mod tests {
             mb.put(id(4), id(8), id(103), &[0; 11], 0),
             Err(QuotaExceeded)
         );
+
+        let mut mb = Mailbox::new(Limits {
+            total_bytes: 3,
+            ..Default::default()
+        });
+        mb.put(id(1), id(8), id(100), b"ab", 0).unwrap();
+        assert_eq!(mb.put(id(2), id(9), id(101), b"ab", 0), Err(QuotaExceeded));
     }
 
     #[test]

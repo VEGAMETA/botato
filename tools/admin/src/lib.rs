@@ -82,6 +82,9 @@ pub struct ManifestSrc {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct State {
+    /// Root public key (hex); public, kept here so reading it needs no password.
+    #[serde(default)]
+    pub root_pub: String,
     pub users: Vec<UserRec>,
     pub manifest: ManifestSrc,
 }
@@ -124,7 +127,10 @@ impl Admin {
         write_new(&path, &rootkey::seal(&key, password, kdf))?;
         Admin {
             dir: dir.to_owned(),
-            state: State::default(),
+            state: State {
+                root_pub: hex::encode(key.verifying_key().to_bytes()),
+                ..Default::default()
+            },
         }
         .save()?;
         Ok(key)
@@ -144,10 +150,15 @@ impl Admin {
 
     pub fn unlock(&self, password: &[u8]) -> Result<SigningKey> {
         let raw = ctx!(fs::read(Self::root_key_path(&self.dir)), "read root.key")?;
-        rootkey::open(&raw, password).map_err(|e| match e {
+        let key = rootkey::open(&raw, password).map_err(|e| match e {
             rootkey::Error::Decrypt => Error("wrong password".into()),
             rootkey::Error::Format => Error("root.key is corrupted".into()),
-        })
+        })?;
+        let pub_hex = hex::encode(key.verifying_key().to_bytes());
+        if !self.state.root_pub.is_empty() && self.state.root_pub != pub_hex {
+            return err("root.key does not match root_pub in state.json");
+        }
+        Ok(key)
     }
 
     pub fn save(&self) -> Result<()> {

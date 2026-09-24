@@ -1,0 +1,18 @@
+botato_dir: /opt/botato
+relay_image: botato/relay
+caddy_image: caddy:2.11-alpine
+coturn_image: coturn/coturn:4.10-alpine
+turn_min_port: 49160
+turn_max_port: 49299
+ssh_port: 22
+fwknop_port: 62201
+# Name of the ~/.fwknoprc stanza on the control machine (WSL).
+fwknop_stanza: "{{ inventory_hostname }}"
+fwknop_rc: "{{ lookup('env', 'HOME') }}/.fwknoprc"
+# Seconds before an unconfirmed firewall change is rolled back.
+firewall_rollback_secs: 180
+# Container uids.
+relay_uid: 65532
+coturn_uid: 65534
+coturn_gid: 65533
+repo_root: "{{ playbook_dir }}/../.."

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Managed by Ansible. Copies Caddy's certificate to coturn; restarts coturn only on change
+# (about once per renewal, ~60 days; calls relayed through TURN at that moment reconnect).
+set -eu
+dom='{{ relay_domain }}'
+src=$(ls -d /var/lib/docker/volumes/botato_caddy_data/_data/caddy/certificates/*/"$dom" 2>/dev/null | head -n1)
+[ -n "$src" ] || exit 0
+dst='{{ botato_dir }}/coturn/certs'
+changed=0
+for f in crt key; do
+	if ! cmp -s "$src/$dom.$f" "$dst/$f.pem"; then
+		install -o {{ coturn_uid }} -g {{ coturn_gid }} -m 0400 "$src/$dom.$f" "$dst/$f.pem"
+		changed=1
+	fi
+done
+if [ "$changed" = 1 ]; then
+	docker restart botato-coturn-1 >/dev/null
+fi

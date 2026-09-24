@@ -1,0 +1,98 @@
+# Fresh VPS only, as root (the SSH key must be set in the provider panel at creation):
+#   ansible-playbook -i inventory.ini bootstrap.yml -e ansible_user=root
+# Repeats the manual bootstrap: admin user `vegameta` (sudo with password),
+# `deploy` (key-only, NOPASSWD sudo for Ansible), SSH hardening, root password locked.
+- name: Bootstrap a fresh server
+  hosts: relay
+  gather_facts: false
+  vars:
+    admin_user: vegameta
+    deploy_user: deploy
+    admin_pubkey: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    deploy_pubkey: "{{ lookup('file', '~/.ssh/deploy_ed25519.pub') }}"
+  vars_prompt:
+    - name: admin_password
+      prompt: "sudo password for {{ admin_user }}"
+      private: true
+      confirm: true
+
+  tasks:
+    - name: Hash the admin password locally (no passlib needed)
+      delegate_to: localhost
+      ansible.builtin.command: openssl passwd -6 -stdin
+      args:
+        stdin: "{{ admin_password }}"
+      register: admin_hash
+      changed_when: false
+      no_log: true
+
+    - name: Install sudo
+      ansible.builtin.apt:
+        name: sudo
+        update_cache: true
+
+    - name: Users
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        shell: /bin/bash
+        groups: "{{ item.groups }}"
+        append: true
+        password: "{{ item.password }}"
+      loop:
+        - { name: "{{ admin_user }}", groups: [sudo], password: "{{ admin_hash.stdout }}" }
+        - { name: "{{ deploy_user }}", groups: [], password: "!" }
+      no_log: true
+
+    - name: Authorized keys
+      ansible.posix.authorized_key:
+        user: "{{ item.user }}"
+        key: "{{ item.key }}"
+        exclusive: true
+      loop:
+        - { user: "{{ admin_user }}", key: "{{ admin_pubkey }}" }
+        - { user: "{{ deploy_user }}", key: "{{ deploy_pubkey }}" }
+
+    - name: NOPASSWD sudo for deploy
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/deploy
+        content: "{{ deploy_user }} ALL=(ALL) NOPASSWD: ALL\n"
+        mode: "0440"
+        validate: visudo -cf %s
+
+    - name: SSH hardening
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/00-hardening.conf
+        content: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload sshd
+
+    - name: Apply sshd changes now
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check that deploy can log in before locking root out
+      delegate_to: localhost
+      ansible.builtin.command: >
+        ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/deploy_ed25519
+        {{ deploy_user }}@{{ ansible_host }} sudo -n true
+      changed_when: false
+
+    - name: Lock the root password
+      ansible.builtin.user:
+        name: root
+        password_lock: true
+
+  handlers:
+    - name: Check full sshd config
+      listen: Reload sshd
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+
+    - name: Reload ssh service
+      listen: Reload sshd
+      ansible.builtin.systemd:
+        name: ssh
+        state: reloaded

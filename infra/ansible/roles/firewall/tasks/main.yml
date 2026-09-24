@@ -1,0 +1,48 @@
+# Dead man's switch: the new ruleset is applied with a pending rollback that deletes our
+# table (= everything open again). The rollback is cancelled only after a *new* SSH
+# connection (after knocking) succeeds. If Ansible loses the server, wait
+# `firewall_rollback_secs` and the old state returns by itself.
+
+- name: nftables.conf
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  register: nft_conf
+
+- name: Is our table loaded
+  ansible.builtin.command: /usr/sbin/nft list table inet botato
+  register: nft_loaded
+  changed_when: false
+  failed_when: false
+
+- name: Apply with rollback
+  when: nft_conf.changed or nft_loaded.rc != 0
+  block:
+    - name: Arm rollback
+      ansible.builtin.command: >
+        systemd-run --unit=botato-fw-rollback --on-active={{ firewall_rollback_secs }}
+        /usr/sbin/nft delete table inet botato
+
+    - name: Apply ruleset
+      ansible.builtin.command: /usr/sbin/nft -f /etc/nftables.conf
+
+    - name: Drop the existing SSH connection
+      ansible.builtin.meta: reset_connection
+
+    - name: Reconnect through the knock
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/knock.yml"
+        apply:
+          tags: [firewall]
+
+    - name: Disarm rollback
+      ansible.builtin.systemd:
+        name: botato-fw-rollback.timer
+        state: stopped
+
+- name: Load rules at boot
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true

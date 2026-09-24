@@ -1,0 +1,20 @@
+# Sends one SPA packet from the control machine. Harmless before the firewall exists.
+- name: Check for the fwknop client
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: which fwknop
+  register: fwknop_client
+  changed_when: false
+  failed_when: false
+  run_once: true
+
+- name: Knock
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command: fwknop -n {{ fwknop_stanza }} --rc-file {{ fwknop_rc }}
+  when: fwknop_client.rc == 0
+  changed_when: false
+
+- name: Wait for SSH after knocking
+  ansible.builtin.wait_for_connection:
+    timeout: 20

@@ -1,0 +1,229 @@
+- name: Check required variables
+  ansible.builtin.assert:
+    that:
+      - relay_domain is defined
+      - root_pub is defined and root_pub | length == 64
+    fail_msg: set relay_domain and root_pub (admin root public key, hex) in inventory.ini
+
+# ---- relay image: built on the control machine, the VPS is too small to compile Rust
+
+- name: Image tag from git
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command: git -C {{ repo_root }} describe --always --dirty
+  register: git_rev
+  changed_when: false
+
+- name: Set image tag
+  ansible.builtin.set_fact:
+    relay_tag: "{{ git_rev.stdout }}"
+
+- name: Is the image already on the server
+  ansible.builtin.command: docker image inspect {{ relay_image }}:{{ relay_tag }}
+  register: image_present
+  changed_when: false
+  failed_when: false
+
+- name: Build and ship the relay image
+  when: image_present.rc != 0 or relay_tag is search('dirty')
+  block:
+    - name: Build locally
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: >
+        docker build -q -f infra/Dockerfile.relay -t {{ relay_image }}:{{ relay_tag }} .
+      args:
+        chdir: "{{ repo_root }}"
+
+    - name: Save locally
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: docker save -o /tmp/botato-relay.tar {{ relay_image }}:{{ relay_tag }}
+
+    - name: Upload
+      ansible.builtin.copy:
+        src: /tmp/botato-relay.tar
+        dest: /tmp/botato-relay.tar
+        mode: "0600"
+
+    - name: Load
+      ansible.builtin.command: docker load -i /tmp/botato-relay.tar
+
+    - name: Remove the upload
+      ansible.builtin.file:
+        path: /tmp/botato-relay.tar
+        state: absent
+
+# ---- directories and secrets (generated on the server, never leave it)
+
+- name: Directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ botato_dir }}", mode: "0755" }
+    - { path: "{{ botato_dir }}/relay", owner: "{{ relay_uid }}", mode: "0700" }
+    - { path: "{{ botato_dir }}/config", mode: "0755" }
+    - { path: "{{ botato_dir }}/coturn", group: "{{ coturn_gid }}", mode: "0750" }
+    - { path: "{{ botato_dir }}/coturn/certs", group: "{{ coturn_gid }}", mode: "0750" }
+
+- name: TURN secret
+  ansible.builtin.shell: umask 077 && openssl rand -hex 32 > {{ botato_dir }}/relay/turn_secret
+  args:
+    creates: "{{ botato_dir }}/relay/turn_secret"
+
+- name: TURN secret ownership
+  ansible.builtin.file:
+    path: "{{ botato_dir }}/relay/turn_secret"
+    owner: "{{ relay_uid }}"
+    mode: "0400"
+
+- name: Read TURN secret
+  ansible.builtin.slurp:
+    src: "{{ botato_dir }}/relay/turn_secret"
+  register: turn_secret_raw
+  no_log: true
+
+- name: Server key (created on first run) and its public part
+  ansible.builtin.command: >
+    docker run --rm --network none --user {{ relay_uid }}
+    -v {{ botato_dir }}/relay:/secrets {{ relay_image }}:{{ relay_tag }}
+    keygen --key /secrets/server.key
+  register: server_pub
+  changed_when: false
+
+- name: Placeholder TURN TLS cert until Caddy has the real one
+  ansible.builtin.command: >
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 7
+    -subj /CN={{ relay_domain }}
+    -keyout {{ botato_dir }}/coturn/certs/key.pem -out {{ botato_dir }}/coturn/certs/crt.pem
+  args:
+    creates: "{{ botato_dir }}/coturn/certs/crt.pem"
+
+- name: TURN cert ownership
+  ansible.builtin.file:
+    path: "{{ botato_dir }}/coturn/certs/{{ item }}"
+    owner: "{{ coturn_uid }}"
+    group: "{{ coturn_gid }}"
+    mode: "0400"
+  loop: [crt.pem, key.pem]
+
+- name: Signed manifest from the admin machine
+  when: admin_manifest is defined
+  ansible.builtin.copy:
+    src: "{{ admin_manifest }}"
+    dest: "{{ botato_dir }}/config/manifest.bin"
+    mode: "0644"
+
+# ---- configs
+
+- name: compose.yml
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ botato_dir }}/compose.yml"
+    mode: "0644"
+
+- name: Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ botato_dir }}/Caddyfile"
+    mode: "0644"
+  register: caddyfile
+
+- name: turnserver.conf
+  ansible.builtin.template:
+    src: turnserver.conf.j2
+    dest: "{{ botato_dir }}/coturn/turnserver.conf"
+    owner: "{{ coturn_uid }}"
+    group: "{{ coturn_gid }}"
+    mode: "0400"
+  diff: false
+  register: turnconf
+
+- name: Pick the compose command
+  ansible.builtin.shell: docker compose version >/dev/null 2>&1 && echo "docker compose" || echo docker-compose
+  register: compose_bin
+  changed_when: false
+
+- name: Start
+  ansible.builtin.command: "{{ compose_bin.stdout }} -p botato up -d --remove-orphans"
+  args:
+    chdir: "{{ botato_dir }}"
+  register: compose_up
+  changed_when: "'Started' in compose_up.stderr or 'Recreated' in compose_up.stderr or 'Created' in compose_up.stderr"
+
+- name: Restart services whose mounted config changed
+  ansible.builtin.command: "{{ compose_bin.stdout }} -p botato restart {{ item.svc }}"
+  args:
+    chdir: "{{ botato_dir }}"
+  when: item.changed and not compose_up.changed
+  loop:
+    - { svc: caddy, changed: "{{ caddyfile.changed }}" }
+    - { svc: coturn, changed: "{{ turnconf.changed }}" }
+
+# ---- Caddy's certificate for coturn (TURN over TLS)
+
+- name: Cert sync script
+  ansible.builtin.template:
+    src: botato-turn-certs.sh.j2
+    dest: /usr/local/sbin/botato-turn-certs
+    mode: "0755"
+
+- name: Cert sync units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    mode: "0644"
+  loop:
+    - name: botato-turn-certs.service
+      content: |
+        [Unit]
+        Description=Copy Caddy's certificate to coturn
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/botato-turn-certs
+    - name: botato-turn-certs.timer
+      content: |
+        [Unit]
+        Description=Daily coturn certificate sync
+        [Timer]
+        OnCalendar=daily
+        RandomizedDelaySec=1h
+        Persistent=true
+        [Install]
+        WantedBy=timers.target
+
+- name: Cert sync timer enabled
+  ansible.builtin.systemd:
+    name: botato-turn-certs.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Caddy to obtain the certificate
+  ansible.builtin.shell: >
+    ls /var/lib/docker/volumes/botato_caddy_data/_data/caddy/certificates/*/{{ relay_domain }}/{{ relay_domain }}.crt
+  register: caddy_cert
+  until: caddy_cert.rc == 0
+  retries: 18
+  delay: 10
+  changed_when: false
+  failed_when: false
+
+- name: Sync the certificate now
+  ansible.builtin.command: /usr/local/sbin/botato-turn-certs
+  when: caddy_cert.rc == 0
+  changed_when: false
+
+- name: Report
+  ansible.builtin.debug:
+    msg:
+      - "server_pub: {{ server_pub.stdout }}"
+      - "TLS cert: {{ 'ok' if caddy_cert.rc == 0 else 'NOT YET (check DNS and port 443)' }}"
+      - "Add to the manifest: admin manifest server-add --url wss://{{ relay_domain }}/ws --pub-key {{ server_pub.stdout }} --ip {{ ansible_host }}"
