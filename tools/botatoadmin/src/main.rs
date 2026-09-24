@@ -1,5 +1,5 @@
 //! botatoadmin: minimal GUI over the admin library for the everyday task —
-//! turn a device's enrollment request into a certificate.
+//! turn a device's enrollment request into a certificate, or remove a lost device.
 
 #![windows_subsystem = "windows"]
 
@@ -48,6 +48,9 @@ struct App {
     status: Option<(bool, String)>,
     cert_text: Option<(String, String)>, // (title, text)
     qr: Option<egui::TextureHandle>,
+    /// User whose devices are listed for removal.
+    selected: Option<String>,
+    remove_password: String,
 }
 
 impl App {
@@ -70,6 +73,8 @@ impl App {
             status: None,
             cert_text: None,
             qr: None,
+            selected: None,
+            remove_password: String::new(),
         }
     }
 
@@ -132,6 +137,49 @@ impl App {
                 self.request = None;
                 self.name.clear();
                 self.checked = false;
+            }
+            Err(e) => self.status = Some((false, e)),
+        }
+    }
+
+    /// Reissues the owner's cert without the device and signs a manifest revoking it.
+    fn remove_device(&mut self, ctx: &egui::Context, device: &str) {
+        let Ok(admin) = self.admin.as_mut() else {
+            return;
+        };
+        let result = (|| -> Result<(Option<String>, u64), String> {
+            let root = admin
+                .unlock(self.remove_password.as_bytes())
+                .map_err(|e| e.to_string())?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let id = parse_id(device).map_err(|e| e.to_string())?;
+            let issued = admin
+                .remove_device(&root, &id, self.days as u64, now)
+                .map_err(|e| e.to_string())?;
+            let (version, _) = admin.sign_manifest(&root, now).map_err(|e| e.to_string())?;
+            Ok((issued.map(|i| i.text), version))
+        })();
+        self.remove_password.zeroize();
+        self.remove_password.clear();
+        match result {
+            Ok((cert, version)) => {
+                self.status = Some((
+                    true,
+                    format!(
+                        "Устройство {} удалено, манифест v{version} подписан.                          Задеплойте манифест на сервер (deploy.yml --tags app).",
+                        &device[..8]
+                    ),
+                ));
+                match cert {
+                    Some(text) => self.show_cert(ctx, "Перевыпущенный сертификат".into(), text),
+                    None => {
+                        self.cert_text = None;
+                        self.qr = None;
+                    }
+                }
             }
             Err(e) => self.status = Some((false, e)),
         }
@@ -221,6 +269,7 @@ impl eframe::App for App {
                         if resp.clicked()
                             && let Ok(a) = &self.admin
                         {
+                            self.selected = Some(id.clone());
                             match parse_id(id).and_then(|uid| a.cert_text(&uid)) {
                                 Ok(text) => {
                                     self.show_cert(&ctx, format!("Сертификат: {name}"), text)
@@ -235,6 +284,53 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
+                if let Some((_, name, devices)) = self
+                    .selected
+                    .as_ref()
+                    .and_then(|s| users.iter().find(|u| &u.0 == s))
+                    .cloned()
+                {
+                    ui.horizontal(|ui| {
+                        ui.heading(format!("Устройства «{name}»"));
+                        if ui.button("Скрыть").clicked() {
+                            self.selected = None;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Пароль корневого ключа:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.remove_password)
+                                .password(true)
+                                .desired_width(220.0),
+                        );
+                    });
+                    let mut remove = None;
+                    for d in &devices {
+                        ui.horizontal(|ui| {
+                            ui.monospace(d);
+                            if ui
+                                .add_enabled(
+                                    !self.remove_password.is_empty(),
+                                    egui::Button::new("Удалить"),
+                                )
+                                .clicked()
+                            {
+                                remove = Some(d.clone());
+                            }
+                        });
+                    }
+                    ui.label(
+                        egui::RichText::new(
+                            "Удаление перевыпускает сертификат и отзывает устройство в манифесте.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    if let Some(d) = remove {
+                        self.remove_device(&ctx, &d);
+                    }
+                    ui.separator();
+                }
                 ui.heading("Подключить устройство");
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
