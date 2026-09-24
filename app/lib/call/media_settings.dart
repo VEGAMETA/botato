@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum AudioMode { voice, clean }
@@ -25,6 +27,17 @@ class MediaSettings {
   /// Contacts the user added (user ids); null before the first run of this scheme. Local only.
   Set<String>? get addedContacts => _prefs.getStringList('added_contacts')?.toSet();
   set addedContacts(Set<String>? v) => _prefs.setStringList('added_contacts', (v ?? const {}).toList());
+
+  /// Local display names for other users (user id -> name). Never leave the device.
+  Map<String, String> get contactAliases {
+    try {
+      return Map<String, String>.from(jsonDecode(_prefs.getString('contact_aliases') ?? '{}') as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  set contactAliases(Map<String, String> v) => _prefs.setString('contact_aliases', jsonEncode(v));
 
   /// Forgotten contacts under the old scheme (everyone visible unless hidden); migration only.
   Set<String> takeLegacyHidden() {

@@ -40,12 +40,55 @@ class RelayService extends ChangeNotifier {
 
   bool isAdded(String userId) => settings.addedContacts?.contains(userId) ?? false;
 
-  /// Known users (directory or local cache) whose name or user id matches [query] exactly,
-  /// ignoring case. Only people who have ever connected with a certificate can be found.
+  /// Known users (directory or local cache) whose name (from the certificate or our alias) or
+  /// user id matches [query] exactly, ignoring case. Only people who have ever connected with a
+  /// certificate can be found.
   List<core.ContactInfo> findContacts(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    return contacts.where((c) => !c.isMe && (c.name.toLowerCase() == q || c.userId == q)).toList();
+    return contacts
+        .where((c) => !c.isMe && (c.name.toLowerCase() == q || certName(c.userId).toLowerCase() == q || c.userId == q))
+        .toList();
+  }
+
+  Map<String, String> _certNames = {};
+
+  /// Contacts with our local aliases applied, so every screen and notification shows them.
+  List<core.ContactInfo> _loadContacts() {
+    final aliases = settings.contactAliases;
+    final raw = core.clientContacts();
+    _certNames = {for (final c in raw) c.userId: c.name};
+    return [
+      for (final c in raw)
+        switch (aliases[c.userId]) {
+          final alias? when !c.isMe => core.ContactInfo(
+            userId: c.userId,
+            name: alias,
+            devices: c.devices,
+            isMe: c.isMe,
+          ),
+          _ => c,
+        },
+    ];
+  }
+
+  /// The name the admin put in the user's certificate.
+  String certName(String userId) => _certNames[userId] ?? '';
+
+  bool hasAlias(String userId) => settings.contactAliases.containsKey(userId);
+
+  /// Local display name; null or blank restores the certificate name.
+  void rename(String userId, String? alias) {
+    final a = settings.contactAliases;
+    final v = alias?.trim() ?? '';
+    if (v.isEmpty || v == certName(userId)) {
+      a.remove(userId);
+    } else {
+      a[userId] = v;
+    }
+    settings.contactAliases = a;
+    contacts = _loadContacts();
+    notifyListeners();
   }
 
   void add(String userId) {
@@ -109,7 +152,7 @@ class RelayService extends ChangeNotifier {
       if (_lastNet != null && !listEquals(r, _lastNet)) reconnect();
       _lastNet = r;
     });
-    contacts = core.clientContacts();
+    contacts = _loadContacts();
     _loadConversations();
     _migrateContacts();
     notifyListeners();
@@ -127,12 +170,12 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_Online(:final server):
         state = ConnState.online;
         detail = server;
-        contacts = core.clientContacts();
+        contacts = _loadContacts();
       case core.ClientEvent_Offline(:final reason):
         state = ConnState.offline;
         detail = reason;
       case core.ClientEvent_ContactsChanged():
-        contacts = core.clientContacts();
+        contacts = _loadContacts();
       case core.ClientEvent_Signal(:final fromUser, :final fromDevice, :final payload):
         add(fromUser); // whoever calls us shows up in the list
         try {

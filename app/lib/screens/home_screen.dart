@@ -232,6 +232,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         onVideo: () => widget.calls.startCall(c, video: true),
                         onPing: () => _ping(c),
                         onForget: () => _forget(context, c),
+                        onRename: () => showDialog<void>(
+                          context: context,
+                          builder: (_) => _RenameDialog(relay: widget.relay, contact: c),
+                        ),
                       ),
                   ],
                 ),
@@ -251,12 +255,13 @@ class _ContactCard extends StatelessWidget {
     required this.onVideo,
     required this.onPing,
     required this.onForget,
+    required this.onRename,
   });
 
   final core.ContactInfo contact;
   final core.ConversationInfo? conversation;
   final bool enabled;
-  final VoidCallback onOpen, onCall, onVideo, onPing, onForget;
+  final VoidCallback onOpen, onCall, onVideo, onPing, onForget, onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -312,9 +317,14 @@ class _ContactCard extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: BotatoColors.smoke),
-                onSelected: (v) => v == 'ping' ? onPing() : onForget(),
+                onSelected: (v) => switch (v) {
+                  'ping' => onPing(),
+                  'rename' => onRename(),
+                  _ => onForget(),
+                },
                 itemBuilder: (_) => [
                   PopupMenuItem(value: 'ping', enabled: enabled, child: const Text('Проверить связь')),
+                  const PopupMenuItem(value: 'rename', child: Text('Переименовать…')),
                   const PopupMenuItem(value: 'forget', child: Text('Забыть…')),
                 ],
               ),
@@ -403,6 +413,56 @@ class _AddContactDialogState extends State<_AddContactDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
         FilledButton(onPressed: _submit, child: const Text('Добавить')),
+      ],
+    );
+  }
+}
+
+/// Local display name for a contact; only this device sees it.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.relay, required this.contact});
+
+  final RelayService relay;
+  final core.ContactInfo contact;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final _field = TextEditingController(text: widget.contact.name);
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  void _save(String? name) {
+    widget.relay.rename(widget.contact.userId, name);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final certName = widget.relay.certName(widget.contact.userId);
+    return AlertDialog(
+      title: const Text('Как показывать'),
+      content: TextField(
+        controller: _field,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: 'Имя',
+          helperText: 'Видно только на этом устройстве. В сертификате: $certName',
+          helperMaxLines: 2,
+        ),
+        onSubmitted: _save,
+      ),
+      actions: [
+        if (widget.relay.hasAlias(widget.contact.userId))
+          TextButton(onPressed: () => _save(null), child: const Text('Вернуть исходное')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        FilledButton(onPressed: () => _save(_field.text), child: const Text('Сохранить')),
       ],
     );
   }
