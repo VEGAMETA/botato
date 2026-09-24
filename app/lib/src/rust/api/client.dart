@@ -19,38 +19,77 @@ Stream<ClientEvent> clientStart({
   required List<int> secret,
   required String cert,
   required List<int> dbKey,
-}) => RustLib.instance.api.crateApiClientClientStart(dataDir: dataDir, secret: secret, cert: cert, dbKey: dbKey);
+}) => RustLib.instance.api.crateApiClientClientStart(
+  dataDir: dataDir,
+  secret: secret,
+  cert: cert,
+  dbKey: dbKey,
+);
 
 Future<void> clientStop() => RustLib.instance.api.crateApiClientClientStop();
 
-List<ContactInfo> clientContacts() => RustLib.instance.api.crateApiClientClientContacts();
+List<ContactInfo> clientContacts() =>
+    RustLib.instance.api.crateApiClientClientContacts();
 
 /// Seals `payload` (call-signal JSON) to one device and sends it via the relay.
 void clientSignal({required String toDevice, required String payload}) =>
-    RustLib.instance.api.crateApiClientClientSignal(toDevice: toDevice, payload: payload);
+    RustLib.instance.api.crateApiClientClientSignal(
+      toDevice: toDevice,
+      payload: payload,
+    );
 
 /// Network changed: drop the (possibly silently dead) relay connection and dial again now.
 void clientReconnect() => RustLib.instance.api.crateApiClientClientReconnect();
 
-void clientRequestTurn() => RustLib.instance.api.crateApiClientClientRequestTurn();
+void clientRequestTurn() =>
+    RustLib.instance.api.crateApiClientClientRequestTurn();
 
-void clientRefreshDirectory() => RustLib.instance.api.crateApiClientClientRefreshDirectory();
+void clientRefreshDirectory() =>
+    RustLib.instance.api.crateApiClientClientRefreshDirectory();
 
 /// This device's id (hex).
 String? clientMyDevice() => RustLib.instance.api.crateApiClientClientMyDevice();
 
 /// STUN servers from the manifest; TURN comes via `client_request_turn`.
-IceConfig clientIceConfig() => RustLib.instance.api.crateApiClientClientIceConfig();
+IceConfig clientIceConfig() =>
+    RustLib.instance.api.crateApiClientClientIceConfig();
 
 /// Queues a text message to every device of `peer_user` (and our other devices).
 String clientSendText({required String peerUser, required String text}) =>
-    RustLib.instance.api.crateApiClientClientSendText(peerUser: peerUser, text: text);
+    RustLib.instance.api.crateApiClientClientSendText(
+      peerUser: peerUser,
+      text: text,
+    );
+
+/// Queues a photo (any common image format; re-encoded, metadata dropped) with an optional caption.
+/// Runs the image work on the caller's thread: call it off the UI isolate.
+Future<String> clientSendPhoto({
+  required String peerUser,
+  required List<int> image,
+  required String caption,
+}) => RustLib.instance.api.crateApiClientClientSendPhoto(
+  peerUser: peerUser,
+  image: image,
+  caption: caption,
+);
+
+/// The full JPEG of a photo message, if downloaded.
+Future<Uint8List?> clientPhoto({required String msgId}) =>
+    RustLib.instance.api.crateApiClientClientPhoto(msgId: msgId);
 
 /// Oldest first; `before` (sent_at) pages backwards.
-List<MessageInfo> clientMessages({required String peerUser, PlatformInt64? before, required PlatformInt64 limit}) =>
-    RustLib.instance.api.crateApiClientClientMessages(peerUser: peerUser, before: before, limit: limit);
+List<MessageInfo> clientMessages({
+  required String peerUser,
+  PlatformInt64? before,
+  required PlatformInt64 limit,
+}) => RustLib.instance.api.crateApiClientClientMessages(
+  peerUser: peerUser,
+  before: before,
+  limit: limit,
+);
 
-List<ConversationInfo> clientConversations() => RustLib.instance.api.crateApiClientClientConversations();
+List<ConversationInfo> clientConversations() =>
+    RustLib.instance.api.crateApiClientClientConversations();
 
 void clientMarkRead({required String peerUser}) =>
     RustLib.instance.api.crateApiClientClientMarkRead(peerUser: peerUser);
@@ -60,26 +99,44 @@ void clientDeleteHistory({required String peerUser}) =>
     RustLib.instance.api.crateApiClientClientDeleteHistory(peerUser: peerUser);
 
 /// FCM registration token (Android). Kept in memory and sent to the relay on every connect.
-void clientSetPushToken({required String token}) => RustLib.instance.api.crateApiClientClientSetPushToken(token: token);
+void clientSetPushToken({required String token}) =>
+    RustLib.instance.api.crateApiClientClientSetPushToken(token: token);
 
 @freezed
 sealed class ClientEvent with _$ClientEvent {
   const ClientEvent._();
 
-  const factory ClientEvent.connecting({required String server}) = ClientEvent_Connecting;
-  const factory ClientEvent.online({required String server}) = ClientEvent_Online;
-  const factory ClientEvent.offline({required String reason}) = ClientEvent_Offline;
+  const factory ClientEvent.connecting({required String server}) =
+      ClientEvent_Connecting;
+  const factory ClientEvent.online({required String server}) =
+      ClientEvent_Online;
+  const factory ClientEvent.offline({required String reason}) =
+      ClientEvent_Offline;
   const factory ClientEvent.contactsChanged() = ClientEvent_ContactsChanged;
 
   /// Authenticated call signal from a device in a valid certificate.
-  const factory ClientEvent.signal({required String fromUser, required String fromDevice, required String payload}) =
-      ClientEvent_Signal;
-  const factory ClientEvent.signaled({required String toDevice, required bool online}) = ClientEvent_Signaled;
-  const factory ClientEvent.turn({required List<String> urls, required String username, required String credential}) =
-      ClientEvent_Turn;
-  const factory ClientEvent.error({required String message}) = ClientEvent_Error;
-  const factory ClientEvent.messagesChanged({required String peerUser}) = ClientEvent_MessagesChanged;
-  const factory ClientEvent.newMessage({required String peerUser, required String text}) = ClientEvent_NewMessage;
+  const factory ClientEvent.signal({
+    required String fromUser,
+    required String fromDevice,
+    required String payload,
+  }) = ClientEvent_Signal;
+  const factory ClientEvent.signaled({
+    required String toDevice,
+    required bool online,
+  }) = ClientEvent_Signaled;
+  const factory ClientEvent.turn({
+    required List<String> urls,
+    required String username,
+    required String credential,
+  }) = ClientEvent_Turn;
+  const factory ClientEvent.error({required String message}) =
+      ClientEvent_Error;
+  const factory ClientEvent.messagesChanged({required String peerUser}) =
+      ClientEvent_MessagesChanged;
+  const factory ClientEvent.newMessage({
+    required String peerUser,
+    required String text,
+  }) = ClientEvent_NewMessage;
 }
 
 class ContactInfo {
@@ -88,10 +145,16 @@ class ContactInfo {
   final List<String> devices;
   final bool isMe;
 
-  const ContactInfo({required this.userId, required this.name, required this.devices, required this.isMe});
+  const ContactInfo({
+    required this.userId,
+    required this.name,
+    required this.devices,
+    required this.isMe,
+  });
 
   @override
-  int get hashCode => userId.hashCode ^ name.hashCode ^ devices.hashCode ^ isMe.hashCode;
+  int get hashCode =>
+      userId.hashCode ^ name.hashCode ^ devices.hashCode ^ isMe.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -120,7 +183,12 @@ class ConversationInfo {
   });
 
   @override
-  int get hashCode => peerUser.hashCode ^ lastText.hashCode ^ lastAt.hashCode ^ lastFromMe.hashCode ^ unread.hashCode;
+  int get hashCode =>
+      peerUser.hashCode ^
+      lastText.hashCode ^
+      lastAt.hashCode ^
+      lastFromMe.hashCode ^
+      unread.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -144,7 +212,10 @@ class IceConfig {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || other is IceConfig && runtimeType == other.runtimeType && stun == other.stun;
+      identical(this, other) ||
+      other is IceConfig &&
+          runtimeType == other.runtimeType &&
+          stun == other.stun;
 }
 
 class MessageInfo {
@@ -157,6 +228,7 @@ class MessageInfo {
 
   /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
   final PlatformInt64 status;
+  final PhotoInfo? photo;
 
   const MessageInfo({
     required this.msgId,
@@ -164,10 +236,17 @@ class MessageInfo {
     required this.text,
     required this.sentAt,
     required this.status,
+    this.photo,
   });
 
   @override
-  int get hashCode => msgId.hashCode ^ fromMe.hashCode ^ text.hashCode ^ sentAt.hashCode ^ status.hashCode;
+  int get hashCode =>
+      msgId.hashCode ^
+      fromMe.hashCode ^
+      text.hashCode ^
+      sentAt.hashCode ^
+      status.hashCode ^
+      photo.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -178,5 +257,47 @@ class MessageInfo {
           fromMe == other.fromMe &&
           text == other.text &&
           sentAt == other.sentAt &&
-          status == other.status;
+          status == other.status &&
+          photo == other.photo;
+}
+
+class PhotoInfo {
+  final int width;
+  final int height;
+
+  /// Small JPEG preview, shown until the photo is downloaded.
+  final Uint8List thumb;
+
+  /// The full photo is on this device (`client_photo`).
+  final bool ready;
+
+  /// Expired on the relay before we got it.
+  final bool gone;
+
+  const PhotoInfo({
+    required this.width,
+    required this.height,
+    required this.thumb,
+    required this.ready,
+    required this.gone,
+  });
+
+  @override
+  int get hashCode =>
+      width.hashCode ^
+      height.hashCode ^
+      thumb.hashCode ^
+      ready.hashCode ^
+      gone.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PhotoInfo &&
+          runtimeType == other.runtimeType &&
+          width == other.width &&
+          height == other.height &&
+          thumb == other.thumb &&
+          ready == other.ready &&
+          gone == other.gone;
 }

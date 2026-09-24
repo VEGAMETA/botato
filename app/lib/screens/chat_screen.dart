@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
 import '../theme.dart';
+import 'photo_view.dart';
 
 /// Message status codes from the Rust store.
 abstract final class MsgStatus {
@@ -29,6 +32,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _focus = FocusNode();
   List<core.MessageInfo> _messages = [];
   StreamSubscription<String>? _sub;
+  bool _sendingPhoto = false;
 
   String get _peer => widget.contact.userId;
 
@@ -66,6 +70,70 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
     _focus.requestFocus();
+  }
+
+  Future<void> _pickPhoto() async {
+    var source = ImageSource.gallery;
+    if (Platform.isAndroid || Platform.isIOS) {
+      final picked = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Галерея'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Камера'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (picked == null) return;
+      source = picked;
+    }
+    final XFile? file;
+    try {
+      // On phones the picker re-encodes to JPEG (HEIC and friends become decodable);
+      // the final resize and metadata stripping happen in Rust on every platform.
+      file = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: Platform.isAndroid ? 3200 : null,
+        maxHeight: Platform.isAndroid ? 3200 : null,
+        imageQuality: Platform.isAndroid ? 95 : null,
+        requestFullMetadata: false,
+      );
+    } catch (e) {
+      _toast('Не удалось открыть фото: $e');
+      return;
+    }
+    if (file == null) return;
+    await _sendPhoto(await file.readAsBytes());
+  }
+
+  Future<void> _sendPhoto(Uint8List bytes) async {
+    final caption = _input.text.trim();
+    setState(() => _sendingPhoto = true);
+    try {
+      await core.clientSendPhoto(peerUser: _peer, image: bytes, caption: caption);
+      if (caption.isNotEmpty && _input.text.trim() == caption) _input.clear();
+      _reload();
+    } catch (e) {
+      _toast('$e');
+    } finally {
+      if (mounted) setState(() => _sendingPhoto = false);
+    }
+  }
+
+  void _toast(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   @override
@@ -118,13 +186,19 @@ class _ChatScreenState extends State<ChatScreen> {
                     },
                   ),
           ),
+          if (_sendingPhoto) const LinearProgressIndicator(minHeight: 2),
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 4, 6, 8),
+              padding: const EdgeInsets.fromLTRB(4, 4, 6, 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  IconButton(
+                    tooltip: 'Фото',
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    onPressed: _sendingPhoto ? null : _pickPhoto,
+                  ),
                   Expanded(
                     child: CallbackShortcuts(
                       // Desktop: Enter sends, Shift+Enter makes a new line.
@@ -137,7 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         maxLines: 6,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
-                          hintText: 'Сообщение',
+                          hintText: 'Сообщение или подпись к фото',
                           filled: true,
                           fillColor: Theme.of(context).colorScheme.surfaceContainer,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -245,7 +319,16 @@ class _Bubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              SelectableText(m.text, style: const TextStyle(fontSize: 15)),
+              if (m.photo case final photo?) ...[
+                PhotoContent(msgId: m.msgId, photo: photo),
+                if (m.text.isNotEmpty) const SizedBox(height: 6),
+              ],
+              if (m.text.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: 1,
+                  child: SelectableText(m.text, style: const TextStyle(fontSize: 15)),
+                ),
               const SizedBox(height: 2),
               Row(
                 mainAxisSize: MainAxisSize.min,

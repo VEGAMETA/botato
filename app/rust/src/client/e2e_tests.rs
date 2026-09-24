@@ -30,7 +30,11 @@ struct Client {
 async fn net() -> Net {
     let root = proto::generate_signing_key();
     let server_key = proto::generate_signing_key();
-    let relay = relay::Relay::new(relay::Config::new(root.verifying_key().to_bytes(), server_key.clone()));
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = relay::Config::new(root.verifying_key().to_bytes(), server_key.clone());
+    let files = relay::files::Files::open(&dir.path().join("relay-files"), Default::default()).unwrap();
+    cfg.files = Some(Arc::new(files));
+    let relay = relay::Relay::new(cfg);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, relay::router(relay)).await.unwrap() });
@@ -44,7 +48,7 @@ async fn net() -> Net {
         }],
         ..Default::default()
     };
-    Net { root, manifest, dir: tempfile::tempdir().unwrap() }
+    Net { root, manifest, dir }
 }
 
 /// A user with `n` devices; returns their secrets and the signed cert.
@@ -185,4 +189,45 @@ async fn messages_receipts_multidevice_and_offline() {
 
 async fn b_reply(bob1: &Client, alice: &Id) {
     bob1.send(alice, "и тебе");
+}
+
+#[tokio::test]
+async fn photo_upload_download() {
+    let net = net().await;
+    let (alice, mut a_devs, a_cert) = user(&net, "alice", 1);
+    let (bob, mut b_devs, b_cert) = user(&net, "bob", 1);
+    let mut a = start(&net, a_devs.remove(0), alice, &a_cert);
+    let mut b = start(&net, b_devs.remove(0), bob, &b_cert);
+    a.online().await;
+    b.online().await;
+    a.shared.contacts.lock().unwrap().merge(&[b_cert.clone()], config::now(), &net.manifest);
+    b.shared.contacts.lock().unwrap().merge(&[a_cert.clone()], config::now(), &net.manifest);
+
+    let img: image::RgbImage = image::ImageBuffer::from_fn(2400, 1800, |x, y| image::Rgb([(x / 10) as u8, (y / 10) as u8, 7]));
+    let mut png = vec![];
+    image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+    let msg = messaging::compose_photo(&a.shared, &bob, &png, "закат").unwrap();
+    a.tx.send(Cmd::Flush).unwrap();
+
+    let e = b.wait(|e| matches!(e, Event::NewMessage { .. })).await;
+    let Event::NewMessage { text, .. } = e else { unreachable!() };
+    assert_eq!(text, "📷 закат");
+    // The download finishes after the message itself.
+    for _ in 0..100 {
+        if b.shared.store.lock().unwrap().photo_data(&msg).unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let got = b.shared.store.lock().unwrap().photo_data(&msg).unwrap().expect("photo downloaded");
+    let mine = a.shared.store.lock().unwrap().photo_data(&msg).unwrap().unwrap();
+    assert_eq!(got, mine);
+    let decoded = image::load_from_memory(&got).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (1600, 1200));
+    let m = b.shared.store.lock().unwrap().messages(&alice, None, 10).unwrap().remove(0);
+    let p = m.photo.unwrap();
+    assert!(p.ready && !p.gone && m.text == "закат");
+    // Delivered: nothing left to re-upload.
+    a.wait_status(&bob, store::DELIVERED).await;
+    assert!(a.shared.store.lock().unwrap().uploads_due().unwrap().is_empty());
 }

@@ -194,6 +194,18 @@ pub struct MessageInfo {
     pub sent_at: i64,
     /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
     pub status: i64,
+    pub photo: Option<PhotoInfo>,
+}
+
+pub struct PhotoInfo {
+    pub width: u32,
+    pub height: u32,
+    /// Small JPEG preview, shown until the photo is downloaded.
+    pub thumb: Vec<u8>,
+    /// The full photo is on this device (`client_photo`).
+    pub ready: bool,
+    /// Expired on the relay before we got it.
+    pub gone: bool,
 }
 
 pub struct ConversationInfo {
@@ -215,6 +227,26 @@ pub fn client_send_text(peer_user: String, text: String) -> anyhow::Result<Strin
     Ok(msg_id.to_hex())
 }
 
+/// Queues a photo (any common image format; re-encoded, metadata dropped) with an optional caption.
+/// Runs the image work on the caller's thread: call it off the UI isolate.
+pub fn client_send_photo(peer_user: String, image: Vec<u8>, caption: String) -> anyhow::Result<String> {
+    let peer = parse_id(&peer_user)?;
+    let (shared, tx) = {
+        let guard = RUNNING.lock().unwrap();
+        let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
+        (r.shared.clone(), r.tx.clone())
+    };
+    let msg_id = client::messaging::compose_photo(&shared, &peer, &image, &caption)?;
+    let _ = tx.send(Cmd::Flush);
+    Ok(msg_id.to_hex())
+}
+
+/// The full JPEG of a photo message, if downloaded.
+pub fn client_photo(msg_id: String) -> anyhow::Result<Option<Vec<u8>>> {
+    let id = parse_id(&msg_id)?;
+    with(|r| r.shared.store.lock().unwrap().photo_data(&id))?
+}
+
 /// Oldest first; `before` (sent_at) pages backwards.
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_messages(peer_user: String, before: Option<i64>, limit: i64) -> anyhow::Result<Vec<MessageInfo>> {
@@ -222,7 +254,14 @@ pub fn client_messages(peer_user: String, before: Option<i64>, limit: i64) -> an
     with(|r| r.shared.store.lock().unwrap().messages(&peer, before, limit))??
         .into_iter()
         .map(|m| {
-            Ok(MessageInfo { msg_id: m.msg_id.to_hex(), from_me: m.from_me, text: m.text, sent_at: m.sent_at, status: m.status })
+            Ok(MessageInfo {
+                msg_id: m.msg_id.to_hex(),
+                from_me: m.from_me,
+                text: m.text,
+                sent_at: m.sent_at,
+                status: m.status,
+                photo: m.photo.map(|p| PhotoInfo { width: p.w, height: p.h, thumb: p.thumb, ready: p.ready, gone: p.gone }),
+            })
         })
         .collect()
 }
@@ -234,7 +273,7 @@ pub fn client_conversations() -> Vec<ConversationInfo> {
         .into_iter()
         .map(|c| ConversationInfo {
             peer_user: c.peer_user.to_hex(),
-            last_text: c.last_text,
+            last_text: client::messaging::preview(&c.last_text, c.last_photo),
             last_at: c.last_at,
             last_from_me: c.last_from_me,
             unread: c.unread,

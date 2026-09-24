@@ -3,6 +3,7 @@
 
 pub mod contacts;
 pub mod messaging;
+pub mod photo;
 pub mod store;
 #[cfg(test)]
 mod e2e_tests;
@@ -15,7 +16,7 @@ use proto::auth::{self, Nonce};
 use proto::cert::Cert;
 use proto::device::DeviceSecret;
 use proto::envelope::{self, KIND_SIGNAL};
-use proto::frames::{ClientFrame, PROTOCOL_VERSION, ServerFrame};
+use proto::frames::{ClientFrame, ErrorCode, PROTOCOL_VERSION, ServerFrame};
 use proto::manifest::{Manifest, ServerEntry};
 use proto::{Id, enroll};
 use tokio::sync::mpsc;
@@ -197,6 +198,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
     // Everything in the outbox goes out on every connect: the relay may have been restarted
     // or replaced, and it deduplicates copies it already has.
     flush(shared, &mut ws, &mut s).await?;
+    request_downloads(shared, &mut ws, &mut s).await?;
 
     let mut last_rx = tokio::time::Instant::now();
     let mut ping = tokio::time::interval(PING_EVERY);
@@ -241,6 +243,9 @@ struct SessionState {
     sent: std::collections::HashSet<Id>,
     /// Deliveries from senders we don't know yet (retried after a directory update).
     pending: Vec<(Id, Vec<u8>)>,
+    /// Attachments uploaded / requested on this connection.
+    uploaded: std::collections::HashSet<Id>,
+    downloading: std::collections::HashSet<Id>,
 }
 
 async fn send_push_token(shared: &Shared, ws: &mut Ws) -> anyhow::Result<()> {
@@ -251,11 +256,30 @@ async fn send_push_token(shared: &Shared, ws: &mut Ws) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Photos go up before the message copies that point at them: the relay handles one
+/// connection's frames in order, so a receiver can't ask for a file that isn't there yet.
 async fn flush(shared: &Shared, ws: &mut Ws, s: &mut SessionState) -> anyhow::Result<()> {
+    let uploads = shared.store.lock().unwrap().uploads_due()?;
+    for u in uploads {
+        if s.uploaded.insert(u.file_id) {
+            let data = proto::file::seal(&u.key, &u.file_id, &u.data).map_err(|e| anyhow::anyhow!("{e}"))?;
+            send(ws, &ClientFrame::Upload { id: u.file_id, data }).await?;
+        }
+    }
     let rows = shared.store.lock().unwrap().outbox()?;
     for row in rows {
         if s.sent.insert(row.id) {
             send(ws, &ClientFrame::Send { to: row.to_device, id: row.id, blob: row.blob }).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn request_downloads(shared: &Shared, ws: &mut Ws, s: &mut SessionState) -> anyhow::Result<()> {
+    let pending = shared.store.lock().unwrap().pending_downloads()?;
+    for id in pending {
+        if s.downloading.insert(id) {
+            send(ws, &ClientFrame::Download { id }).await?;
         }
     }
     Ok(())
@@ -280,6 +304,7 @@ async fn deliver(shared: &Shared, ws: &mut Ws, s: &mut SessionState, id: Id, blo
                 emit(Event::NewMessage { peer, text });
             }
             flush(shared, ws, s).await?; // the receipt we owe
+            request_downloads(shared, ws, s).await?;
         }
         Ok(messaging::Delivered::UnknownSender) => {
             s.pending.push((id, blob));
@@ -324,8 +349,23 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
         },
         ServerFrame::Signaled { to, online } => emit(Event::Signaled { to, online }),
         ServerFrame::Turn { urls, username, credential, .. } => emit(Event::Turn { urls, username, credential }),
+        ServerFrame::Uploaded { .. } => {}
+        ServerFrame::File { id, data } => {
+            s.downloading.remove(&id);
+            match messaging::on_file(shared, &id, &data) {
+                Ok(Some(peer)) => emit(Event::MessagesChanged { peer }),
+                Ok(None) => {}
+                Err(e) => emit(Event::Error { message: format!("фото: {e}") }),
+            }
+        }
+        // Not there (yet): asked again on the next connection, given up after 24 h.
+        ServerFrame::Error { r#ref, id: Some(id), code: ErrorCode::NotFound } if r#ref == "download" => {
+            if let Ok(Some(peer)) = messaging::on_file_missing(shared, &id) {
+                emit(Event::MessagesChanged { peer });
+            }
+        }
         // A copy the relay refused (quota, revoked device) stays in the outbox: it is retried
-        // on the next connection and dropped at expiry.
+        // on the next connection and dropped at expiry. Same for a refused upload.
         ServerFrame::Error { r#ref, code, .. } => emit(Event::Error { message: format!("{ref}: {code:?}") }),
         ServerFrame::Ok { .. } => {}
         ServerFrame::Challenge { .. } | ServerFrame::Ready { .. } => anyhow::bail!("неожиданный фрейм"),

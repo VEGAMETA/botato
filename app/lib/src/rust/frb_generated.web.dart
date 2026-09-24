@@ -29,7 +29,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(dynamic raw);
+  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(
+    dynamic raw,
+  );
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -39,6 +41,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  PhotoInfo dco_decode_box_autoadd_photo_info(dynamic raw);
 
   @protected
   CertInfo dco_decode_cert_info(dynamic raw);
@@ -89,6 +94,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
+  PhotoInfo? dco_decode_opt_box_autoadd_photo_info(dynamic raw);
+
+  @protected
+  Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  PhotoInfo dco_decode_photo_info(dynamic raw);
+
+  @protected
   (String, CertInfo) dco_decode_record_string_cert_info(dynamic raw);
 
   @protected
@@ -107,7 +121,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(SseDeserializer deserializer);
+  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -117,6 +133,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  PhotoInfo sse_decode_box_autoadd_photo_info(SseDeserializer deserializer);
 
   @protected
   CertInfo sse_decode_cert_info(SseDeserializer deserializer);
@@ -146,7 +165,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ContactInfo> sse_decode_list_contact_info(SseDeserializer deserializer);
 
   @protected
-  List<ConversationInfo> sse_decode_list_conversation_info(SseDeserializer deserializer);
+  List<ConversationInfo> sse_decode_list_conversation_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<MessageInfo> sse_decode_list_message_info(SseDeserializer deserializer);
@@ -167,7 +188,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
-  (String, CertInfo) sse_decode_record_string_cert_info(SseDeserializer deserializer);
+  PhotoInfo? sse_decode_opt_box_autoadd_photo_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  PhotoInfo sse_decode_photo_info(SseDeserializer deserializer);
+
+  @protected
+  (String, CertInfo) sse_decode_record_string_cert_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -185,10 +219,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_StreamSink_client_event_Sse(RustStreamSink<ClientEvent> self, SseSerializer serializer);
+  void sse_encode_StreamSink_client_event_Sse(
+    RustStreamSink<ClientEvent> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -197,7 +237,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
-  void sse_encode_box_autoadd_i_64(PlatformInt64 self, SseSerializer serializer);
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_photo_info(
+    PhotoInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_cert_info(CertInfo self, SseSerializer serializer);
@@ -209,7 +258,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_contact_info(ContactInfo self, SseSerializer serializer);
 
   @protected
-  void sse_encode_conversation_info(ConversationInfo self, SseSerializer serializer);
+  void sse_encode_conversation_info(
+    ConversationInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_device_info(DeviceInfo self, SseSerializer serializer);
@@ -224,19 +276,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_contact_info(List<ContactInfo> self, SseSerializer serializer);
+  void sse_encode_list_contact_info(
+    List<ContactInfo> self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_list_conversation_info(List<ConversationInfo> self, SseSerializer serializer);
+  void sse_encode_list_conversation_info(
+    List<ConversationInfo> self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_list_message_info(List<MessageInfo> self, SseSerializer serializer);
+  void sse_encode_list_message_info(
+    List<MessageInfo> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
+  void sse_encode_list_prim_u_8_strict(
+    Uint8List self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_message_info(MessageInfo self, SseSerializer serializer);
@@ -245,10 +309,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
-  void sse_encode_opt_box_autoadd_i_64(PlatformInt64? self, SseSerializer serializer);
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_record_string_cert_info((String, CertInfo) self, SseSerializer serializer);
+  void sse_encode_opt_box_autoadd_photo_info(
+    PhotoInfo? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_list_prim_u_8_strict(
+    Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_photo_info(PhotoInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_record_string_cert_info(
+    (String, CertInfo) self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
