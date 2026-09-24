@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'src/rust/api/identity.dart' as core;
 import 'src/rust/frb_generated.dart';
+import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -69,8 +70,9 @@ class _BotatoAppState extends State<BotatoApp> {
     return MaterialApp(
       title: 'botato',
       navigatorKey: _navigator,
-      theme: ThemeData(colorSchemeSeed: Colors.deepPurple),
-      darkTheme: ThemeData(colorSchemeSeed: Colors.deepPurple, brightness: Brightness.dark),
+      theme: botatoTheme(Brightness.light),
+      darkTheme: botatoTheme(Brightness.dark),
+      themeMode: ThemeMode.dark,
       home: _info == null
           ? SetupScreen(
               store: widget.store,

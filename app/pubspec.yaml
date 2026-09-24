@@ -26,6 +26,25 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   freezed: ^4.0.2
   build_runner: ^2.16.1
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/potato.png
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon/legacy.png"
+  adaptive_icon_background: "#0E1A22"
+  adaptive_icon_foreground: "assets/icon/foreground.png"
+  adaptive_icon_monochrome: "assets/icon/monochrome.png"
+  min_sdk_android: 24
+  ios: false
+  windows:
+    generate: true
+    image_path: "assets/icon/potato.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/legacy.png"

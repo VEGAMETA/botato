@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../identity_store.dart';
 import '../src/rust/api/identity.dart' as core;
+import '../theme.dart';
 
 /// First launch: show the enrollment request, then accept the admin's certificate.
 class SetupScreen extends StatefulWidget {
@@ -48,66 +49,111 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
+  Widget _step(int n, String title, List<Widget> children) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 13,
+                  backgroundColor: BotatoColors.potato.withValues(alpha: 0.2),
+                  child: Text('$n', style: const TextStyle(color: BotatoColors.potato, fontSize: 13)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(title, style: Theme.of(context).textTheme.titleSmall)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Подключение устройства')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('1. Как вас подписать?'),
-          TextField(
-            controller: _name,
-            maxLength: 64,
-            decoration: const InputDecoration(hintText: 'Имя'),
-            onChanged: (v) {
-              widget.store.saveRequestedName(v);
-              _rebuildRequest();
-            },
-          ),
-          const SizedBox(height: 8),
-          const Text('2. Отправьте запрос админу (QR или текст):'),
-          const SizedBox(height: 8),
-          if (_request != null) ...[
-            Center(
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(8),
-                child: QrImageView(data: _request!, size: 260),
-              ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              children: [
+                Image.asset('assets/icon/potato.png', height: 120),
+                const SizedBox(height: 8),
+                Text('botato', textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
+                const SizedBox(height: 4),
+                const Text(
+                  'Подключение устройства',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: BotatoColors.smoke),
+                ),
+                const SizedBox(height: 16),
+                _step(1, 'Как вас подписать?', [
+                  TextField(
+                    controller: _name,
+                    maxLength: 64,
+                    decoration: const InputDecoration(hintText: 'Имя', border: OutlineInputBorder()),
+                    onChanged: (v) {
+                      widget.store.saveRequestedName(v);
+                      _rebuildRequest();
+                    },
+                  ),
+                ]),
+                _step(2, 'Отправьте запрос админу — QR или текстом', [
+                  if (_request != null) ...[
+                    Center(
+                      child: Container(
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                        padding: const EdgeInsets.all(12),
+                        child: QrImageView(data: _request!, size: 240),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.copy),
+                      label: const Text('Скопировать запрос'),
+                      onPressed: () => Clipboard.setData(ClipboardData(text: _request!)),
+                    ),
+                  ],
+                ]),
+                _step(3, 'Сверьте с админом голосом этот отпечаток', [
+                  SelectableText(
+                    _device.fingerprint,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontFamily: 'monospace',
+                      letterSpacing: 2,
+                      color: BotatoColors.potato,
+                    ),
+                  ),
+                ]),
+                _step(4, 'Вставьте сертификат от админа', [
+                  TextField(
+                    controller: _cert,
+                    minLines: 2,
+                    maxLines: 5,
+                    decoration: const InputDecoration(hintText: 'botato-cert1:…', border: OutlineInputBorder()),
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+                    ),
+                  const SizedBox(height: 12),
+                  FilledButton(onPressed: _import, child: const Text('Импортировать')),
+                ]),
+              ],
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.copy),
-              label: const Text('Скопировать запрос'),
-              onPressed: () => Clipboard.setData(ClipboardData(text: _request!)),
-            ),
-          ],
-          const SizedBox(height: 16),
-          const Text('3. Сверьте с админом голосом этот отпечаток:'),
-          const SizedBox(height: 8),
-          SelectableText(
-            _device.fingerprint,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.headlineSmall?.copyWith(fontFamily: 'monospace', letterSpacing: 2),
           ),
-          const SizedBox(height: 24),
-          const Text('4. Вставьте сертификат от админа:'),
-          TextField(
-            controller: _cert,
-            minLines: 2,
-            maxLines: 5,
-            decoration: const InputDecoration(hintText: 'botato-cert1:…'),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-            ),
-          const SizedBox(height: 8),
-          FilledButton(onPressed: _import, child: const Text('Импортировать')),
-        ],
+        ),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'call_service.dart';
+import '../theme.dart';
 import 'media_settings.dart';
 
 class CallScreen extends StatefulWidget {
@@ -77,9 +78,28 @@ class _CallScreenState extends State<CallScreen> {
     return PopScope(
       canPop: c.phase == CallPhase.idle || c.phase == CallPhase.ended,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: BotatoColors.night,
         body: Stack(
           children: [
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF123444), BotatoColors.night],
+                  ),
+                ),
+              ),
+            ),
+            if (!showRemote)
+              Align(
+                alignment: const Alignment(0, -0.2),
+                child: _PulsingAvatar(
+                  name: c.peerName,
+                  pulsing: c.phase == CallPhase.outgoing || c.phase == CallPhase.incoming || c.reconnecting,
+                ),
+              ),
             if (showRemote)
               Positioned.fill(
                 child: RTCVideoView(c.remoteRenderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain),
@@ -107,9 +127,15 @@ class _CallScreenState extends State<CallScreen> {
                   const SizedBox(height: 8),
                   Text(_status(c), style: const TextStyle(color: Colors.white70, fontSize: 18)),
                   const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 32),
-                    child: SizedBox(width: double.infinity, child: _buttons(c)),
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: _buttons(c),
                   ),
                 ],
               ),
@@ -359,6 +385,61 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 title: const Text('Сменить камеру'),
                 onTap: c.switchCamera,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Peer avatar; pulses while ringing or reconnecting.
+class _PulsingAvatar extends StatefulWidget {
+  const _PulsingAvatar({required this.name, required this.pulsing});
+
+  final String name;
+  final bool pulsing;
+
+  @override
+  State<_PulsingAvatar> createState() => _PulsingAvatarState();
+}
+
+class _PulsingAvatarState extends State<_PulsingAvatar> with SingleTickerProviderStateMixin {
+  late final _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat();
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 132.0;
+    final color = BotatoColors.avatarFor(widget.name);
+    return SizedBox(
+      width: size * 2,
+      height: size * 2,
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (_, _) => Stack(
+          alignment: Alignment.center,
+          children: [
+            if (widget.pulsing)
+              for (final phase in [0.0, 0.5])
+                Builder(
+                  builder: (_) {
+                    final t = (_anim.value + phase) % 1.0;
+                    return Container(
+                      width: size * (1 + t),
+                      height: size * (1 + t),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color.withValues(alpha: 0.25 * (1 - t)),
+                      ),
+                    );
+                  },
+                ),
+            Avatar(widget.name, size: size),
           ],
         ),
       ),
