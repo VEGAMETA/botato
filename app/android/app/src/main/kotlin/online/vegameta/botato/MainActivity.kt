@@ -33,8 +33,7 @@ class MainActivity : FlutterActivity() {
                         this,
                         call.argument<Boolean>("camera") ?: false,
                         call.argument<Boolean>("screen") ?: false,
-                    )
-                    result.success(null)
+                    ) { runOnUiThread { result.success(null) } }
                 }
                 "hide" -> {
                     CallForegroundService.hide(this)

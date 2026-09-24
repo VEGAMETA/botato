@@ -48,9 +48,26 @@ class CallForegroundService : Service() {
             ContextCompat.startForegroundService(ctx, Intent(ctx, CallForegroundService::class.java))
         }
 
-        fun setTypes(ctx: Context, camera: Boolean, screen: Boolean) {
+        /** Called (on the main thread) once startForeground has applied the latest state. */
+        private val applied = mutableListOf<() -> Unit>()
+
+        /**
+         * Starting a foreground service is asynchronous; [onApplied] runs only after the new
+         * types are in effect, so MediaProjection can be created right after it.
+         */
+        fun setTypes(ctx: Context, camera: Boolean, screen: Boolean, onApplied: () -> Unit) {
             state = state.copy(camera = camera, screen = screen)
-            if (running) show(ctx, state)
+            if (!running) {
+                onApplied()
+                return
+            }
+            synchronized(applied) { applied.add(onApplied) }
+            show(ctx, state)
+        }
+
+        private fun flushApplied() {
+            val callbacks = synchronized(applied) { applied.toList().also { applied.clear() } }
+            callbacks.forEach { it() }
         }
 
         fun hide(ctx: Context) {
@@ -67,6 +84,7 @@ class CallForegroundService : Service() {
         }
         running = true
         startInForeground()
+        flushApplied()
         return START_NOT_STICKY
     }
 
