@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../call/call_screen.dart';
 import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
@@ -74,7 +75,14 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           appBar: AppBar(
             title: Text(widget.info.name),
-            actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: r.refreshContacts)],
+            actions: [
+              IconButton(
+                tooltip: 'Звук и камера',
+                icon: const Icon(Icons.tune),
+                onPressed: () => showMediaSettings(context, widget.calls),
+              ),
+              IconButton(icon: const Icon(Icons.refresh), onPressed: r.refreshContacts),
+            ],
           ),
           body: ListView(
             children: [

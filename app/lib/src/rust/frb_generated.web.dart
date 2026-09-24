@@ -29,9 +29,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(
-    dynamic raw,
-  );
+  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -88,9 +86,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -129,9 +125,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
-  (String, CertInfo) sse_decode_record_string_cert_info(
-    SseDeserializer deserializer,
-  );
+  (String, CertInfo) sse_decode_record_string_cert_info(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -149,16 +143,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  void sse_encode_AnyhowException(
-    AnyhowException self,
-    SseSerializer serializer,
-  );
+  void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
 
   @protected
-  void sse_encode_StreamSink_client_event_Sse(
-    RustStreamSink<ClientEvent> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_StreamSink_client_event_Sse(RustStreamSink<ClientEvent> self, SseSerializer serializer);
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -185,28 +173,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_contact_info(
-    List<ContactInfo> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_list_contact_info(List<ContactInfo> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_prim_u_8_strict(
-    Uint8List self,
-    SseSerializer serializer,
-  );
+  void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
-  void sse_encode_record_string_cert_info(
-    (String, CertInfo) self,
-    SseSerializer serializer,
-  );
+  void sse_encode_record_string_cert_info((String, CertInfo) self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

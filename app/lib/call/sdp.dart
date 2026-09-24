@@ -8,7 +8,14 @@ String tuneOpus(String sdp) {
   if (rtpmap == null) return sdp;
   final pt = rtpmap.group(1)!;
   final fmtp = RegExp('^a=fmtp:$pt (.*)\$', multiLine: true);
-  const wanted = {'stereo': '1', 'sprop-stereo': '1', 'useinbandfec': '1'};
+  // maxaveragebitrate is the ceiling; the actual rate per audio mode is set with setParameters.
+  const wanted = {
+    'stereo': '1',
+    'sprop-stereo': '1',
+    'useinbandfec': '1',
+    'maxaveragebitrate': '128000',
+    'maxplaybackrate': '48000',
+  };
 
   String merge(String params) {
     final map = <String, String>{};

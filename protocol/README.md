@@ -179,7 +179,17 @@ UTF-8 JSON object. Receivers drop signals with `|now − sent_at| > 120 s`.
 | `answer` | `call`, `sdp` | accepted on this device |
 | `ice` | `call`, `candidate`, `mid`, `mline` | trickle ICE candidate |
 | `hangup` | `call`, `reason` (`hangup`, `declined`, `busy`, `answered_elsewhere`, `failed`) | end or reject |
+| `media` | `call`, `video` (bool), `screen` (bool) | what this side currently sends on its video track |
+| `reoffer` | `call`, `sdp` | caller → callee: ICE restart after a network change (`iceRestart`) |
+| `reanswer` | `call`, `sdp` | callee → caller: answer to `reoffer` |
 | `ping` / `pong` | — | diagnostics: round trip through the relay, answered automatically |
+
+Every call negotiates one audio and one video transceiver, both `sendrecv`, even for voice calls.
+Camera, screen sharing, device changes and audio modes swap tracks (`replaceTrack`) and sender
+parameters without renegotiation; `media` tells the peer what to render. Opus fmtp at setup:
+`stereo=1; sprop-stereo=1; useinbandfec=1; maxaveragebitrate=128000; maxplaybackrate=48000`
+(the actual audio bitrate per mode is set with `setParameters`). On ICE `disconnected`/`failed` the
+caller sends `reoffer`; both sides give up after 25 s without connectivity.
 
 `call` is a random 128-bit id (hex). SDP needs no separate signature: the envelope signature authenticates
 it, and WebRTC checks the peer's DTLS certificate against the fingerprint in that SDP.

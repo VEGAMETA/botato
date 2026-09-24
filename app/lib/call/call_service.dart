@@ -7,73 +7,102 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
+import 'call_notifier.dart';
 import 'call_screen.dart';
 import 'call_stats.dart';
+import 'media_settings.dart';
 import 'sdp.dart';
 
 enum CallPhase { idle, outgoing, incoming, connecting, active, ended }
 
-/// One call at a time. Signaling goes through E2E envelopes (see protocol/README.md §6.1);
+/// One call at a time. Signaling goes through E2E envelopes (protocol/README.md §6.1);
 /// media is WebRTC, direct when possible, via our TURN otherwise.
+///
+/// Both audio and video transceivers are negotiated in every call, so camera, screen
+/// sharing, device switches and audio modes change tracks/parameters without renegotiation.
 class CallService extends ChangeNotifier {
-  CallService(this.relay, this.navigatorKey) {
+  CallService(this.relay, this.navigatorKey, this.settings) {
     _sub = relay.signals.listen(_onSignal);
+    notifier.onAction = (a) {
+      if (a == 'mute') toggleMute();
+      if (a == 'hangup') phase == CallPhase.incoming ? decline() : hangup();
+    };
   }
 
   final RelayService relay;
   final GlobalKey<NavigatorState> navigatorKey;
+  final MediaSettings settings;
+  final notifier = CallNotifier();
   late final StreamSubscription<IncomingSignal> _sub;
 
   static const _ringTimeout = Duration(seconds: 45);
+  static const _reconnectDeadline = Duration(seconds: 25);
 
   CallPhase phase = CallPhase.idle;
   String peerName = '';
-  bool video = false;
   bool muted = false;
   bool speaker = false;
+  bool cameraOn = false;
+  bool screenOn = false;
+  bool peerVideo = false; // the peer sends camera or screen
+  bool reconnecting = false;
   String? endReason;
   DateTime? connectedAt;
   CallStats? stats;
   bool showStats = false;
+
+  /// Whether the call was started as a video call (UI hint for the incoming screen).
+  bool videoCall = false;
 
   final localRenderer = RTCVideoRenderer();
   final remoteRenderer = RTCVideoRenderer();
   bool _renderersReady = false;
 
   String? _callId;
+  bool _isCaller = false;
   String? _peerDevice; // the device we are actually talking to
   final _ringing = <String>{}; // outgoing: devices the offer went to
   Map<String, dynamic>? _offer; // incoming: the offer to answer
   RTCPeerConnection? _pc;
-  MediaStream? _local;
+  RTCRtpSender? _audioSender;
+  RTCRtpSender? _videoSender;
+  MediaStreamTrack? _audioTrack;
+  MediaStreamTrack? _cameraTrack;
+  MediaStreamTrack? _screenTrack;
+  MediaStream? _localView;
+  MediaStream? _remoteView;
   bool _remoteSet = false;
   final _localIce = <RTCIceCandidate>[]; // outgoing: gathered before the answer
   final _remoteIce = <RTCIceCandidate>[]; // arrived before the remote description
   Timer? _ringTimer;
   Timer? _statsTimer;
+  Timer? _restartTimer;
+  Timer? _deadline;
   CallStatsSampler? _sampler;
   bool _screenShown = false;
 
   bool get busy => phase != CallPhase.idle;
+  bool get isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   static String _newCallId() {
     final r = Random.secure();
     return List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
   }
 
-  // ---- public actions
+  // ---- call control
 
   Future<void> startCall(core.ContactInfo contact, {bool video = false}) async {
     if (busy || contact.devices.isEmpty) return;
     _reset();
     _callId = _newCallId();
-    this.video = video;
+    _isCaller = true;
+    videoCall = video;
     peerName = contact.name;
     phase = CallPhase.outgoing;
     _showScreen();
     notifyListeners();
     try {
-      await _preparePeer();
+      await _preparePeer(camera: video);
       final offer = await _pc!.createOffer();
       final sdp = tuneOpus(offer.sdp!);
       await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
@@ -82,24 +111,40 @@ class CallService extends ChangeNotifier {
         relay.signal(d, {'type': 'offer', 'call': _callId, 'sdp': sdp, 'video': video});
       }
       _ringTimer = Timer(_ringTimeout, () => hangup(reason: 'no_answer'));
+      notifier.show(peerName, 'вызов…', muted: muted);
     } catch (e) {
       _fail('не удалось начать звонок: $e');
     }
   }
 
-  Future<void> accept() async {
+  Future<void> accept({bool? video}) async {
     if (phase != CallPhase.incoming || _offer == null) return;
     _ringTimer?.cancel();
     phase = CallPhase.connecting;
     notifyListeners();
     try {
-      await _preparePeer();
+      await _preparePeer(camera: video ?? videoCall);
       await _pc!.setRemoteDescription(RTCSessionDescription(_offer!['sdp'] as String, 'offer'));
+      // Attach our tracks to the transceivers the offer created, both sendrecv.
+      for (final t in await _pc!.getTransceivers()) {
+        final kind = t.receiver.track?.kind;
+        await t.setDirection(TransceiverDirection.SendRecv);
+        if (kind == 'audio') {
+          _audioSender = t.sender;
+          await t.sender.replaceTrack(_audioTrack);
+        } else if (kind == 'video') {
+          _videoSender = t.sender;
+          await t.sender.replaceTrack(_cameraTrack);
+        }
+      }
       await _remoteDescriptionSet();
       final answer = await _pc!.createAnswer();
       final sdp = tuneOpus(answer.sdp!);
       await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'answer'));
       relay.signal(_peerDevice!, {'type': 'answer', 'call': _callId, 'sdp': sdp});
+      await _applyAudioBitrate();
+      _sendMediaState();
+      notifier.show(peerName, 'соединение…', muted: muted);
     } catch (e) {
       _fail('не удалось принять звонок: $e');
     }
@@ -111,7 +156,7 @@ class CallService extends ChangeNotifier {
     _end('отклонён');
   }
 
-  /// Local hangup (button, timeout).
+  /// Local hangup (button, notification, timeout).
   void hangup({String reason = 'hangup'}) {
     if (!busy || phase == CallPhase.ended) return;
     final targets = _peerDevice != null ? {_peerDevice!} : _ringing;
@@ -121,17 +166,117 @@ class CallService extends ChangeNotifier {
     _end(reason == 'no_answer' ? 'нет ответа' : 'завершён');
   }
 
+  // ---- in-call controls
+
   void toggleMute() {
     muted = !muted;
-    for (final t in _local?.getAudioTracks() ?? <MediaStreamTrack>[]) {
-      t.enabled = !muted;
-    }
+    _audioTrack?.enabled = !muted;
+    _updateNotification();
     notifyListeners();
   }
 
   Future<void> toggleSpeaker() async {
     speaker = !speaker;
     if (Platform.isAndroid) await Helper.setSpeakerphoneOn(speaker);
+    notifyListeners();
+  }
+
+  Future<void> toggleCamera() async {
+    if (_pc == null) return;
+    if (cameraOn) {
+      final t = _cameraTrack;
+      _cameraTrack = null;
+      cameraOn = false;
+      if (!screenOn) await _videoSender?.replaceTrack(null);
+      await t?.stop();
+    } else {
+      _cameraTrack = await _openCamera();
+      if (_cameraTrack == null) return;
+      cameraOn = true;
+      if (!screenOn) await _videoSender?.replaceTrack(_cameraTrack);
+      await notifier.update(camera: true);
+    }
+    await _refreshLocalView();
+    _sendMediaState();
+    notifyListeners();
+  }
+
+  /// Front/back camera on phones.
+  Future<void> switchCamera() async {
+    final t = _cameraTrack;
+    if (t != null) await Helper.switchCamera(t);
+  }
+
+  /// Desktop: [sourceId] from `desktopCapturer.getSources`. Android: null (system picker).
+  Future<void> startScreenShare(String? sourceId) async {
+    if (_pc == null || screenOn) return;
+    try {
+      if (Platform.isAndroid) {
+        if (!await Helper.requestCapturePermission()) return;
+        await notifier.update(screen: true); // MediaProjection needs the foreground service type
+      }
+      final stream = await navigator.mediaDevices.getDisplayMedia({
+        'audio': false,
+        'video': sourceId == null
+            ? true
+            : {
+                'deviceId': {'exact': sourceId},
+                'mandatory': {'frameRate': 15.0},
+              },
+      });
+      _screenTrack = stream.getVideoTracks().first;
+      _screenTrack!.onEnded = stopScreenShare;
+      screenOn = true;
+      await _videoSender?.replaceTrack(_screenTrack);
+      await _refreshLocalView();
+      _sendMediaState();
+      notifyListeners();
+    } catch (e) {
+      _toast('не удалось показать экран: $e');
+    }
+  }
+
+  Future<void> stopScreenShare() async {
+    if (!screenOn) return;
+    final t = _screenTrack;
+    _screenTrack = null;
+    screenOn = false;
+    await _videoSender?.replaceTrack(cameraOn ? _cameraTrack : null);
+    await t?.stop();
+    if (Platform.isAndroid) await notifier.update(screen: false);
+    await _refreshLocalView();
+    _sendMediaState();
+    notifyListeners();
+  }
+
+  Future<void> setAudioMode(AudioMode mode) async {
+    settings.audioMode = mode;
+    await _reopenMicrophone();
+    notifyListeners();
+  }
+
+  Future<void> setMicrophone(String? deviceId) async {
+    settings.micId = deviceId;
+    await _reopenMicrophone();
+  }
+
+  Future<void> setCamera(String? deviceId) async {
+    settings.cameraId = deviceId;
+    if (!cameraOn) return;
+    final old = _cameraTrack;
+    _cameraTrack = await _openCamera();
+    if (!screenOn) await _videoSender?.replaceTrack(_cameraTrack);
+    await old?.stop();
+    await _refreshLocalView();
+  }
+
+  Future<void> setOutput(String? deviceId) async {
+    settings.outputId = deviceId;
+    if (deviceId != null && isDesktop) await Helper.selectAudioOutput(deviceId);
+  }
+
+  void toggleStats() {
+    showStats = !showStats;
     notifyListeners();
   }
 
@@ -151,9 +296,11 @@ class CallService extends ChangeNotifier {
       }
       _reset();
       _callId = call;
+      _isCaller = false;
       _peerDevice = s.fromDevice;
       _offer = d;
-      video = d['video'] == true;
+      videoCall = d['video'] == true;
+      peerVideo = videoCall;
       peerName = relay.contactOfDevice(s.fromDevice)?.name ?? 'неизвестный';
       phase = CallPhase.incoming;
       _ringTimer = Timer(_ringTimeout, () => _end('пропущенный вызов'));
@@ -162,6 +309,7 @@ class CallService extends ChangeNotifier {
       return;
     }
     if (call != _callId) return;
+    if (_peerDevice != null && s.fromDevice != _peerDevice && type != 'answer' && type != 'hangup') return;
 
     switch (type) {
       case 'answer':
@@ -185,14 +333,28 @@ class CallService extends ChangeNotifier {
           _sendIce(c);
         }
         _localIce.clear();
+        await _applyAudioBitrate();
+        _sendMediaState();
+      case 'reoffer':
+        if (_isCaller || _pc == null) return;
+        await _pc!.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, 'offer'));
+        final answer = await _pc!.createAnswer();
+        final sdp = tuneOpus(answer.sdp!);
+        await _pc!.setLocalDescription(RTCSessionDescription(sdp, 'answer'));
+        relay.signal(_peerDevice!, {'type': 'reanswer', 'call': call, 'sdp': sdp});
+      case 'reanswer':
+        if (!_isCaller || _pc == null) return;
+        await _pc!.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, 'answer'));
       case 'ice':
-        if (_peerDevice != null && s.fromDevice != _peerDevice) return;
         final c = RTCIceCandidate(d['candidate'] as String?, d['mid'] as String?, d['mline'] as int?);
         if (_remoteSet) {
           await _pc?.addCandidate(c);
         } else {
           _remoteIce.add(c);
         }
+      case 'media':
+        peerVideo = d['video'] == true || d['screen'] == true;
+        notifyListeners();
       case 'hangup':
         final reason = d['reason'];
         if (phase == CallPhase.outgoing && _peerDevice == null) {
@@ -218,6 +380,11 @@ class CallService extends ChangeNotifier {
     });
   }
 
+  void _sendMediaState() {
+    if (_peerDevice == null) return;
+    relay.signal(_peerDevice!, {'type': 'media', 'call': _callId, 'video': cameraOn, 'screen': screenOn});
+  }
+
   Future<void> _remoteDescriptionSet() async {
     _remoteSet = true;
     for (final c in _remoteIce) {
@@ -228,7 +395,74 @@ class CallService extends ChangeNotifier {
 
   // ---- media
 
-  Future<void> _preparePeer() async {
+  Future<MediaStreamTrack?> _openCamera() async {
+    try {
+      final id = settings.cameraId;
+      final s = await navigator.mediaDevices.getUserMedia({
+        'audio': false,
+        'video': {
+          if (id != null && isDesktop) 'deviceId': id else 'facingMode': 'user',
+          'width': 1280,
+          'height': 720,
+          'frameRate': 30,
+        },
+      });
+      return s.getVideoTracks().first;
+    } catch (e) {
+      _toast('камера недоступна: $e');
+      return null;
+    }
+  }
+
+  Future<MediaStreamTrack> _openMicrophone() async {
+    final mode = settings.audioMode;
+    if (Platform.isAndroid) {
+      // Voice: VOICE_COMMUNICATION source with the phone's hardware AEC/NS.
+      // Clean: plain media source, no system processing.
+      await Helper.setAndroidAudioConfiguration(
+        mode == AudioMode.voice ? AndroidAudioConfiguration.communication : AndroidAudioConfiguration.media,
+      );
+    }
+    final s = await navigator.mediaDevices.getUserMedia({
+      'audio': AudioProfile.constraints(mode, isDesktop ? settings.micId : null),
+      'video': false,
+    });
+    final t = s.getAudioTracks().first;
+    t.enabled = !muted;
+    return t;
+  }
+
+  Future<void> _reopenMicrophone() async {
+    if (_pc == null) return;
+    final old = _audioTrack;
+    _audioTrack = await _openMicrophone();
+    await _audioSender?.replaceTrack(_audioTrack);
+    await old?.stop();
+    await _applyAudioBitrate();
+  }
+
+  Future<void> _applyAudioBitrate() async {
+    final s = _audioSender;
+    if (s == null) return;
+    final p = s.parameters;
+    final enc = p.encodings;
+    if (enc == null || enc.isEmpty) return;
+    enc.first.maxBitrate = AudioProfile.bitrate(settings.audioMode);
+    await s.setParameters(p);
+  }
+
+  Future<void> _refreshLocalView() async {
+    final view = _localView ??= await createLocalMediaStream('local');
+    for (final t in view.getVideoTracks()) {
+      await view.removeTrack(t);
+    }
+    final t = screenOn ? _screenTrack : (cameraOn ? _cameraTrack : null);
+    if (t != null) await view.addTrack(t);
+    localRenderer.srcObject = t == null ? null : view;
+    notifyListeners();
+  }
+
+  Future<void> _preparePeer({required bool camera}) async {
     if (!_renderersReady) {
       await localRenderer.initialize();
       await remoteRenderer.initialize();
@@ -236,14 +470,16 @@ class CallService extends ChangeNotifier {
     }
     // On Android flutter_webrtc asks for microphone/camera permission itself here.
     try {
-      _local = await navigator.mediaDevices.getUserMedia({
-        'audio': {'echoCancellation': true, 'noiseSuppression': true, 'autoGainControl': true},
-        'video': video ? {'facingMode': 'user', 'width': 1280, 'height': 720, 'frameRate': 30} : false,
-      });
+      _audioTrack = await _openMicrophone();
     } catch (_) {
-      throw 'нет доступа к микрофону или камере';
+      throw 'нет доступа к микрофону';
     }
-    if (video) localRenderer.srcObject = _local;
+    if (camera) {
+      _cameraTrack = await _openCamera();
+      cameraOn = _cameraTrack != null;
+    }
+    final outputId = settings.outputId;
+    if (outputId != null && isDesktop) await Helper.selectAudioOutput(outputId);
 
     final ice = <Map<String, dynamic>>[
       for (final s in relay.stunServers) {'urls': s},
@@ -258,9 +494,24 @@ class CallService extends ChangeNotifier {
       'bundlePolicy': 'max-bundle',
       'sdpSemantics': 'unified-plan',
     });
-    for (final t in _local!.getTracks()) {
-      await _pc!.addTrack(t, _local!);
+    if (_isCaller) {
+      final stream = await createLocalMediaStream('botato');
+      final a = await _pc!.addTransceiver(
+        track: _audioTrack!,
+        kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.SendRecv, streams: [stream]),
+      );
+      // The video transceiver exists even in voice calls; camera/screen are attached later.
+      final v = await _pc!.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.SendRecv, streams: [stream]),
+      );
+      _audioSender = a.sender;
+      _videoSender = v.sender;
+      if (_cameraTrack != null) await _videoSender!.replaceTrack(_cameraTrack);
     }
+    await _refreshLocalView();
+
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
       if (_peerDevice == null) {
@@ -269,16 +520,26 @@ class CallService extends ChangeNotifier {
         _sendIce(c);
       }
     };
-    _pc!.onTrack = (e) {
-      if (e.streams.isNotEmpty) remoteRenderer.srcObject = e.streams.first;
+    _pc!.onTrack = (e) async {
+      if (e.track.kind != 'video') return;
+      if (e.streams.isNotEmpty) {
+        _remoteView = e.streams.first;
+      } else {
+        _remoteView ??= await createLocalMediaStream('remote');
+        await _remoteView!.addTrack(e.track);
+      }
+      remoteRenderer.srcObject = _remoteView;
+      notifyListeners();
     };
     // Some platforms (flutter_webrtc on Windows) report only ICE state, so watch both.
     _pc!.onConnectionState = (s) {
       switch (s) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _connected();
+        case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+          _connectionLost(soft: true);
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
-          _connectionFailed();
+          _connectionLost(soft: false);
         default:
       }
     };
@@ -287,19 +548,16 @@ class CallService extends ChangeNotifier {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
           _connected();
+        case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
+          _connectionLost(soft: true);
         case RTCIceConnectionState.RTCIceConnectionStateFailed:
-          _connectionFailed();
+          _connectionLost(soft: false);
         default:
       }
     };
     _startStats();
-    speaker = video;
+    speaker = camera;
     if (Platform.isAndroid) await Helper.setSpeakerphoneOn(speaker);
-  }
-
-  void toggleStats() {
-    showStats = !showStats;
-    notifyListeners();
   }
 
   void _startStats() {
@@ -315,19 +573,53 @@ class CallService extends ChangeNotifier {
     });
   }
 
+  // ---- connection state and ICE restart
+
   void _connected() {
+    _restartTimer?.cancel();
+    _deadline?.cancel();
+    _deadline = null;
+    if (reconnecting) {
+      reconnecting = false;
+      _updateNotification();
+      notifyListeners();
+    }
     if (phase != CallPhase.connecting && phase != CallPhase.outgoing) return;
     phase = CallPhase.active;
     connectedAt = DateTime.now();
+    _updateNotification();
     notifyListeners();
   }
 
-  void _connectionFailed() {
-    if (phase == CallPhase.ended || phase == CallPhase.idle) return;
-    if (_peerDevice != null) {
-      relay.signal(_peerDevice!, {'type': 'hangup', 'call': _callId, 'reason': 'failed'});
+  /// Network changed or broke. The caller restarts ICE; both sides give up after the deadline.
+  void _connectionLost({required bool soft}) {
+    if (phase != CallPhase.active && phase != CallPhase.connecting) return;
+    if (!reconnecting) {
+      reconnecting = true;
+      _updateNotification();
+      notifyListeners();
     }
-    _end('соединение не удалось');
+    _deadline ??= Timer(_reconnectDeadline, () {
+      if (_peerDevice != null) {
+        relay.signal(_peerDevice!, {'type': 'hangup', 'call': _callId, 'reason': 'failed'});
+      }
+      _end('соединение потеряно');
+    });
+    if (!_isCaller) return;
+    _restartTimer?.cancel();
+    // "disconnected" often heals by itself; "failed" never does.
+    _restartTimer = Timer(soft ? const Duration(seconds: 2) : Duration.zero, _restartIce);
+  }
+
+  Future<void> _restartIce() async {
+    final pc = _pc;
+    if (pc == null || _peerDevice == null) return;
+    try {
+      final offer = await pc.createOffer({'iceRestart': true});
+      final sdp = tuneOpus(offer.sdp!);
+      await pc.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
+      relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': sdp});
+    } catch (_) {}
   }
 
   // ---- lifecycle
@@ -342,8 +634,12 @@ class CallService extends ChangeNotifier {
   void _end(String reason) {
     if (phase == CallPhase.ended || phase == CallPhase.idle) return;
     _ringTimer?.cancel();
+    _restartTimer?.cancel();
+    _deadline?.cancel();
+    _deadline = null;
     endReason = reason;
     phase = CallPhase.ended;
+    notifier.hide();
     notifyListeners();
     _teardown();
     Timer(const Duration(seconds: 2), () {
@@ -358,16 +654,21 @@ class CallService extends ChangeNotifier {
     _statsTimer = null;
     stats = null;
     final pc = _pc;
-    final local = _local;
+    final tracks = [_audioTrack, _cameraTrack, _screenTrack];
     _pc = null;
-    _local = null;
+    _audioSender = null;
+    _videoSender = null;
+    _audioTrack = null;
+    _cameraTrack = null;
+    _screenTrack = null;
     localRenderer.srcObject = null;
     remoteRenderer.srcObject = null;
-    for (final t in local?.getTracks() ?? <MediaStreamTrack>[]) {
-      await t.stop();
+    _remoteView = null;
+    for (final t in tracks) {
+      await t?.stop();
     }
-    await local?.dispose();
     await pc?.close();
+    if (Platform.isAndroid) await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration.communication);
   }
 
   void _reset() {
@@ -380,8 +681,30 @@ class CallService extends ChangeNotifier {
     _localIce.clear();
     _remoteIce.clear();
     muted = false;
+    cameraOn = false;
+    screenOn = false;
+    peerVideo = false;
+    reconnecting = false;
     endReason = null;
     connectedAt = null;
+  }
+
+  void _updateNotification() {
+    if (phase == CallPhase.idle || phase == CallPhase.ended) return;
+    final status = reconnecting
+        ? 'переподключение…'
+        : switch (phase) {
+            CallPhase.active => 'идёт звонок',
+            CallPhase.outgoing => 'вызов…',
+            _ => 'соединение…',
+          };
+    notifier.show(peerName, status, muted: muted);
+  }
+
+  void _toast(String text) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text(text)));
   }
 
   void _showScreen() {
@@ -396,6 +719,7 @@ class CallService extends ChangeNotifier {
   void dispose() {
     _sub.cancel();
     _teardown();
+    notifier.hide();
     if (_renderersReady) {
       localRenderer.dispose();
       remoteRenderer.dispose();

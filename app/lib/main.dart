@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'call/call_service.dart';
+import 'call/media_settings.dart';
 import 'identity_store.dart';
 import 'relay_service.dart';
 import 'screens/home_screen.dart';
@@ -13,6 +14,7 @@ import 'src/rust/frb_generated.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
+  final media = await MediaSettings.load();
   final store = IdentityStore();
   final secret = await store.deviceSecret();
   String? cert = await store.cert();
@@ -27,13 +29,14 @@ Future<void> main() async {
       cert = null;
     }
   }
-  runApp(BotatoApp(store: store, secret: secret, cert: cert, info: info));
+  runApp(BotatoApp(store: store, media: media, secret: secret, cert: cert, info: info));
 }
 
 class BotatoApp extends StatefulWidget {
-  const BotatoApp({super.key, required this.store, required this.secret, this.cert, this.info});
+  const BotatoApp({super.key, required this.store, required this.media, required this.secret, this.cert, this.info});
 
   final IdentityStore store;
+  final MediaSettings media;
   final Uint8List secret;
   final String? cert;
   final core.CertInfo? info;
@@ -45,7 +48,7 @@ class BotatoApp extends StatefulWidget {
 class _BotatoAppState extends State<BotatoApp> {
   final _relay = RelayService();
   final _navigator = GlobalKey<NavigatorState>();
-  late final _calls = CallService(_relay, _navigator);
+  late final _calls = CallService(_relay, _navigator, widget.media);
   late core.CertInfo? _info = widget.info;
 
   @override
