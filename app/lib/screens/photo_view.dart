@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../src/rust/api/client.dart' as core;
 import '../theme.dart';
@@ -36,10 +36,13 @@ Future<Uint8List?> loadPhoto(String msgId) async {
 
 /// The photo part of a chat bubble: the preview until the file arrives, then the photo.
 class PhotoContent extends StatefulWidget {
-  const PhotoContent({super.key, required this.msgId, required this.photo});
+  const PhotoContent({super.key, required this.msgId, required this.photo, required this.gallery});
 
   final String msgId;
   final core.PhotoInfo photo;
+
+  /// Downloaded photos of the chat, oldest first: the viewer swipes through them.
+  final List<String> Function() gallery;
 
   @override
   State<PhotoContent> createState() => _PhotoContentState();
@@ -57,13 +60,16 @@ class _PhotoContentState extends State<PhotoContent> {
   @override
   void didUpdateWidget(PhotoContent old) {
     super.didUpdateWidget(old);
+    // The list may hand this state to another message.
+    if (old.msgId != widget.msgId) _data = null;
     if (widget.photo.ready && _data == null) _load();
   }
 
   Future<void> _load() async {
     if (!widget.photo.ready) return;
-    final d = await loadPhoto(widget.msgId);
-    if (mounted && d != null) setState(() => _data = d);
+    final id = widget.msgId;
+    final d = await loadPhoto(id);
+    if (mounted && d != null && id == widget.msgId) setState(() => _data = d);
   }
 
   @override
@@ -80,11 +86,15 @@ class _PhotoContentState extends State<PhotoContent> {
     Widget child;
     if (data != null) {
       child = GestureDetector(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PhotoViewer(msgId: widget.msgId, data: data),
-          ),
-        ),
+        onTap: () {
+          var ids = widget.gallery();
+          if (!ids.contains(widget.msgId)) ids = [widget.msgId];
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => PhotoViewer(ids: ids, initial: ids.indexOf(widget.msgId)),
+            ),
+          );
+        },
         child: Hero(
           tag: widget.msgId,
           child: Image.memory(data, fit: BoxFit.cover, gaplessPlayback: true),
@@ -136,19 +146,49 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// Full-screen photo with pinch / wheel zoom.
-class PhotoViewer extends StatelessWidget {
-  const PhotoViewer({super.key, required this.msgId, required this.data});
+/// Full-screen photos of a chat: swipe (phone) or arrows / ←→ keys (desktop) between them,
+/// pinch or wheel to zoom.
+class PhotoViewer extends StatefulWidget {
+  const PhotoViewer({super.key, required this.ids, required this.initial});
 
-  final String msgId;
-  final Uint8List data;
+  final List<String> ids;
+  final int initial;
+
+  @override
+  State<PhotoViewer> createState() => _PhotoViewerState();
+}
+
+class _PhotoViewerState extends State<PhotoViewer> {
+  late final PageController _pages = PageController(initialPage: widget.initial);
+  late int _index = widget.initial;
+
+  /// A zoomed-in photo pans instead of turning the page.
+  bool _zoomed = false;
+
+  /// Quarter turns per photo, view only.
+  final _turns = <String, int>{};
 
   static bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
-  Future<void> _save(BuildContext context) async {
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  void _go(int delta) {
+    final next = _index + delta;
+    if (next < 0 || next >= widget.ids.length) return;
+    _pages.animateToPage(next, duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+  }
+
+  Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
+    final id = widget.ids[_index];
+    final data = await loadPhoto(id);
+    if (data == null) return;
     final loc = await getSaveLocation(
-      suggestedName: 'botato-${msgId.substring(0, 8)}.jpg',
+      suggestedName: 'botato-${id.substring(0, 8)}.jpg',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'JPEG', extensions: ['jpg']),
       ],
@@ -164,20 +204,125 @@ class PhotoViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        actions: [
-          if (_desktop)
-            IconButton(tooltip: 'Сохранить как…', icon: const Icon(Icons.save_alt), onPressed: () => _save(context)),
-        ],
+    final count = widget.ids.length;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _go(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _go(1),
+        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop(),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            title: count > 1 ? Text('${_index + 1} из $count', style: const TextStyle(fontSize: 16)) : null,
+            actions: [
+              IconButton(
+                tooltip: 'Повернуть',
+                icon: const Icon(Icons.rotate_90_degrees_cw_outlined),
+                onPressed: () => setState(() {
+                  final id = widget.ids[_index];
+                  _turns[id] = ((_turns[id] ?? 0) + 1) % 4;
+                }),
+              ),
+              if (_desktop) IconButton(tooltip: 'Сохранить как…', icon: const Icon(Icons.save_alt), onPressed: _save),
+            ],
+          ),
+          body: Stack(
+            children: [
+              PageView.builder(
+                controller: _pages,
+                physics: _zoomed ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
+                itemCount: count,
+                onPageChanged: (i) => setState(() {
+                  _index = i;
+                  _zoomed = false;
+                }),
+                itemBuilder: (_, i) => _ZoomablePhoto(
+                  key: ValueKey(widget.ids[i]),
+                  msgId: widget.ids[i],
+                  turns: _turns[widget.ids[i]] ?? 0,
+                  onZoomed: (z) {
+                    if (z != _zoomed) setState(() => _zoomed = z);
+                  },
+                ),
+              ),
+              if (_desktop && _index > 0) _Arrow(left: true, onTap: () => _go(-1)),
+              if (_desktop && _index < count - 1) _Arrow(left: false, onTap: () => _go(1)),
+            ],
+          ),
+        ),
       ),
-      body: InteractiveViewer(
-        maxScale: 8,
-        child: Center(
-          child: Hero(tag: msgId, child: Image.memory(data)),
+    );
+  }
+}
+
+class _ZoomablePhoto extends StatefulWidget {
+  const _ZoomablePhoto({super.key, required this.msgId, required this.turns, required this.onZoomed});
+
+  final String msgId;
+  final int turns;
+  final ValueChanged<bool> onZoomed;
+
+  @override
+  State<_ZoomablePhoto> createState() => _ZoomablePhotoState();
+}
+
+class _ZoomablePhotoState extends State<_ZoomablePhoto> {
+  final _transform = TransformationController();
+  Uint8List? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    loadPhoto(widget.msgId).then((d) {
+      if (mounted) setState(() => _data = d);
+    });
+  }
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    if (data == null) return const Center(child: CircularProgressIndicator());
+    return InteractiveViewer(
+      transformationController: _transform,
+      maxScale: 8,
+      onInteractionEnd: (_) => widget.onZoomed(_transform.value.getMaxScaleOnAxis() > 1.01),
+      child: Center(
+        child: Hero(
+          tag: widget.msgId,
+          child: RotatedBox(quarterTurns: widget.turns, child: Image.memory(data)),
+        ),
+      ),
+    );
+  }
+}
+
+class _Arrow extends StatelessWidget {
+  const _Arrow({required this.left, required this.onTap});
+
+  final bool left;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: left ? Alignment.centerLeft : Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: IconButton.filledTonal(
+          iconSize: 28,
+          onPressed: onTap,
+          icon: Icon(left ? Icons.chevron_left : Icons.chevron_right),
         ),
       ),
     );

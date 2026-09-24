@@ -131,6 +131,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  List<String> _gallery() => [
+    for (final m in _messages)
+      if (m.photo?.ready ?? false) m.msgId,
+  ];
+
   void _toast(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -180,7 +185,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (prev == null || !_sameDay(prev.sentAt, m.sentAt)) _DayLabel(m.sentAt),
-                          _Bubble(m),
+                          _Bubble(m, key: ValueKey(m.msgId), gallery: _gallery),
                         ],
                       );
                     },
@@ -282,9 +287,10 @@ class _DayLabel extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble(this.m);
+  const _Bubble(this.m, {super.key, required this.gallery});
 
   final core.MessageInfo m;
+  final List<String> Function() gallery;
 
   @override
   Widget build(BuildContext context) {
@@ -320,7 +326,7 @@ class _Bubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (m.photo case final photo?) ...[
-                PhotoContent(msgId: m.msgId, photo: photo),
+                PhotoContent(key: ValueKey(m.msgId), msgId: m.msgId, photo: photo, gallery: gallery),
                 if (m.text.isNotEmpty) const SizedBox(height: 6),
               ],
               if (m.text.isNotEmpty)
