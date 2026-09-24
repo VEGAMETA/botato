@@ -106,43 +106,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _addContact(BuildContext context) async {
     widget.relay.refreshContacts();
-    final field = TextEditingController();
-    String? error;
-    await showDialog<void>(
+    final added = await showDialog<List<core.ContactInfo>>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) {
-          void submit() {
-            final found = widget.relay.findContacts(field.text);
-            if (found.isEmpty) {
-              set(() => error = 'Такого пользователя нет. Он должен хотя бы раз подключиться с сертификатом.');
-              return;
-            }
-            for (final c in found) {
-              widget.relay.add(c.userId);
-            }
-            Navigator.pop(ctx);
-            _toast(found.length == 1 ? 'Добавлен: ${found.first.name}' : 'Добавлено: ${found.length}');
-          }
-
-          return AlertDialog(
-            title: const Text('Добавить контакт'),
-            content: TextField(
-              controller: field,
-              autofocus: true,
-              decoration: InputDecoration(labelText: 'Имя или ID', errorText: error, errorMaxLines: 3),
-              onChanged: (_) => error == null ? null : set(() => error = null),
-              onSubmitted: (_) => submit(),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-              FilledButton(onPressed: submit, child: const Text('Добавить')),
-            ],
-          );
-        },
-      ),
+      builder: (_) => _AddContactDialog(relay: widget.relay),
     );
-    field.dispose();
+    if (added == null || added.isEmpty) return;
+    _toast(added.length == 1 ? 'Добавлен: ${added.first.name}' : 'Добавлено: ${added.length}');
   }
 
   Future<void> _showMe(BuildContext context) async {
@@ -382,6 +351,59 @@ class _Empty extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Owns its text field so the controller outlives the closing animation.
+class _AddContactDialog extends StatefulWidget {
+  const _AddContactDialog({required this.relay});
+
+  final RelayService relay;
+
+  @override
+  State<_AddContactDialog> createState() => _AddContactDialogState();
+}
+
+class _AddContactDialogState extends State<_AddContactDialog> {
+  final _field = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final found = widget.relay.findContacts(_field.text);
+    if (found.isEmpty) {
+      setState(() => _error = 'Такого пользователя нет. Он должен хотя бы раз подключиться с сертификатом.');
+      return;
+    }
+    for (final c in found) {
+      widget.relay.add(c.userId);
+    }
+    Navigator.pop(context, found);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Добавить контакт'),
+      content: TextField(
+        controller: _field,
+        autofocus: true,
+        decoration: InputDecoration(labelText: 'Имя или ID', errorText: _error, errorMaxLines: 3),
+        onChanged: (_) {
+          if (_error != null) setState(() => _error = null);
+        },
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        FilledButton(onPressed: _submit, child: const Text('Добавить')),
+      ],
     );
   }
 }
