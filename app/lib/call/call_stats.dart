@@ -11,6 +11,12 @@ class CallStats {
   double videoInFps = 0, videoOutFps = 0;
   String videoInSize = '', videoOutSize = '';
 
+  /// Encoder / decoder in use (e.g. libvpx, OpenH264, MediaCodec, NVENC): hardware or not.
+  String videoEncoder = '', videoDecoder = '';
+
+  /// Why the sender lowered quality now: cpu, bandwidth or none.
+  String videoLimit = '';
+
   @override
   String toString() {
     String f(double v) => v.toStringAsFixed(0);
@@ -20,6 +26,9 @@ class CallStats {
       if (videoCodec.isNotEmpty)
         'видео $videoCodec: ↑${f(videoOutKbps)} ${f(videoOutFps)}fps $videoOutSize'
             ' ↓${f(videoInKbps)} ${f(videoInFps)}fps $videoInSize, потери ${videoLossPct.toStringAsFixed(1)}%',
+      if (videoEncoder.isNotEmpty || videoDecoder.isNotEmpty)
+        'кодер ${videoEncoder.isEmpty ? '—' : videoEncoder}, декодер ${videoDecoder.isEmpty ? '—' : videoDecoder}'
+            '${videoLimit.isEmpty || videoLimit == 'none' ? '' : ', упор: $videoLimit'}',
     ];
     return lines.join('\n');
   }
@@ -72,6 +81,8 @@ class CallStatsSampler {
             s.videoOutFps = rate(r.id, v, 'framesEncoded');
             if (v['frameWidth'] != null) s.videoOutSize = '${v['frameWidth']}x${v['frameHeight']}';
             if (s.videoCodec.isEmpty) s.videoCodec = codec(v);
+            s.videoEncoder = v['encoderImplementation']?.toString() ?? '';
+            s.videoLimit = v['qualityLimitationReason']?.toString() ?? '';
           }
         case 'inbound-rtp':
           final kbps = rate(r.id, v, 'bytesReceived') * 8 / 1000;
@@ -88,6 +99,7 @@ class CallStatsSampler {
             if (v['frameWidth'] != null) s.videoInSize = '${v['frameWidth']}x${v['frameHeight']}';
             final c = codec(v);
             if (c.isNotEmpty) s.videoCodec = c;
+            s.videoDecoder = v['decoderImplementation']?.toString() ?? '';
           }
       }
       _prev[r.id] = v;

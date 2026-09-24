@@ -24,6 +24,11 @@ enum CallPhase { idle, outgoing, incoming, connecting, active, ended }
 /// sharing, device switches and audio modes change tracks/parameters without renegotiation.
 class CallService extends ChangeNotifier {
   CallService(this.relay, this.navigatorKey, this.settings) {
+    // Debug builds log which video codecs this device can send.
+    assert(() {
+      availableVideoCodecs().then((c) => debugPrint('video codecs: $c'));
+      return true;
+    }());
     // Strictly one signal at a time: an ICE candidate must never be applied while the
     // (re)offer/answer it belongs to is still being set.
     _sub = relay.signals.listen((s) => _signalQueue = _signalQueue.then((_) => _onSignal(s)).catchError((_) {}));
