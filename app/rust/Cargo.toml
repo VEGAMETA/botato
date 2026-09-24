@@ -9,10 +9,12 @@ crate-type = ["cdylib", "staticlib"]
 [dependencies]
 anyhow = "1.0.104"
 base64 = "0.23.1"
+chacha20poly1305 = "0.11"
 flutter_rust_bridge = "=2.13.0"
 futures-util = "0.3.34"
 hex = "0.4.3"
 proto = { version = "0.1.0", path = "../../crates/proto" }
+rusqlite = { version = "0.40", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -21,3 +23,8 @@ tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+[dev-dependencies]
+axum = "0.8"
+relay = { path = "../../server" }
+tempfile = "3.27.0"

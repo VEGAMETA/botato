@@ -2,6 +2,10 @@
 //! from the manifest, and turns relay frames into verified events for the UI.
 
 pub mod contacts;
+pub mod messaging;
+pub mod store;
+#[cfg(test)]
+mod e2e_tests;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -28,6 +32,8 @@ const PING_EVERY: Duration = Duration::from_secs(10);
 const LIVENESS: Duration = Duration::from_secs(25);
 /// New users appear only in the directory; poll it now and then.
 const DIRECTORY_EVERY: Duration = Duration::from_secs(300);
+/// Outbox expiry check.
+const EXPIRE_EVERY: Duration = Duration::from_secs(600);
 
 pub enum Event {
     Connecting { server: String },
@@ -38,12 +44,18 @@ pub enum Event {
     Signaled { to: Id, online: bool },
     Turn { urls: Vec<String>, username: String, credential: String },
     Error { message: String },
+    /// History of this conversation changed (new message, status update).
+    MessagesChanged { peer: Id },
+    /// A new incoming message (for a notification).
+    NewMessage { peer: Id, text: String },
 }
 
 pub enum Cmd {
     Signal { to: Id, payload: Vec<u8> },
     Directory,
     Turn,
+    /// Send outbox entries not yet sent in this session.
+    Flush,
 }
 
 enum Exit {
@@ -58,6 +70,9 @@ pub struct Shared {
     pub manifest: Manifest,
     /// Drop the current connection and dial again at once (network changed).
     pub reconnect: tokio::sync::Notify,
+    pub store: Mutex<store::Store>,
+    /// Our own user id (from our certificate).
+    pub my_user: Id,
 }
 
 pub type Emit = Arc<dyn Fn(Event) + Send + Sync>;
@@ -172,11 +187,19 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
     emit(Event::Online { server: server.url.clone() });
     send(&mut ws, &ClientFrame::Directory {}).await?;
 
+    let mut s = SessionState::default();
+    expire(shared, emit);
+    // Everything in the outbox goes out on every connect: the relay may have been restarted
+    // or replaced, and it deduplicates copies it already has.
+    flush(shared, &mut ws, &mut s).await?;
+
     let mut last_rx = tokio::time::Instant::now();
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.reset();
     let mut directory = tokio::time::interval(DIRECTORY_EVERY);
     directory.reset();
+    let mut housekeeping = tokio::time::interval(EXPIRE_EVERY);
+    housekeeping.reset();
     loop {
         tokio::select! {
             cmd = cmds.recv() => {
@@ -184,6 +207,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                 let frame = match cmd {
                     Cmd::Directory => ClientFrame::Directory {},
                     Cmd::Turn => ClientFrame::Turn {},
+                    Cmd::Flush => { flush(shared, &mut ws, &mut s).await?; continue; }
                     Cmd::Signal { to, payload } => match seal_signal(shared, &to, &payload) {
                         Ok(blob) => ClientFrame::Signal { to, blob },
                         Err(e) => { emit(Event::Error { message: e.to_string() }); continue; }
@@ -191,7 +215,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                 };
                 send(&mut ws, &frame).await?;
             }
-            frame = recv(&mut ws, &mut last_rx) => handle(shared, &mut ws, frame?, emit).await?,
+            frame = recv(&mut ws, &mut last_rx) => handle(shared, &mut ws, &mut s, frame?, emit).await?,
             _ = ping.tick() => {
                 if last_rx.elapsed() > LIVENESS {
                     anyhow::bail!("сервер не отвечает");
@@ -200,8 +224,57 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
             }
             _ = shared.reconnect.notified() => return Ok(Exit::Reconnect),
             _ = directory.tick() => send(&mut ws, &ClientFrame::Directory {}).await?,
+            _ = housekeeping.tick() => expire(shared, emit),
         }
     }
+}
+
+#[derive(Default)]
+struct SessionState {
+    /// Outbox entries already sent on this connection.
+    sent: std::collections::HashSet<Id>,
+    /// Deliveries from senders we don't know yet (retried after a directory update).
+    pending: Vec<(Id, Vec<u8>)>,
+}
+
+async fn flush(shared: &Shared, ws: &mut Ws, s: &mut SessionState) -> anyhow::Result<()> {
+    let rows = shared.store.lock().unwrap().outbox()?;
+    for row in rows {
+        if s.sent.insert(row.id) {
+            send(ws, &ClientFrame::Send { to: row.to_device, id: row.id, blob: row.blob }).await?;
+        }
+    }
+    Ok(())
+}
+
+fn expire(shared: &Shared, emit: &Emit) {
+    let peers = shared.store.lock().unwrap().expire(config::now() as i64).unwrap_or_default();
+    for peer in peers {
+        emit(Event::MessagesChanged { peer });
+    }
+}
+
+/// Processes a mailbox delivery; acks it unless the sender is still unknown.
+async fn deliver(shared: &Shared, ws: &mut Ws, s: &mut SessionState, id: Id, blob: Vec<u8>, emit: &Emit) -> anyhow::Result<()> {
+    match messaging::on_deliver(shared, &blob) {
+        Ok(messaging::Delivered::Done { changed, new_text }) => {
+            send(ws, &ClientFrame::Ack { id }).await?;
+            if let Some(peer) = changed {
+                emit(Event::MessagesChanged { peer });
+            }
+            if let Some((peer, text)) = new_text {
+                emit(Event::NewMessage { peer, text });
+            }
+            flush(shared, ws, s).await?; // the receipt we owe
+        }
+        Ok(messaging::Delivered::UnknownSender) => {
+            s.pending.push((id, blob));
+            send(ws, &ClientFrame::Directory {}).await?;
+        }
+        // Local storage error: leave it on the relay, it comes again next connection.
+        Err(e) => emit(Event::Error { message: format!("сообщение: {e}") }),
+    }
+    Ok(())
 }
 
 fn seal_signal(shared: &Shared, to: &Id, payload: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -210,12 +283,21 @@ fn seal_signal(shared: &Shared, to: &Id, payload: &[u8]) -> anyhow::Result<Vec<u
     envelope::seal(&shared.me, to, &dev.enc_pub, KIND_SIGNAL, config::now(), payload).map_err(|e| anyhow::anyhow!("seal: {e}"))
 }
 
-async fn handle(shared: &Shared, ws: &mut Ws, frame: ServerFrame, emit: &Emit) -> anyhow::Result<()> {
+async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: ServerFrame, emit: &Emit) -> anyhow::Result<()> {
     match frame {
         ServerFrame::Directory { certs } => {
             let changed = shared.contacts.lock().unwrap().merge(&certs, config::now(), &shared.manifest);
             if changed {
                 emit(Event::ContactsChanged);
+            }
+            for (id, blob) in std::mem::take(&mut s.pending) {
+                deliver(shared, ws, s, id, blob, emit).await?;
+            }
+        }
+        ServerFrame::Deliver { id, from: _, blob } => deliver(shared, ws, s, id, blob, emit).await?,
+        ServerFrame::Stored { id } => {
+            if let Ok(Some(peer)) = shared.store.lock().unwrap().on_stored(&id) {
+                emit(Event::MessagesChanged { peer });
             }
         }
         ServerFrame::Signal { from: _, blob } => match open_signal(shared, &blob) {
@@ -228,9 +310,10 @@ async fn handle(shared: &Shared, ws: &mut Ws, frame: ServerFrame, emit: &Emit) -
         },
         ServerFrame::Signaled { to, online } => emit(Event::Signaled { to, online }),
         ServerFrame::Turn { urls, username, credential, .. } => emit(Event::Turn { urls, username, credential }),
+        // A copy the relay refused (quota, revoked device) stays in the outbox: it is retried
+        // on the next connection and dropped at expiry.
         ServerFrame::Error { r#ref, code, .. } => emit(Event::Error { message: format!("{ref}: {code:?}") }),
-        // Messages are not implemented yet; leave them on the server (unacked).
-        ServerFrame::Deliver { .. } | ServerFrame::Stored { .. } | ServerFrame::Ok { .. } => {}
+        ServerFrame::Ok { .. } => {}
         ServerFrame::Challenge { .. } | ServerFrame::Ready { .. } => anyhow::bail!("неожиданный фрейм"),
     }
     Ok(())
@@ -256,7 +339,6 @@ fn open_signal(shared: &Shared, blob: &[u8]) -> anyhow::Result<Option<Event>> {
 }
 
 /// Own cert, verified, for display.
-#[allow(dead_code)]
 pub fn my_cert(cert: &[u8]) -> anyhow::Result<Cert> {
     Cert::verify(&config::root_pub(), cert, config::now()).map_err(|e| anyhow::anyhow!("{e}"))
 }

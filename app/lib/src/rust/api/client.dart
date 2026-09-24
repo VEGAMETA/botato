@@ -13,46 +13,106 @@ part 'client.freezed.dart';
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
 
 /// Starts (or restarts) the relay client. Events arrive on `sink` until `client_stop`.
-Stream<ClientEvent> clientStart({required String dataDir, required List<int> secret, required String cert}) =>
-    RustLib.instance.api.crateApiClientClientStart(dataDir: dataDir, secret: secret, cert: cert);
+/// `db_key`: 32 random bytes from platform secure storage (encrypts message bodies at rest).
+Stream<ClientEvent> clientStart({
+  required String dataDir,
+  required List<int> secret,
+  required String cert,
+  required List<int> dbKey,
+}) => RustLib.instance.api.crateApiClientClientStart(
+  dataDir: dataDir,
+  secret: secret,
+  cert: cert,
+  dbKey: dbKey,
+);
 
 Future<void> clientStop() => RustLib.instance.api.crateApiClientClientStop();
 
-List<ContactInfo> clientContacts() => RustLib.instance.api.crateApiClientClientContacts();
+List<ContactInfo> clientContacts() =>
+    RustLib.instance.api.crateApiClientClientContacts();
 
 /// Seals `payload` (call-signal JSON) to one device and sends it via the relay.
 void clientSignal({required String toDevice, required String payload}) =>
-    RustLib.instance.api.crateApiClientClientSignal(toDevice: toDevice, payload: payload);
+    RustLib.instance.api.crateApiClientClientSignal(
+      toDevice: toDevice,
+      payload: payload,
+    );
 
 /// Network changed: drop the (possibly silently dead) relay connection and dial again now.
 void clientReconnect() => RustLib.instance.api.crateApiClientClientReconnect();
 
-void clientRequestTurn() => RustLib.instance.api.crateApiClientClientRequestTurn();
+void clientRequestTurn() =>
+    RustLib.instance.api.crateApiClientClientRequestTurn();
 
-void clientRefreshDirectory() => RustLib.instance.api.crateApiClientClientRefreshDirectory();
+void clientRefreshDirectory() =>
+    RustLib.instance.api.crateApiClientClientRefreshDirectory();
 
 /// This device's id (hex).
 String? clientMyDevice() => RustLib.instance.api.crateApiClientClientMyDevice();
 
 /// STUN servers from the manifest; TURN comes via `client_request_turn`.
-IceConfig clientIceConfig() => RustLib.instance.api.crateApiClientClientIceConfig();
+IceConfig clientIceConfig() =>
+    RustLib.instance.api.crateApiClientClientIceConfig();
+
+/// Queues a text message to every device of `peer_user` (and our other devices).
+String clientSendText({required String peerUser, required String text}) =>
+    RustLib.instance.api.crateApiClientClientSendText(
+      peerUser: peerUser,
+      text: text,
+    );
+
+/// Oldest first; `before` (sent_at) pages backwards.
+List<MessageInfo> clientMessages({
+  required String peerUser,
+  PlatformInt64? before,
+  required PlatformInt64 limit,
+}) => RustLib.instance.api.crateApiClientClientMessages(
+  peerUser: peerUser,
+  before: before,
+  limit: limit,
+);
+
+List<ConversationInfo> clientConversations() =>
+    RustLib.instance.api.crateApiClientClientConversations();
+
+void clientMarkRead({required String peerUser}) =>
+    RustLib.instance.api.crateApiClientClientMarkRead(peerUser: peerUser);
 
 @freezed
 sealed class ClientEvent with _$ClientEvent {
   const ClientEvent._();
 
-  const factory ClientEvent.connecting({required String server}) = ClientEvent_Connecting;
-  const factory ClientEvent.online({required String server}) = ClientEvent_Online;
-  const factory ClientEvent.offline({required String reason}) = ClientEvent_Offline;
+  const factory ClientEvent.connecting({required String server}) =
+      ClientEvent_Connecting;
+  const factory ClientEvent.online({required String server}) =
+      ClientEvent_Online;
+  const factory ClientEvent.offline({required String reason}) =
+      ClientEvent_Offline;
   const factory ClientEvent.contactsChanged() = ClientEvent_ContactsChanged;
 
   /// Authenticated call signal from a device in a valid certificate.
-  const factory ClientEvent.signal({required String fromUser, required String fromDevice, required String payload}) =
-      ClientEvent_Signal;
-  const factory ClientEvent.signaled({required String toDevice, required bool online}) = ClientEvent_Signaled;
-  const factory ClientEvent.turn({required List<String> urls, required String username, required String credential}) =
-      ClientEvent_Turn;
-  const factory ClientEvent.error({required String message}) = ClientEvent_Error;
+  const factory ClientEvent.signal({
+    required String fromUser,
+    required String fromDevice,
+    required String payload,
+  }) = ClientEvent_Signal;
+  const factory ClientEvent.signaled({
+    required String toDevice,
+    required bool online,
+  }) = ClientEvent_Signaled;
+  const factory ClientEvent.turn({
+    required List<String> urls,
+    required String username,
+    required String credential,
+  }) = ClientEvent_Turn;
+  const factory ClientEvent.error({required String message}) =
+      ClientEvent_Error;
+  const factory ClientEvent.messagesChanged({required String peerUser}) =
+      ClientEvent_MessagesChanged;
+  const factory ClientEvent.newMessage({
+    required String peerUser,
+    required String text,
+  }) = ClientEvent_NewMessage;
 }
 
 class ContactInfo {
@@ -61,10 +121,16 @@ class ContactInfo {
   final List<String> devices;
   final bool isMe;
 
-  const ContactInfo({required this.userId, required this.name, required this.devices, required this.isMe});
+  const ContactInfo({
+    required this.userId,
+    required this.name,
+    required this.devices,
+    required this.isMe,
+  });
 
   @override
-  int get hashCode => userId.hashCode ^ name.hashCode ^ devices.hashCode ^ isMe.hashCode;
+  int get hashCode =>
+      userId.hashCode ^ name.hashCode ^ devices.hashCode ^ isMe.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -77,6 +143,41 @@ class ContactInfo {
           isMe == other.isMe;
 }
 
+class ConversationInfo {
+  final String peerUser;
+  final String lastText;
+  final PlatformInt64 lastAt;
+  final bool lastFromMe;
+  final PlatformInt64 unread;
+
+  const ConversationInfo({
+    required this.peerUser,
+    required this.lastText,
+    required this.lastAt,
+    required this.lastFromMe,
+    required this.unread,
+  });
+
+  @override
+  int get hashCode =>
+      peerUser.hashCode ^
+      lastText.hashCode ^
+      lastAt.hashCode ^
+      lastFromMe.hashCode ^
+      unread.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConversationInfo &&
+          runtimeType == other.runtimeType &&
+          peerUser == other.peerUser &&
+          lastText == other.lastText &&
+          lastAt == other.lastAt &&
+          lastFromMe == other.lastFromMe &&
+          unread == other.unread;
+}
+
 class IceConfig {
   final List<String> stun;
 
@@ -87,5 +188,47 @@ class IceConfig {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || other is IceConfig && runtimeType == other.runtimeType && stun == other.stun;
+      identical(this, other) ||
+      other is IceConfig &&
+          runtimeType == other.runtimeType &&
+          stun == other.stun;
+}
+
+class MessageInfo {
+  final String msgId;
+  final bool fromMe;
+  final String text;
+
+  /// Sender's clock, unix seconds.
+  final PlatformInt64 sentAt;
+
+  /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
+  final PlatformInt64 status;
+
+  const MessageInfo({
+    required this.msgId,
+    required this.fromMe,
+    required this.text,
+    required this.sentAt,
+    required this.status,
+  });
+
+  @override
+  int get hashCode =>
+      msgId.hashCode ^
+      fromMe.hashCode ^
+      text.hashCode ^
+      sentAt.hashCode ^
+      status.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MessageInfo &&
+          runtimeType == other.runtimeType &&
+          msgId == other.msgId &&
+          fromMe == other.fromMe &&
+          text == other.text &&
+          sentAt == other.sentAt &&
+          status == other.status;
 }

@@ -166,8 +166,8 @@ Payload ≤ 65280 bytes.
 | kind | Meaning | payload |
 |---|---|---|
 | 1 | call signaling | JSON, see below |
-| 2 | message | not yet specified |
-| 3 | E2E receipt | not yet specified |
+| 2 | message | JSON, see §6.2 |
+| 3 | E2E receipt | JSON, see §6.2 |
 
 ### 6.1 Call signaling payload (kind 1)
 
@@ -194,6 +194,29 @@ caller sends `reoffer` (repeated every 6 s until media flows); both sides give u
 `call` is a random 128-bit id (hex). SDP needs no separate signature: the envelope signature authenticates
 it, and WebRTC checks the peer's DTLS certificate against the fingerprint in that SDP.
 
+### 6.2 Messages (kind 2) and receipts (kind 3)
+
+Sent through the mailbox (`send`), never through `signal`.
+
+```
+kind 2: {"msg": hex id, "to": hex user id, "text": string}     text ≤ 16 KiB after trimming
+kind 3: {"msg": hex id}
+```
+
+- `msg` is the logical message id, the same in every copy; each copy has its own random transport `id`.
+- The sender seals one copy per device of the recipient **and** per own other device. `to` is the
+  conversation partner as the sender sees it, so the sender's own devices file the copy under `to`.
+- Every copy stays in the sender's outbox until that device's receipt arrives; the whole outbox is
+  re-sent on every connection (the relay deduplicates by `(to, id)`). A message is *delivered* when a
+  device of the recipient user sent a receipt. Copies older than 24 h are dropped; a message without
+  any recipient receipt by then is *failed*.
+- The receiver deduplicates by `msg`, answers **every** copy (duplicates too) with a receipt, and only
+  then acks the delivery. A delivery from an unknown device is not acked: the client fetches the
+  directory and processes it afterwards.
+- Receipts are fire-and-forget: they leave the outbox once a relay stored them. If one is lost, the
+  sender re-sends the message on its next connection and gets a new receipt.
+- Ordering: by the sender's `sent_at` (seconds), ties by local arrival order.
+
 ## 7. Not yet specified
 
-Message payload (kind 2), E2E receipts (kind 3), outbox rules.
+History sync to a newly added device (not planned for v1), attachments.

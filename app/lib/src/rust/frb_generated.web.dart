@@ -29,13 +29,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(dynamic raw);
+  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(
+    dynamic raw,
+  );
 
   @protected
   String dco_decode_String(dynamic raw);
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
   CertInfo dco_decode_cert_info(dynamic raw);
@@ -47,7 +52,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ContactInfo dco_decode_contact_info(dynamic raw);
 
   @protected
+  ConversationInfo dco_decode_conversation_info(dynamic raw);
+
+  @protected
   DeviceInfo dco_decode_device_info(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
   IceConfig dco_decode_ice_config(dynamic raw);
@@ -59,13 +70,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ContactInfo> dco_decode_list_contact_info(dynamic raw);
 
   @protected
+  List<ConversationInfo> dco_decode_list_conversation_info(dynamic raw);
+
+  @protected
+  List<MessageInfo> dco_decode_list_message_info(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  MessageInfo dco_decode_message_info(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
   (String, CertInfo) dco_decode_record_string_cert_info(dynamic raw);
@@ -86,13 +109,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(SseDeserializer deserializer);
+  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
   CertInfo sse_decode_cert_info(SseDeserializer deserializer);
@@ -104,7 +132,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ContactInfo sse_decode_contact_info(SseDeserializer deserializer);
 
   @protected
+  ConversationInfo sse_decode_conversation_info(SseDeserializer deserializer);
+
+  @protected
   DeviceInfo sse_decode_device_info(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
   IceConfig sse_decode_ice_config(SseDeserializer deserializer);
@@ -116,16 +150,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ContactInfo> sse_decode_list_contact_info(SseDeserializer deserializer);
 
   @protected
+  List<ConversationInfo> sse_decode_list_conversation_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MessageInfo> sse_decode_list_message_info(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  MessageInfo sse_decode_message_info(SseDeserializer deserializer);
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
-  (String, CertInfo) sse_decode_record_string_cert_info(SseDeserializer deserializer);
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  (String, CertInfo) sse_decode_record_string_cert_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -143,16 +193,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  );
 
   @protected
-  void sse_encode_StreamSink_client_event_Sse(RustStreamSink<ClientEvent> self, SseSerializer serializer);
+  void sse_encode_StreamSink_client_event_Sse(
+    RustStreamSink<ClientEvent> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_cert_info(CertInfo self, SseSerializer serializer);
@@ -164,7 +226,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_contact_info(ContactInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_conversation_info(
+    ConversationInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_device_info(DeviceInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_ice_config(IceConfig self, SseSerializer serializer);
@@ -173,19 +244,49 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_contact_info(List<ContactInfo> self, SseSerializer serializer);
+  void sse_encode_list_contact_info(
+    List<ContactInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_conversation_info(
+    List<ConversationInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_message_info(
+    List<MessageInfo> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
+  void sse_encode_list_prim_u_8_strict(
+    Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_message_info(MessageInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
-  void sse_encode_record_string_cert_info((String, CertInfo) self, SseSerializer serializer);
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_record_string_cert_info(
+    (String, CertInfo) self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

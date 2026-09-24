@@ -56,7 +56,7 @@ extension ClientEventPatterns on ClientEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ClientEvent_Connecting value)?  connecting,TResult Function( ClientEvent_Online value)?  online,TResult Function( ClientEvent_Offline value)?  offline,TResult Function( ClientEvent_ContactsChanged value)?  contactsChanged,TResult Function( ClientEvent_Signal value)?  signal,TResult Function( ClientEvent_Signaled value)?  signaled,TResult Function( ClientEvent_Turn value)?  turn,TResult Function( ClientEvent_Error value)?  error,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ClientEvent_Connecting value)?  connecting,TResult Function( ClientEvent_Online value)?  online,TResult Function( ClientEvent_Offline value)?  offline,TResult Function( ClientEvent_ContactsChanged value)?  contactsChanged,TResult Function( ClientEvent_Signal value)?  signal,TResult Function( ClientEvent_Signaled value)?  signaled,TResult Function( ClientEvent_Turn value)?  turn,TResult Function( ClientEvent_Error value)?  error,TResult Function( ClientEvent_MessagesChanged value)?  messagesChanged,TResult Function( ClientEvent_NewMessage value)?  newMessage,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ClientEvent_Connecting() when connecting != null:
@@ -67,7 +67,9 @@ return contactsChanged(_that);case ClientEvent_Signal() when signal != null:
 return signal(_that);case ClientEvent_Signaled() when signaled != null:
 return signaled(_that);case ClientEvent_Turn() when turn != null:
 return turn(_that);case ClientEvent_Error() when error != null:
-return error(_that);case _:
+return error(_that);case ClientEvent_MessagesChanged() when messagesChanged != null:
+return messagesChanged(_that);case ClientEvent_NewMessage() when newMessage != null:
+return newMessage(_that);case _:
   return orElse();
 
 }
@@ -85,7 +87,7 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ClientEvent_Connecting value)  connecting,required TResult Function( ClientEvent_Online value)  online,required TResult Function( ClientEvent_Offline value)  offline,required TResult Function( ClientEvent_ContactsChanged value)  contactsChanged,required TResult Function( ClientEvent_Signal value)  signal,required TResult Function( ClientEvent_Signaled value)  signaled,required TResult Function( ClientEvent_Turn value)  turn,required TResult Function( ClientEvent_Error value)  error,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ClientEvent_Connecting value)  connecting,required TResult Function( ClientEvent_Online value)  online,required TResult Function( ClientEvent_Offline value)  offline,required TResult Function( ClientEvent_ContactsChanged value)  contactsChanged,required TResult Function( ClientEvent_Signal value)  signal,required TResult Function( ClientEvent_Signaled value)  signaled,required TResult Function( ClientEvent_Turn value)  turn,required TResult Function( ClientEvent_Error value)  error,required TResult Function( ClientEvent_MessagesChanged value)  messagesChanged,required TResult Function( ClientEvent_NewMessage value)  newMessage,}){
 final _that = this;
 switch (_that) {
 case ClientEvent_Connecting():
@@ -96,7 +98,9 @@ return contactsChanged(_that);case ClientEvent_Signal():
 return signal(_that);case ClientEvent_Signaled():
 return signaled(_that);case ClientEvent_Turn():
 return turn(_that);case ClientEvent_Error():
-return error(_that);}
+return error(_that);case ClientEvent_MessagesChanged():
+return messagesChanged(_that);case ClientEvent_NewMessage():
+return newMessage(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -110,7 +114,7 @@ return error(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ClientEvent_Connecting value)?  connecting,TResult? Function( ClientEvent_Online value)?  online,TResult? Function( ClientEvent_Offline value)?  offline,TResult? Function( ClientEvent_ContactsChanged value)?  contactsChanged,TResult? Function( ClientEvent_Signal value)?  signal,TResult? Function( ClientEvent_Signaled value)?  signaled,TResult? Function( ClientEvent_Turn value)?  turn,TResult? Function( ClientEvent_Error value)?  error,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ClientEvent_Connecting value)?  connecting,TResult? Function( ClientEvent_Online value)?  online,TResult? Function( ClientEvent_Offline value)?  offline,TResult? Function( ClientEvent_ContactsChanged value)?  contactsChanged,TResult? Function( ClientEvent_Signal value)?  signal,TResult? Function( ClientEvent_Signaled value)?  signaled,TResult? Function( ClientEvent_Turn value)?  turn,TResult? Function( ClientEvent_Error value)?  error,TResult? Function( ClientEvent_MessagesChanged value)?  messagesChanged,TResult? Function( ClientEvent_NewMessage value)?  newMessage,}){
 final _that = this;
 switch (_that) {
 case ClientEvent_Connecting() when connecting != null:
@@ -121,7 +125,9 @@ return contactsChanged(_that);case ClientEvent_Signal() when signal != null:
 return signal(_that);case ClientEvent_Signaled() when signaled != null:
 return signaled(_that);case ClientEvent_Turn() when turn != null:
 return turn(_that);case ClientEvent_Error() when error != null:
-return error(_that);case _:
+return error(_that);case ClientEvent_MessagesChanged() when messagesChanged != null:
+return messagesChanged(_that);case ClientEvent_NewMessage() when newMessage != null:
+return newMessage(_that);case _:
   return null;
 
 }
@@ -138,7 +144,7 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String server)?  connecting,TResult Function( String server)?  online,TResult Function( String reason)?  offline,TResult Function()?  contactsChanged,TResult Function( String fromUser,  String fromDevice,  String payload)?  signal,TResult Function( String toDevice,  bool online)?  signaled,TResult Function( List<String> urls,  String username,  String credential)?  turn,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String server)?  connecting,TResult Function( String server)?  online,TResult Function( String reason)?  offline,TResult Function()?  contactsChanged,TResult Function( String fromUser,  String fromDevice,  String payload)?  signal,TResult Function( String toDevice,  bool online)?  signaled,TResult Function( List<String> urls,  String username,  String credential)?  turn,TResult Function( String message)?  error,TResult Function( String peerUser)?  messagesChanged,TResult Function( String peerUser,  String text)?  newMessage,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ClientEvent_Connecting() when connecting != null:
 return connecting(_that.server);case ClientEvent_Online() when online != null:
@@ -148,7 +154,9 @@ return contactsChanged();case ClientEvent_Signal() when signal != null:
 return signal(_that.fromUser,_that.fromDevice,_that.payload);case ClientEvent_Signaled() when signaled != null:
 return signaled(_that.toDevice,_that.online);case ClientEvent_Turn() when turn != null:
 return turn(_that.urls,_that.username,_that.credential);case ClientEvent_Error() when error != null:
-return error(_that.message);case _:
+return error(_that.message);case ClientEvent_MessagesChanged() when messagesChanged != null:
+return messagesChanged(_that.peerUser);case ClientEvent_NewMessage() when newMessage != null:
+return newMessage(_that.peerUser,_that.text);case _:
   return orElse();
 
 }
@@ -166,7 +174,7 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String server)  connecting,required TResult Function( String server)  online,required TResult Function( String reason)  offline,required TResult Function()  contactsChanged,required TResult Function( String fromUser,  String fromDevice,  String payload)  signal,required TResult Function( String toDevice,  bool online)  signaled,required TResult Function( List<String> urls,  String username,  String credential)  turn,required TResult Function( String message)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String server)  connecting,required TResult Function( String server)  online,required TResult Function( String reason)  offline,required TResult Function()  contactsChanged,required TResult Function( String fromUser,  String fromDevice,  String payload)  signal,required TResult Function( String toDevice,  bool online)  signaled,required TResult Function( List<String> urls,  String username,  String credential)  turn,required TResult Function( String message)  error,required TResult Function( String peerUser)  messagesChanged,required TResult Function( String peerUser,  String text)  newMessage,}) {final _that = this;
 switch (_that) {
 case ClientEvent_Connecting():
 return connecting(_that.server);case ClientEvent_Online():
@@ -176,7 +184,9 @@ return contactsChanged();case ClientEvent_Signal():
 return signal(_that.fromUser,_that.fromDevice,_that.payload);case ClientEvent_Signaled():
 return signaled(_that.toDevice,_that.online);case ClientEvent_Turn():
 return turn(_that.urls,_that.username,_that.credential);case ClientEvent_Error():
-return error(_that.message);}
+return error(_that.message);case ClientEvent_MessagesChanged():
+return messagesChanged(_that.peerUser);case ClientEvent_NewMessage():
+return newMessage(_that.peerUser,_that.text);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -190,7 +200,7 @@ return error(_that.message);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String server)?  connecting,TResult? Function( String server)?  online,TResult? Function( String reason)?  offline,TResult? Function()?  contactsChanged,TResult? Function( String fromUser,  String fromDevice,  String payload)?  signal,TResult? Function( String toDevice,  bool online)?  signaled,TResult? Function( List<String> urls,  String username,  String credential)?  turn,TResult? Function( String message)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String server)?  connecting,TResult? Function( String server)?  online,TResult? Function( String reason)?  offline,TResult? Function()?  contactsChanged,TResult? Function( String fromUser,  String fromDevice,  String payload)?  signal,TResult? Function( String toDevice,  bool online)?  signaled,TResult? Function( List<String> urls,  String username,  String credential)?  turn,TResult? Function( String message)?  error,TResult? Function( String peerUser)?  messagesChanged,TResult? Function( String peerUser,  String text)?  newMessage,}) {final _that = this;
 switch (_that) {
 case ClientEvent_Connecting() when connecting != null:
 return connecting(_that.server);case ClientEvent_Online() when online != null:
@@ -200,7 +210,9 @@ return contactsChanged();case ClientEvent_Signal() when signal != null:
 return signal(_that.fromUser,_that.fromDevice,_that.payload);case ClientEvent_Signaled() when signaled != null:
 return signaled(_that.toDevice,_that.online);case ClientEvent_Turn() when turn != null:
 return turn(_that.urls,_that.username,_that.credential);case ClientEvent_Error() when error != null:
-return error(_that.message);case _:
+return error(_that.message);case ClientEvent_MessagesChanged() when messagesChanged != null:
+return messagesChanged(_that.peerUser);case ClientEvent_NewMessage() when newMessage != null:
+return newMessage(_that.peerUser,_that.text);case _:
   return null;
 
 }
@@ -725,6 +737,144 @@ class _$ClientEvent_ErrorCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? message = null,}) {
   return _then(ClientEvent_Error(
 message: null == message ? _self.message : message // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ClientEvent_MessagesChanged extends ClientEvent {
+  const ClientEvent_MessagesChanged({required this.peerUser}): super._();
+  
+
+ final  String peerUser;
+
+/// Create a copy of ClientEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ClientEvent_MessagesChangedCopyWith<ClientEvent_MessagesChanged> get copyWith => _$ClientEvent_MessagesChangedCopyWithImpl<ClientEvent_MessagesChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ClientEvent_MessagesChanged&&(identical(other.peerUser, peerUser) || other.peerUser == peerUser));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,peerUser);
+}
+
+@override
+String toString() {
+    return 'ClientEvent.messagesChanged(peerUser: $peerUser)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ClientEvent_MessagesChangedCopyWith<$Res> implements $ClientEventCopyWith<$Res> {
+  factory $ClientEvent_MessagesChangedCopyWith(ClientEvent_MessagesChanged value, $Res Function(ClientEvent_MessagesChanged) _then) = _$ClientEvent_MessagesChangedCopyWithImpl;
+@useResult
+$Res call({
+ String peerUser
+});
+
+
+
+
+}
+/// @nodoc
+class _$ClientEvent_MessagesChangedCopyWithImpl<$Res>
+    implements $ClientEvent_MessagesChangedCopyWith<$Res> {
+  _$ClientEvent_MessagesChangedCopyWithImpl(this._self, this._then);
+
+  final ClientEvent_MessagesChanged _self;
+  final $Res Function(ClientEvent_MessagesChanged) _then;
+
+/// Create a copy of ClientEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? peerUser = null,}) {
+  return _then(ClientEvent_MessagesChanged(
+peerUser: null == peerUser ? _self.peerUser : peerUser // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ClientEvent_NewMessage extends ClientEvent {
+  const ClientEvent_NewMessage({required this.peerUser, required this.text}): super._();
+  
+
+ final  String peerUser;
+ final  String text;
+
+/// Create a copy of ClientEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ClientEvent_NewMessageCopyWith<ClientEvent_NewMessage> get copyWith => _$ClientEvent_NewMessageCopyWithImpl<ClientEvent_NewMessage>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ClientEvent_NewMessage&&(identical(other.peerUser, peerUser) || other.peerUser == peerUser)&&(identical(other.text, text) || other.text == text));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,peerUser,text);
+}
+
+@override
+String toString() {
+    return 'ClientEvent.newMessage(peerUser: $peerUser, text: $text)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ClientEvent_NewMessageCopyWith<$Res> implements $ClientEventCopyWith<$Res> {
+  factory $ClientEvent_NewMessageCopyWith(ClientEvent_NewMessage value, $Res Function(ClientEvent_NewMessage) _then) = _$ClientEvent_NewMessageCopyWithImpl;
+@useResult
+$Res call({
+ String peerUser, String text
+});
+
+
+
+
+}
+/// @nodoc
+class _$ClientEvent_NewMessageCopyWithImpl<$Res>
+    implements $ClientEvent_NewMessageCopyWith<$Res> {
+  _$ClientEvent_NewMessageCopyWithImpl(this._self, this._then);
+
+  final ClientEvent_NewMessage _self;
+  final $Res Function(ClientEvent_NewMessage) _then;
+
+/// Create a copy of ClientEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? peerUser = null,Object? text = null,}) {
+  return _then(ClientEvent_NewMessage(
+peerUser: null == peerUser ? _self.peerUser : peerUser // ignore: cast_nullable_to_non_nullable
+as String,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }

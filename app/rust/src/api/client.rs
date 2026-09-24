@@ -21,6 +21,8 @@ pub enum ClientEvent {
     Signaled { to_device: String, online: bool },
     Turn { urls: Vec<String>, username: String, credential: String },
     Error { message: String },
+    MessagesChanged { peer_user: String },
+    NewMessage { peer_user: String, text: String },
 }
 
 pub struct ContactInfo {
@@ -65,11 +67,20 @@ fn convert(e: Event) -> ClientEvent {
         Event::Signaled { to, online } => ClientEvent::Signaled { to_device: to.to_hex(), online },
         Event::Turn { urls, username, credential } => ClientEvent::Turn { urls, username, credential },
         Event::Error { message } => ClientEvent::Error { message },
+        Event::MessagesChanged { peer } => ClientEvent::MessagesChanged { peer_user: peer.to_hex() },
+        Event::NewMessage { peer, text } => ClientEvent::NewMessage { peer_user: peer.to_hex(), text },
     }
 }
 
 /// Starts (or restarts) the relay client. Events arrive on `sink` until `client_stop`.
-pub fn client_start(data_dir: String, secret: Vec<u8>, cert: String, sink: StreamSink<ClientEvent>) -> anyhow::Result<()> {
+/// `db_key`: 32 random bytes from platform secure storage (encrypts message bodies at rest).
+pub fn client_start(
+    data_dir: String,
+    secret: Vec<u8>,
+    cert: String,
+    db_key: Vec<u8>,
+    sink: StreamSink<ClientEvent>,
+) -> anyhow::Result<()> {
     client_stop();
     let me = DeviceSecret::from_bytes(&secret).map_err(|e| anyhow::anyhow!("device secret: {e}"))?;
     let cert = client::parse_cert(&cert)?;
@@ -77,12 +88,17 @@ pub fn client_start(data_dir: String, secret: Vec<u8>, cert: String, sink: Strea
     let now = config::now();
     let mut contacts = Contacts::load(std::path::Path::new(&data_dir).join("contacts.json"), config::root_pub(), now);
     contacts.merge(std::slice::from_ref(&cert), now, &manifest);
+    let my_user = client::my_cert(&cert)?.user_id;
+    let db_key: [u8; 32] = db_key.try_into().map_err(|_| anyhow::anyhow!("db key must be 32 bytes"))?;
+    let store = client::store::Store::open(&std::path::Path::new(&data_dir).join("botato.db"), db_key)?;
     let shared = Arc::new(Shared {
         me,
         cert,
         contacts: Mutex::new(contacts),
         manifest,
         reconnect: tokio::sync::Notify::new(),
+        store: Mutex::new(store),
+        my_user,
     });
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -165,4 +181,68 @@ pub fn client_my_device() -> Option<String> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_ice_config() -> IceConfig {
     IceConfig { stun: with(|r| r.shared.manifest.stun.clone()).unwrap_or_default() }
+}
+
+// ---- messages
+
+pub struct MessageInfo {
+    pub msg_id: String,
+    pub from_me: bool,
+    pub text: String,
+    /// Sender's clock, unix seconds.
+    pub sent_at: i64,
+    /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
+    pub status: i64,
+}
+
+pub struct ConversationInfo {
+    pub peer_user: String,
+    pub last_text: String,
+    pub last_at: i64,
+    pub last_from_me: bool,
+    pub unread: i64,
+}
+
+/// Queues a text message to every device of `peer_user` (and our other devices).
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_send_text(peer_user: String, text: String) -> anyhow::Result<String> {
+    let peer = parse_id(&peer_user)?;
+    let guard = RUNNING.lock().unwrap();
+    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
+    let msg_id = client::messaging::compose(&r.shared, &peer, &text)?;
+    let _ = r.tx.send(Cmd::Flush);
+    Ok(msg_id.to_hex())
+}
+
+/// Oldest first; `before` (sent_at) pages backwards.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_messages(peer_user: String, before: Option<i64>, limit: i64) -> anyhow::Result<Vec<MessageInfo>> {
+    let peer = parse_id(&peer_user)?;
+    with(|r| r.shared.store.lock().unwrap().messages(&peer, before, limit))??
+        .into_iter()
+        .map(|m| {
+            Ok(MessageInfo { msg_id: m.msg_id.to_hex(), from_me: m.from_me, text: m.text, sent_at: m.sent_at, status: m.status })
+        })
+        .collect()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_conversations() -> Vec<ConversationInfo> {
+    with(|r| r.shared.store.lock().unwrap().conversations().unwrap_or_default())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| ConversationInfo {
+            peer_user: c.peer_user.to_hex(),
+            last_text: c.last_text,
+            last_at: c.last_at,
+            last_from_me: c.last_from_me,
+            unread: c.unread,
+        })
+        .collect()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_mark_read(peer_user: String) -> anyhow::Result<()> {
+    let peer = parse_id(&peer_user)?;
+    with(|r| r.shared.store.lock().unwrap().mark_read(&peer))?
 }
