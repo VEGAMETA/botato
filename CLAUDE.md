@@ -43,7 +43,7 @@
 
 | Часть | Технологии |
 |---|---|
-| Клиент (`app/`) | Flutter: Android, Windows, Linux, macOS (**iOS отложен** — нет Mac; код пишем без Android-only допущений, чтобы iOS можно было добавить), `flutter_webrtc`, `flutter_callkit_incoming`. Протокол и крипта — `crates/proto` через `flutter_rust_bridge`, на Dart своей крипты нет |
+| Клиент (`app/`) | Flutter: Android, Windows, Linux, macOS (**iOS отложен** — нет Mac; код пишем без Android-only допущений, чтобы iOS можно было добавить), `flutter_webrtc`, свои Kotlin-сервисы для звонков (без сторонних call-SDK). Протокол и крипта — `crates/proto` через `flutter_rust_bridge`, на Dart своей крипты нет |
 | Протокол (`crates/proto`) | Rust: форматы, подписи, шифрование сообщений, фреймы. Один код для клиента, relay и admin. Крипта: `ed25519-dalek`, `x25519-dalek`, `hkdf`+`sha2`, `chacha20poly1305` (XChaCha) |
 | Relay (`server/`) | Rust, один статический бинарник: `tokio`, `axum` (WebSocket), `ed25519-dalek`, `hmac`+`sha1` (TURN), `serde_json`. Хранилище — in-memory, без БД |
 | Админка (`tools/admin/`) | Rust CLI (`clap`): корневой ключ, сертификаты, манифест, отзыв |
@@ -57,12 +57,19 @@
 ## 4. Структура репозитория
 
 ```
-Cargo.toml       workspace: crates/proto, server, tools/admin
+Cargo.toml       workspace: crates/proto, server, tools/admin, tools/botatoadmin, app/rust
 protocol/        спецификация форматов (README.md) + test vectors (JSON) — источник правды
 crates/proto/    Rust-реализация protocol/ (проверяется на векторах); клиент подключает её через flutter_rust_bridge
-server/          relay: auth, mailbox, signaling, push, TURN-креды
-tools/admin/     CLI админа
+server/          relay: auth, mailbox, signaling, push, TURN-креды; examples/probe.rs — проверка живого relay
+tools/admin/     CLI админа (lib + bin)
+tools/botatoadmin/  GUI (egui) поверх admin-lib: выпуск сертификатов по запросу с устройства
 app/             Flutter-клиент
+  rust/          botato_core: мост FRB — ключи, relay-клиент (client/), история и outbox (client/store.rs, SQLite),
+                 сообщения (client/messaging.rs); e2e-тест с relay в процессе (client/e2e_tests.rs)
+  lib/call/      звонки (CallService, экран, статистика, SDP-правки, настройки устройств)
+  lib/screens/   главный экран, чат, онбординг
+  android/…/     Kotlin: CallForegroundService (идущий звонок), IncomingCallNotification, MessageNotification
+  assets/        root_pub.hex (в git), manifest.bin (gitignored, копия из папки админа), icon/
 infra/           Dockerfile.relay; ansible/ (inventory.ini — gitignored, см. inventory.example.ini; bootstrap.yml, deploy.yml, roles/: base, docker, app — шаблоны compose/Caddyfile/turnserver.conf, fwknop, firewall)
 ```
 
@@ -72,8 +79,11 @@ infra/           Dockerfile.relay; ansible/ (inventory.ini — gitignored, см.
 cargo test --workspace
 cargo run -p admin -- --help          # данные админа: --dir / BOTATO_ADMIN_DIR (держать офлайн, root.key бэкапить)
 cargo run -p relay -- --help
-cd app && flutter run
+cargo run --release -p botatoadmin   # GUI админа
+cd app && flutter run -d windows     # ПК; для логов: > target/pc-log.txt
+cd app && flutter build apk --debug --target-platform android-arm64   # + adb install -r (телефон по Wi-Fi-отладке)
 cd app && flutter test
+cd app && flutter_rust_bridge_codegen generate   # после изменений в app/rust/src/api
 
 # только из WSL (из /mnt/h ansible.cfg игнорируется, поэтому ANSIBLE_INVENTORY_ENABLED=ini в окружении):
 ansible-playbook -i infra/ansible/inventory.ini infra/ansible/bootstrap.yml   # свежий VPS, под root
@@ -176,15 +186,19 @@ Close-коды: `4000` протокол, `4001` auth, `4002` вытеснен н
 
 Из-за шагов 5–6 смерть или перезапуск relay не теряет сообщения в пределах 24 ч: outbox переотправляется, дубликаты отсекаются по `msg_id`.
 
+Реализация (форматы — `protocol/README.md` §6.2): логика целиком в Rust (`app/rust/src/client`), Dart — только UI. История и outbox — SQLite в папке приложения; тело сообщения зашифровано XChaCha20-Poly1305 ключом из защищённого хранилища ОС (AAD = `msg_id`), метаданные открыты. Квитанция отправляется на каждую копию (и на дубликаты), `ack` серверу — после записи. Сообщение от ещё неизвестного устройства не ack'ается: клиент запрашивает справочник и обрабатывает его после.
+
 v2: Double Ratchet (vodozemac, Apache-2.0) ради forward secrecy.
 
 ## 8. Звонки
 
-- Сигналинг: основной канал — WS relay, fallback — Nostr-релеи (события зашифрованы на ключ получателя).
-- Каждый SDP подписан ключом устройства. DTLS-fingerprint из SDP сверяется с подписью, поэтому MITM на сигналинге не проходит. Опционально — SAS-код на экране.
-- ICE: публичные STUN + свой TURN (UDP 3478, TLS 5349), `iceTransportPolicy: all`, прямой путь в приоритете.
-- Смена сети (Wi-Fi ↔ LTE) → ICE restart без разрыва звонка.
-- Мультидевайс: вызов уходит на все устройства пользователя. Ответило одно → звонящий шлёт остальным `cancel`, они показывают «отвечено на другом устройстве».
+- Сигналинг: основной канал — WS relay, fallback — Nostr-релеи (события зашифрованы на ключ получателя). Сигналы — E2E-конверты kind 1 (`protocol/README.md` §6.1): подпись устройства в конверте аутентифицирует SDP, WebRTC сверяет DTLS-сертификат с fingerprint в этом SDP — MITM на сигналинге не проходит. Опционально — SAS-код на экране.
+- ICE: STUN из манифеста + свой TURN (UDP 3478, TLS 5349), `iceTransportPolicy: all`, прямой путь в приоритете. На экране звонка — статистика (маршрут host/srflx/relay, RTT, битрейты, fps, потери).
+- В каждом звонке согласуются аудио- и видео-трансиверы `sendrecv`: камера, демонстрация экрана, смена устройств и аудио-режимы — через `replaceTrack`/`setParameters` без пересогласования; `media`-сигнал говорит собеседнику, что показывать.
+- Смена сети (Wi-Fi ↔ LTE, VPN) → relay-клиент переподключается сразу, звонящий шлёт `reoffer` (ICE restart), повторяет тот же `reoffer` до ответа, 40 с на восстановление. Сигналы обрабатываются строго по очереди.
+- Мультидевайс: вызов уходит на все устройства пользователя. Ответило одно → звонящий шлёт остальным `hangup answered_elsewhere`.
+- Из SDP убирается RTP-расширение `video-orientation` (отправитель сам поворачивает кадры: Windows-рендерер его не всегда учитывает).
+- Android: `CallForegroundService` (типы microphone/camera/mediaProjection) с несмахиваемым CallStyle-уведомлением (микрофон, сброс) — без него Android 14+ отнимает микрофон в фоне. Входящий — CallStyle-уведомление с рингтоном и full-screen поверх экрана блокировки; «Принять» из уведомления — без камеры. ПК: входящий поднимает окно на передний план.
 
 ### Аудио-режимы (переключаются во время звонка)
 
@@ -192,11 +206,12 @@ v2: Double Ratchet (vodozemac, Apache-2.0) ради forward secrecy.
 |---|---|---|
 | Софтовые AEC / NS / AGC | вкл | выкл |
 | Системная обработка (Android HW AEC/NS, iOS voice processing) | вкл | выкл |
-| Opus | моно, ~32 кбит/с, DTX вкл | стерео, ~128 кбит/с, DTX выкл |
+| Opus | моно, 48 кбит/с | стерео, 128 кбит/с |
 | FEC | вкл | вкл |
 
 - Переключение: новый трек с другими констрейнтами → `sender.replaceTrack()`, битрейт через `setParameters`. Без пересогласования.
-- `stereo=1` в fmtp Opus согласовывается сразу при установке звонка, иначе стерео потом не включить.
+- `stereo=1` в fmtp Opus согласовывается сразу при установке звонка, иначе стерео потом не включить. Там же `maxaveragebitrate=128000` — потолок; реальный битрейт режима задаётся `setParameters`. DTX выключен в обоих режимах (его нельзя переключить без пересогласования).
+- На ПК микрофон и камера выбираются через `optional: [{sourceId}]`: в Windows-реализации flutter_webrtc `deviceId` в аудио-ограничениях — это устройство *вывода*. Сохранённое, но пропавшее устройство сбрасывается на умолчание.
 - В UI предупреждение: «Чистый звук» только в наушниках, иначе будет эхо.
 
 ## 9. Push
@@ -276,11 +291,13 @@ nftables: входящие по умолчанию `drop` (молча, без re
 2. `server/`: auth, mailbox, signaling, TURN-креды; интеграционные тесты через настоящий WS.
 3. `tools/admin`: корневой ключ, сертификаты, манифест, отзыв.
 4. `infra/`: Dockerfile, compose (Caddy + relay + coturn), `bootstrap.yml`, `deploy.yml`. Базовая роль: удалить `qemu-guest-agent` и `haveged`, замаскировать `systemd-ssh-generator` (`/etc/systemd/system-generators/systemd-ssh-generator → /dev/null`), выключить своп, journald volatile, unattended-upgrades только для security. Затем Docker, nftables, fwknop — последним. Проверка портов сканом снаружи.
-5. Клиент: ключи, QR, подключение к relay, P2P-звонок с подписанным SDP и проверкой fingerprint.
-6. Текст по схеме outbox и квитанций.
-7. Аудио-режимы.
-8. Push (Android: FCM + полноэкранный входящий через `flutter_callkit_incoming`).
+5. Клиент: ключи, QR, подключение к relay, звонки (аудио/видео/экран), E2E-сигналинг. ✔
+6. Текст по схеме outbox и квитанций. ✔
+7. Аудио-режимы. ✔ (ICE restart при смене сети ещё не подтверждён вживую)
+8. Push (Android: FCM data-only; входящий звонок и сообщения на спящий/выгруженный телефон). Уведомления при живом процессе уже есть.
 9. Fallback через Nostr, сценарий отказа сервера, прогон процедуры замены вживую.
+
+Сделано 1–4 полностью (сервер развёрнут, см. §10).
 
 ## 13. Открытые вопросы
 
