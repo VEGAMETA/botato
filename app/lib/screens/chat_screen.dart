@@ -40,7 +40,11 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     widget.relay.activeChat = _peer;
-    _reload();
+    _messages = widget.relay.messages(_peer);
+    // markRead notifies listeners; not allowed while the route is being built.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reload();
+    });
     _sub = widget.relay.messageUpdates.where((p) => p == _peer).listen((_) => _reload());
   }
 
