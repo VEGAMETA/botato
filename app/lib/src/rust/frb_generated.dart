@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/client.dart';
 import 'api/identity.dart';
 import 'api/info.dart';
 
@@ -70,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -75254800;
+  int get rustContentHash => 1345855528;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -86,6 +87,29 @@ abstract class RustLibApi extends BaseApi {
     required List<int> secret,
     required String text,
   });
+
+  List<ContactInfo> crateApiClientClientContacts();
+
+  IceConfig crateApiClientClientIceConfig();
+
+  String? crateApiClientClientMyDevice();
+
+  void crateApiClientClientRefreshDirectory();
+
+  void crateApiClientClientRequestTurn();
+
+  void crateApiClientClientSignal({
+    required String toDevice,
+    required String payload,
+  });
+
+  Stream<ClientEvent> crateApiClientClientStart({
+    required String dataDir,
+    required List<int> secret,
+    required String cert,
+  });
+
+  Future<void> crateApiClientClientStop();
 
   String crateApiInfoCoreInfo();
 
@@ -139,12 +163,219 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  String crateApiInfoCoreInfo() {
+  List<ContactInfo> crateApiClientClientContacts() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_contact_info,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiClientClientContactsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientContactsConstMeta =>
+      const TaskConstMeta(debugName: "client_contacts", argNames: []);
+
+  @override
+  IceConfig crateApiClientClientIceConfig() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ice_config,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiClientClientIceConfigConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientIceConfigConstMeta =>
+      const TaskConstMeta(debugName: "client_ice_config", argNames: []);
+
+  @override
+  String? crateApiClientClientMyDevice() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiClientClientMyDeviceConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientMyDeviceConstMeta =>
+      const TaskConstMeta(debugName: "client_my_device", argNames: []);
+
+  @override
+  void crateApiClientClientRefreshDirectory() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiClientClientRefreshDirectoryConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientRefreshDirectoryConstMeta =>
+      const TaskConstMeta(debugName: "client_refresh_directory", argNames: []);
+
+  @override
+  void crateApiClientClientRequestTurn() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiClientClientRequestTurnConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientRequestTurnConstMeta =>
+      const TaskConstMeta(debugName: "client_request_turn", argNames: []);
+
+  @override
+  void crateApiClientClientSignal({
+    required String toDevice,
+    required String payload,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(toDevice, serializer);
+          sse_encode_String(payload, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiClientClientSignalConstMeta,
+        argValues: [toDevice, payload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientSignalConstMeta => const TaskConstMeta(
+    debugName: "client_signal",
+    argNames: ["toDevice", "payload"],
+  );
+
+  @override
+  Stream<ClientEvent> crateApiClientClientStart({
+    required String dataDir,
+    required List<int> secret,
+    required String cert,
+  }) {
+    final sink = RustStreamSink<ClientEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_String(dataDir, serializer);
+            sse_encode_list_prim_u_8_loose(secret, serializer);
+            sse_encode_String(cert, serializer);
+            sse_encode_StreamSink_client_event_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 8,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_AnyhowException,
+          ),
+          constMeta: kCrateApiClientClientStartConstMeta,
+          argValues: [dataDir, secret, cert, sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiClientClientStartConstMeta => const TaskConstMeta(
+    debugName: "client_start",
+    argNames: ["dataDir", "secret", "cert", "sink"],
+  );
+
+  @override
+  Future<void> crateApiClientClientStop() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiClientClientStopConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientClientStopConstMeta =>
+      const TaskConstMeta(debugName: "client_stop", argNames: []);
+
+  @override
+  String crateApiInfoCoreInfo() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -166,7 +397,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -189,7 +420,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(secret, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_device_info,
@@ -216,7 +447,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(secret, serializer);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -244,7 +475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 14,
             port: port_,
           );
         },
@@ -269,9 +500,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<ClientEvent> dco_decode_StreamSink_client_event_Sse(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  bool dco_decode_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
   }
 
   @protected
@@ -289,6 +534,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ClientEvent dco_decode_client_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return ClientEvent_Connecting(server: dco_decode_String(raw[1]));
+      case 1:
+        return ClientEvent_Online(server: dco_decode_String(raw[1]));
+      case 2:
+        return ClientEvent_Offline(reason: dco_decode_String(raw[1]));
+      case 3:
+        return ClientEvent_ContactsChanged();
+      case 4:
+        return ClientEvent_Signal(
+          fromUser: dco_decode_String(raw[1]),
+          fromDevice: dco_decode_String(raw[2]),
+          payload: dco_decode_String(raw[3]),
+        );
+      case 5:
+        return ClientEvent_Signaled(
+          toDevice: dco_decode_String(raw[1]),
+          online: dco_decode_bool(raw[2]),
+        );
+      case 6:
+        return ClientEvent_Turn(
+          urls: dco_decode_list_String(raw[1]),
+          username: dco_decode_String(raw[2]),
+          credential: dco_decode_String(raw[3]),
+        );
+      case 7:
+        return ClientEvent_Error(message: dco_decode_String(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  ContactInfo dco_decode_contact_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return ContactInfo(
+      userId: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      devices: dco_decode_list_String(arr[2]),
+      isMe: dco_decode_bool(arr[3]),
+    );
+  }
+
+  @protected
   DeviceInfo dco_decode_device_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -301,6 +596,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  IceConfig dco_decode_ice_config(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return IceConfig(stun: dco_decode_list_String(arr[0]));
+  }
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<ContactInfo> dco_decode_list_contact_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_contact_info).toList();
+  }
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<int>;
@@ -310,6 +626,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_String(raw);
   }
 
   @protected
@@ -354,10 +676,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<ClientEvent> sse_decode_StreamSink_client_event_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint8() != 0;
   }
 
   @protected
@@ -376,11 +712,104 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ClientEvent sse_decode_client_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_server = sse_decode_String(deserializer);
+        return ClientEvent_Connecting(server: var_server);
+      case 1:
+        var var_server = sse_decode_String(deserializer);
+        return ClientEvent_Online(server: var_server);
+      case 2:
+        var var_reason = sse_decode_String(deserializer);
+        return ClientEvent_Offline(reason: var_reason);
+      case 3:
+        return ClientEvent_ContactsChanged();
+      case 4:
+        var var_fromUser = sse_decode_String(deserializer);
+        var var_fromDevice = sse_decode_String(deserializer);
+        var var_payload = sse_decode_String(deserializer);
+        return ClientEvent_Signal(
+          fromUser: var_fromUser,
+          fromDevice: var_fromDevice,
+          payload: var_payload,
+        );
+      case 5:
+        var var_toDevice = sse_decode_String(deserializer);
+        var var_online = sse_decode_bool(deserializer);
+        return ClientEvent_Signaled(toDevice: var_toDevice, online: var_online);
+      case 6:
+        var var_urls = sse_decode_list_String(deserializer);
+        var var_username = sse_decode_String(deserializer);
+        var var_credential = sse_decode_String(deserializer);
+        return ClientEvent_Turn(
+          urls: var_urls,
+          username: var_username,
+          credential: var_credential,
+        );
+      case 7:
+        var var_message = sse_decode_String(deserializer);
+        return ClientEvent_Error(message: var_message);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  ContactInfo sse_decode_contact_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_userId = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_devices = sse_decode_list_String(deserializer);
+    var var_isMe = sse_decode_bool(deserializer);
+    return ContactInfo(
+      userId: var_userId,
+      name: var_name,
+      devices: var_devices,
+      isMe: var_isMe,
+    );
+  }
+
+  @protected
   DeviceInfo sse_decode_device_info(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_deviceId = sse_decode_String(deserializer);
     var var_fingerprint = sse_decode_String(deserializer);
     return DeviceInfo(deviceId: var_deviceId, fingerprint: var_fingerprint);
+  }
+
+  @protected
+  IceConfig sse_decode_ice_config(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_stun = sse_decode_list_String(deserializer);
+    return IceConfig(stun: var_stun);
+  }
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ContactInfo> sse_decode_list_contact_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ContactInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_contact_info(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -395,6 +824,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
   }
 
   @protected
@@ -437,12 +877,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  bool sse_decode_bool(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getUint8() != 0;
-  }
-
-  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -452,9 +886,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_StreamSink_client_event_Sse(
+    RustStreamSink<ClientEvent> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_client_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint8(self ? 1 : 0);
   }
 
   @protected
@@ -467,10 +924,89 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_client_event(ClientEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case ClientEvent_Connecting(server: final server):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(server, serializer);
+      case ClientEvent_Online(server: final server):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(server, serializer);
+      case ClientEvent_Offline(reason: final reason):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(reason, serializer);
+      case ClientEvent_ContactsChanged():
+        sse_encode_i_32(3, serializer);
+      case ClientEvent_Signal(
+        fromUser: final fromUser,
+        fromDevice: final fromDevice,
+        payload: final payload,
+      ):
+        sse_encode_i_32(4, serializer);
+        sse_encode_String(fromUser, serializer);
+        sse_encode_String(fromDevice, serializer);
+        sse_encode_String(payload, serializer);
+      case ClientEvent_Signaled(toDevice: final toDevice, online: final online):
+        sse_encode_i_32(5, serializer);
+        sse_encode_String(toDevice, serializer);
+        sse_encode_bool(online, serializer);
+      case ClientEvent_Turn(
+        urls: final urls,
+        username: final username,
+        credential: final credential,
+      ):
+        sse_encode_i_32(6, serializer);
+        sse_encode_list_String(urls, serializer);
+        sse_encode_String(username, serializer);
+        sse_encode_String(credential, serializer);
+      case ClientEvent_Error(message: final message):
+        sse_encode_i_32(7, serializer);
+        sse_encode_String(message, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_contact_info(ContactInfo self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.userId, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_list_String(self.devices, serializer);
+    sse_encode_bool(self.isMe, serializer);
+  }
+
+  @protected
   void sse_encode_device_info(DeviceInfo self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.deviceId, serializer);
     sse_encode_String(self.fingerprint, serializer);
+  }
+
+  @protected
+  void sse_encode_ice_config(IceConfig self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_String(self.stun, serializer);
+  }
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_contact_info(
+    List<ContactInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_contact_info(item, serializer);
+    }
   }
 
   @protected
@@ -493,6 +1029,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_String(self, serializer);
+    }
   }
 
   @protected
@@ -532,11 +1078,5 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
-  }
-
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putUint8(self ? 1 : 0);
   }
 }

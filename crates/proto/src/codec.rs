@@ -57,6 +57,9 @@ impl<'a> Reader<'a> {
     pub fn fixed<const N: usize>(&mut self) -> Result<[u8; N]> {
         Ok(self.take(N)?.try_into().unwrap())
     }
+    pub fn fixed_vec(&mut self, n: usize) -> Result<Vec<u8>> {
+        Ok(self.take(n)?.to_vec())
+    }
     pub fn id(&mut self) -> Result<Id> {
         Ok(Id(self.fixed()?))
     }

@@ -140,7 +140,50 @@ Close codes: `4000` protocol error, `4001` auth failed, `4002` replaced by a new
 | Keepalive | server ping every 30 s; no inbound traffic for 75 s → close |
 | Wake-up push debounce | messages 30 s, calls 5 s |
 
-## 5. Not yet specified
+## 5. Device secret (client storage, not on the wire)
 
-Message blob envelope (X25519 → HKDF-SHA256 → XChaCha20-Poly1305 with inner sender signature),
-E2E receipts, signed SDP. They will be added here with vectors before clients use them.
+`u8 format(1) | id device_id | [32] Ed25519 seed | [32] X25519 secret` — kept in platform secure storage.
+
+## 6. E2E envelope (`blob` of `send` and `signal`)
+
+Everything between devices is sealed to the recipient device's `enc_pub` and signed by the sender device.
+Vector: `vectors/envelope.json`.
+
+```
+inner  = u8 format(1) | u8 kind | id sender_device | u64 sent_at | u32 len | payload
+sig    = Ed25519(sender.sign, "botato/v1/envelope\0" || recipient_device || eph_pub || inner)
+shared = X25519(eph_secret, recipient.enc_pub)          all-zero (non-contributory) → reject
+key    = HKDF-SHA256(salt = eph_pub || recipient.enc_pub, ikm = shared, info = "botato/v1/envelope-key", L = 32)
+header = u8 version(1) | [32] eph_pub | [24] nonce
+blob   = header || XChaCha20-Poly1305(key, nonce, plaintext = inner || sig, AAD = header || recipient_device)
+```
+
+Receiving: decrypt with own X25519 secret → take `sender_device` from `inner` → find it in a verified,
+non-revoked certificate → verify `sig` with that device's `sign_pub`. Anything else is dropped silently.
+The signature covers the recipient and `eph_pub`, so a recipient cannot re-address a signed envelope.
+Payload ≤ 65280 bytes.
+
+| kind | Meaning | payload |
+|---|---|---|
+| 1 | call signaling | JSON, see below |
+| 2 | message | not yet specified |
+| 3 | E2E receipt | not yet specified |
+
+### 6.1 Call signaling payload (kind 1)
+
+UTF-8 JSON object. Receivers drop signals with `|now − sent_at| > 120 s`.
+
+| `type` | Fields | Meaning |
+|---|---|---|
+| `offer` | `call`, `sdp`, `video` (bool) | start a call; sent to every device of the callee |
+| `answer` | `call`, `sdp` | accepted on this device |
+| `ice` | `call`, `candidate`, `mid`, `mline` | trickle ICE candidate |
+| `hangup` | `call`, `reason` (`hangup`, `declined`, `busy`, `answered_elsewhere`, `failed`) | end or reject |
+| `ping` / `pong` | — | diagnostics: round trip through the relay, answered automatically |
+
+`call` is a random 128-bit id (hex). SDP needs no separate signature: the envelope signature authenticates
+it, and WebRTC checks the peer's DTLS certificate against the fingerprint in that SDP.
+
+## 7. Not yet specified
+
+Message payload (kind 2), E2E receipts (kind 3), outbox rules.

@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod cert;
 pub mod device;
+pub mod envelope;
 mod codec;
 pub mod enroll;
 pub mod frames;
@@ -22,6 +23,7 @@ pub mod ctx {
     pub const AUTH_SERVER: &[u8] = b"botato/v1/auth-server\0";
     pub const AUTH_CLIENT: &[u8] = b"botato/v1/auth-client\0";
     pub const ENROLL: &[u8] = b"botato/v1/enroll\0";
+    pub const ENVELOPE: &[u8] = b"botato/v1/envelope\0";
     /// Hash prefix, not a signature context.
     pub const FINGERPRINT: &[u8] = b"botato/v1/fingerprint\0";
 }

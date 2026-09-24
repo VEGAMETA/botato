@@ -293,9 +293,16 @@ name = "botato_core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "flutter_rust_bridge",
+ "futures-util",
  "hex",
  "proto",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
 ]
 
 [[package]]
@@ -860,6 +867,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hkdf"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4aaa26c720c68b866f2c96ef5c1264b3e6f473fe5d4ce61cd44bbe913e553018"
+dependencies = [
+ "hmac",
+]
+
+[[package]]
 name = "hmac"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1228,9 +1244,11 @@ name = "proto"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "chacha20poly1305",
  "ed25519-dalek",
  "getrandom 0.4.3",
  "hex",
+ "hkdf",
  "serde",
  "serde_json",
  "sha2",

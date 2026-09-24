@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'identity_store.dart';
+import 'relay_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'src/rust/api/identity.dart' as core;
@@ -13,23 +14,27 @@ Future<void> main() async {
   await RustLib.init();
   final store = IdentityStore();
   final secret = await store.deviceSecret();
+  String? cert = await store.cert();
   core.CertInfo? info;
-  final cert = await store.cert();
   if (cert != null) {
     try {
-      info = core.certImport(secret: secret, text: cert).$2;
+      final (normalized, i) = core.certImport(secret: secret, text: cert);
+      cert = normalized;
+      info = i;
     } catch (_) {
       // Expired or otherwise invalid: go through setup again.
+      cert = null;
     }
   }
-  runApp(BotatoApp(store: store, secret: secret, info: info));
+  runApp(BotatoApp(store: store, secret: secret, cert: cert, info: info));
 }
 
 class BotatoApp extends StatefulWidget {
-  const BotatoApp({super.key, required this.store, required this.secret, this.info});
+  const BotatoApp({super.key, required this.store, required this.secret, this.cert, this.info});
 
   final IdentityStore store;
   final Uint8List secret;
+  final String? cert;
   final core.CertInfo? info;
 
   @override
@@ -37,7 +42,20 @@ class BotatoApp extends StatefulWidget {
 }
 
 class _BotatoAppState extends State<BotatoApp> {
+  final _relay = RelayService();
   late core.CertInfo? _info = widget.info;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.cert != null) _relay.start(widget.secret, widget.cert!);
+  }
+
+  @override
+  void dispose() {
+    _relay.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,9 +67,12 @@ class _BotatoAppState extends State<BotatoApp> {
           ? SetupScreen(
               store: widget.store,
               secret: widget.secret,
-              onCert: (_, info) => setState(() => _info = info),
+              onCert: (cert, info) {
+                _relay.start(widget.secret, cert);
+                setState(() => _info = info);
+              },
             )
-          : HomeScreen(info: _info!, device: core.deviceInfo(secret: widget.secret)),
+          : HomeScreen(info: _info!, relay: _relay),
     );
   }
 }

@@ -264,3 +264,52 @@ fn enroll_vector() {
         }),
     );
 }
+
+#[test]
+fn envelope_vector() {
+    use proto::device::DeviceSecret;
+    use proto::envelope::{self, KIND_SIGNAL};
+    let secret = |id: u8, s: u8, e: u8| {
+        let mut b = vec![1u8];
+        b.extend_from_slice(&[id; 16]);
+        b.extend_from_slice(&[s; 32]);
+        b.extend_from_slice(&[e; 32]);
+        DeviceSecret::from_bytes(&b).unwrap()
+    };
+    let sender = secret(0x21, 0x31, 0x41);
+    let recipient = secret(0x22, 0x32, 0x42);
+    let eph = [0x71u8; 32];
+    let nonce = [0x72u8; 24];
+    let payload = br#"{"type":"offer","sdp":"v=0"}"#;
+    let blob = envelope::seal_with(
+        &sender,
+        &recipient.device_id,
+        &recipient.enc_pub(),
+        KIND_SIGNAL,
+        1_800_000_000,
+        payload,
+        x25519_dalek::StaticSecret::from(eph),
+        nonce,
+    )
+    .unwrap();
+    let opened = envelope::open(&recipient, &blob).unwrap().verify(&sender.sign_pub()).unwrap();
+    assert_eq!(opened.payload, payload);
+
+    check(
+        "envelope.json",
+        json!({
+            "sender_secret": hex::encode(sender.to_bytes().as_slice()),
+            "sender_sign_pub": hex::encode(sender.sign_pub()),
+            "recipient_secret": hex::encode(recipient.to_bytes().as_slice()),
+            "recipient_device_id": recipient.device_id.to_hex(),
+            "recipient_enc_pub": hex::encode(recipient.enc_pub()),
+            "ephemeral_secret": hex::encode(eph),
+            "nonce": hex::encode(nonce),
+            "kind": KIND_SIGNAL,
+            "sent_at": 1_800_000_000u64,
+            "payload": String::from_utf8_lossy(payload),
+            "ctx": hex::encode(proto::ctx::ENVELOPE),
+            "blob": hex::encode(&blob),
+        }),
+    );
+}

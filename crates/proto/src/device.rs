@@ -55,6 +55,10 @@ impl DeviceSecret {
         })
     }
 
+    pub(crate) fn enc_secret(&self) -> &StaticSecret {
+        &self.enc
+    }
+
     pub fn signing_key(&self) -> &SigningKey {
         &self.sign
     }
