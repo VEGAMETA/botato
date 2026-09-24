@@ -46,6 +46,9 @@ struct ServeArgs {
     /// TURN URLs handed to clients, comma-separated.
     #[arg(long, env = "RELAY_TURN_URLS", value_delimiter = ',')]
     turn_urls: Vec<String>,
+    /// FCM service account JSON. Push is disabled if unset.
+    #[arg(long, env = "RELAY_FCM_CREDENTIALS")]
+    fcm_credentials: Option<PathBuf>,
 }
 
 fn main() {
@@ -115,6 +118,14 @@ fn serve(a: ServeArgs) -> Res<()> {
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async move {
+        if let Some(p) = &a.fcm_credentials {
+            let json = std::fs::read(p).map_err(|e| format!("read fcm credentials: {e}"))?;
+            let fcm = relay::fcm::FcmPusher::from_json(&json)?;
+            // Fail loudly at start rather than silently at the first incoming call.
+            fcm.check().await.map_err(|e| format!("fcm: {e}"))?;
+            cfg.pusher = std::sync::Arc::new(fcm);
+            eprintln!("relay: push via FCM enabled");
+        }
         let relay = Relay::new(cfg);
         tokio::spawn(relay::watch_manifest(
             relay.clone(),

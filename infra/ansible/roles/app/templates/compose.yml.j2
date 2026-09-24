@@ -34,6 +34,9 @@ services:
       RELAY_MANIFEST: /config/manifest.bin
       RELAY_TURN_SECRET_FILE: /secrets/turn_secret
       RELAY_TURN_URLS: "turn:{{ relay_domain }}:3478?transport=udp,turn:{{ relay_domain }}:3478?transport=tcp,turns:{{ relay_domain }}:5349?transport=tcp"
+{% if fcm_file.stat.exists %}
+      RELAY_FCM_CREDENTIALS: /secrets/fcm.json
+{% endif %}
     volumes:
       - ./relay:/secrets
       - ./config:/config:ro

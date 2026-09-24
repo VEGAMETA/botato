@@ -1,6 +1,7 @@
 //! botato relay: authenticates devices, stores encrypted blobs for ≤24 h in RAM,
 //! forwards call signaling, issues TURN credentials. Never sees plaintext.
 
+pub mod fcm;
 pub mod mailbox;
 pub mod push;
 pub mod relay;

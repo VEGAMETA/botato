@@ -114,6 +114,20 @@
     mode: "0400"
   loop: [crt.pem, key.pem]
 
+- name: FCM service account (push); stays in the admin dir and on the server only
+  when: fcm_credentials is defined and fcm_credentials is file
+  ansible.builtin.copy:
+    src: "{{ fcm_credentials }}"
+    dest: "{{ botato_dir }}/relay/fcm.json"
+    owner: "{{ relay_uid }}"
+    mode: "0400"
+  no_log: true
+
+- name: Is push configured
+  ansible.builtin.stat:
+    path: "{{ botato_dir }}/relay/fcm.json"
+  register: fcm_file
+
 - name: Signed manifest from the admin machine
   when: admin_manifest is defined and admin_manifest is file
   ansible.builtin.copy:
