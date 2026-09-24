@@ -43,7 +43,7 @@
 
 | Часть | Технологии |
 |---|---|
-| Клиент (`app/`) | Flutter (Android, iOS, Windows, macOS, Linux), `flutter_webrtc`, `flutter_callkit_incoming`. Протокол и крипта — `crates/proto` через `flutter_rust_bridge`, на Dart своей крипты нет |
+| Клиент (`app/`) | Flutter: Android, Windows, Linux, macOS (**iOS отложен** — нет Mac; код пишем без Android-only допущений, чтобы iOS можно было добавить), `flutter_webrtc`, `flutter_callkit_incoming`. Протокол и крипта — `crates/proto` через `flutter_rust_bridge`, на Dart своей крипты нет |
 | Протокол (`crates/proto`) | Rust: форматы, подписи, шифрование сообщений, фреймы. Один код для клиента, relay и admin. Крипта: `ed25519-dalek`, `x25519-dalek`, `hkdf`+`sha2`, `chacha20poly1305` (XChaCha) |
 | Relay (`server/`) | Rust, один статический бинарник: `tokio`, `axum` (WebSocket), `ed25519-dalek`, `hmac`+`sha1` (TURN), `serde_json`. Хранилище — in-memory, без БД |
 | Админка (`tools/admin/`) | Rust CLI (`clap`): корневой ключ, сертификаты, манифест, отзыв |
@@ -52,7 +52,7 @@
 | Сервер | Debian 13 (trixie), Docker Compose, nftables, SSH за fwknop |
 | Деплой | Ansible, секреты в ansible-vault или sops |
 
-**Управляющая машина:** Windows + WSL. Rust-код собирается и тестируется в Windows. Ansible, SSH и Docker запускаются только из WSL (ключи лежат в `~/.ssh` внутри WSL).
+**Управляющая машина:** Windows + WSL. Rust и Flutter собираются и тестируются в Windows: Flutter — `D:\Utils\flutter` (stable), Android SDK — `%LOCALAPPDATA%\Android\Sdk` (вместо `sdkmanager` новый CLI `cmdline-tools\latest\bin\android.exe sdk ...`), Rust-таргеты Android + `cargo-ndk`, `flutter_rust_bridge_codegen` 2.x. Тестовые устройства: этот ПК (Windows) и Samsung S21 Ultra (Android 15) по USB. Ansible, SSH и Docker — только из WSL (ключи в `~/.ssh` внутри WSL).
 
 ## 4. Структура репозитория
 
@@ -202,7 +202,7 @@ v2: Double Ratchet (vodozemac, Apache-2.0) ради forward secrecy.
 ## 9. Push
 
 - Android: FCM data-only с пустым payload («проснись и подключись»). Google видит только сам факт пуша.
-- iOS: VoIP PushKit → обязательный `reportNewIncomingCall` в CallKit.
+- iOS (когда вернёмся к нему): VoIP PushKit → обязательный `reportNewIncomingCall` в CallKit.
 - Десктоп: без push, фоновое WS-соединение.
 - Relay пушит офлайн-получателю при новом сообщении (не чаще раза в 30 с) и при сигнале (не чаще раза в 5 с).
 
@@ -279,7 +279,7 @@ nftables: входящие по умолчанию `drop` (молча, без re
 5. Клиент: ключи, QR, подключение к relay, P2P-звонок с подписанным SDP и проверкой fingerprint.
 6. Текст по схеме outbox и квитанций.
 7. Аудио-режимы.
-8. Push + CallKit.
+8. Push (Android: FCM + полноэкранный входящий через `flutter_callkit_incoming`).
 9. Fallback через Nostr, сценарий отказа сервера, прогон процедуры замены вживую.
 
 ## 13. Открытые вопросы
