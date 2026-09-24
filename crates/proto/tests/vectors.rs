@@ -217,3 +217,50 @@ fn auth_vector() {
         }),
     );
 }
+
+#[test]
+fn enroll_vector() {
+    use proto::enroll::{self, Request};
+    let device = key(0x31);
+    let req = Request {
+        device_id: id(0x21),
+        sign_pub: device.verifying_key().to_bytes(),
+        enc_pub: [0x41; 32],
+        name: "Алиса".into(),
+    };
+    let signed = req.sign(&device).unwrap();
+    assert_eq!(Request::verify(&signed).unwrap(), req);
+    let text = enroll::to_text(enroll::REQUEST_PREFIX, &signed);
+    assert_eq!(
+        enroll::from_text(
+            enroll::REQUEST_PREFIX,
+            &format!(" {}\n{} ", &text[..40], &text[40..])
+        )
+        .unwrap(),
+        signed
+    );
+    assert!(enroll::from_text(enroll::CERT_PREFIX, &text).is_err());
+    // Signed by a key other than sign_pub.
+    assert!(req.sign(&key(0x32)).is_err());
+    let mut forged = signed.clone();
+    forged[20] ^= 1;
+    assert!(Request::verify(&forged).is_err());
+
+    check(
+        "enroll.json",
+        json!({
+            "device_seed": hex::encode([0x31u8; 32]),
+            "request": {
+                "device_id": req.device_id.to_hex(),
+                "sign_pub": hex::encode(req.sign_pub),
+                "enc_pub": hex::encode(req.enc_pub),
+                "name": req.name,
+            },
+            "ctx": hex::encode(proto::ctx::ENROLL),
+            "signed": hex::encode(&signed),
+            "text": text,
+            "fingerprint_ctx": hex::encode(proto::ctx::FINGERPRINT),
+            "fingerprint": req.fingerprint(),
+        }),
+    );
+}

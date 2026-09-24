@@ -60,6 +60,25 @@ A client accepts a manifest only with a valid signature and `version` greater th
 A device is revoked if its `device_id` or its `user_id` is listed.
 `GET /manifest` returns the raw signed manifest (`application/octet-stream`), 404 if the server has none.
 
+## 3a. Enrollment request (device → admin)
+
+```
+u8   format = 1
+id   device_id       random, chosen by the device
+[32] sign_pub
+[32] enc_pub
+str  name            suggested display name, may be empty, ≤64 bytes
+```
+Signed by the device itself (`ctx = botato/v1/enroll\0`, key = `sign_pub`) as proof of possession.
+
+Text form for QR codes and copy-paste: `botato-req1:` + base64url without padding.
+The admin answers with `botato-cert1:` + base64url(cert). Parsers ignore whitespace.
+
+**Fingerprint.** The request travels over an untrusted channel, so the admin and the user compare
+the fingerprint by voice or in person before issuing a cert:
+`h = SHA-256("botato/v1/fingerprint\0" || device_id || sign_pub || enc_pub)`; take `h[0..20]` as four
+5-byte big-endian integers, each `mod 100000`, zero-padded to 5 digits, joined by spaces (`12345 67890 …`).
+
 ## 4. Transport
 
 WebSocket at `/ws`, text frames only, one JSON object per frame with a string discriminator `t`.

@@ -1,0 +1,22 @@
+[package]
+name = "admin"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+argon2 = "0.6"
+chacha20poly1305 = "0.11"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+hex = "0.4.3"
+proto = { version = "0.1.0", path = "../../crates/proto" }
+qrcode = "0.14.1"
+rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+zeroize = "1.9.0"
+
+[dev-dependencies]
+hex = "0.4.3"
+tempfile = "3.27.0"
