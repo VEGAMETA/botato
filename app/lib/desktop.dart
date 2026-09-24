@@ -197,9 +197,7 @@ class _TitleBarState extends State<TitleBar> with WindowListener {
               child: DragToMoveArea(
                 child: Row(
                   children: [
-                    const SizedBox(width: 10),
-                    Image.asset('assets/icon/potato.png', width: 18, height: 18),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Text('botato', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: BotatoColors.smoke)),
                   ],
                 ),
