@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/proto", "server", "tools/admin", "app/rust"]
+members = ["crates/proto", "server", "tools/admin", "app/rust", "tools/botatoadmin"]
 
 [workspace.package]
 edition = "2024"

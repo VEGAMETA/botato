@@ -1,0 +1,15 @@
+[package]
+name = "botatoadmin"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+admin = { version = "0.1.0", path = "../admin" }
+arboard = "3"
+eframe = "0.36"
+hex = "0.4.3"
+proto = { version = "0.1.0", path = "../../crates/proto" }
+qrcode = "0.14"
+zeroize = "1.9.0"
