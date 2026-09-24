@@ -1,4 +1,6 @@
 # Managed by Ansible. Contains the TURN secret.
+listening-ip={{ ansible_default_ipv4.address }}
+relay-ip={{ ansible_default_ipv4.address }}
 listening-port=3478
 tls-listening-port=5349
 min-port={{ turn_min_port }}
@@ -22,6 +24,7 @@ stale-nonce=600
 
 # No logs.
 no-stdout-log
+simple-log
 log-file=/dev/null
 pidfile=/tmp/turnserver.pid
 

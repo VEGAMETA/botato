@@ -44,6 +44,8 @@ services:
   coturn:
     <<: *hardening
     image: {{ coturn_image }}
+    # turnserver carries the file capability; without it in the bounding set exec fails with EPERM.
+    cap_add: [NET_BIND_SERVICE]
     network_mode: host
     command: ["-c", "/etc/coturn/turnserver.conf"]
     volumes:

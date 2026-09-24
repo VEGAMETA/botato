@@ -115,7 +115,7 @@
   loop: [crt.pem, key.pem]
 
 - name: Signed manifest from the admin machine
-  when: admin_manifest is defined
+  when: admin_manifest is defined and admin_manifest is file
   ansible.builtin.copy:
     src: "{{ admin_manifest }}"
     dest: "{{ botato_dir }}/config/manifest.bin"

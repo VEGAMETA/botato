@@ -17,4 +17,5 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "t
 tokio-util = "0.7.19"
 
 [dev-dependencies]
-tokio-tungstenite = "0.30"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }

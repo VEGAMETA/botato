@@ -40,7 +40,8 @@
     content: |
       # Managed by Ansible.
       SOURCE                  ANY
-      REQUIRE_SOURCE_ADDRESS  Y
+      # Clients send 0.0.0.0 (-s): the packet source is allowed. Avoids third-party IP lookup.
+      REQUIRE_SOURCE_ADDRESS  N
       OPEN_PORTS              tcp/{{ ssh_port }}
       KEY_BASE64              {{ fwknop_key }}
       HMAC_KEY_BASE64         {{ fwknop_hmac }}
