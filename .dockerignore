@@ -1,5 +1,7 @@
 target
-app
+# The workspace lists app/rust, so its manifest must be present; nothing else of the app.
+app/*
+!app/rust
 infra
 admin-data
 .git
