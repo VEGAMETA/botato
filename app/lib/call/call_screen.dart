@@ -107,7 +107,10 @@ class _CallScreenState extends State<CallScreen> {
                   const SizedBox(height: 8),
                   Text(_status(c), style: const TextStyle(color: Colors.white70, fontSize: 18)),
                   const Spacer(),
-                  Padding(padding: const EdgeInsets.only(bottom: 32), child: _buttons(c)),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 32),
+                    child: SizedBox(width: double.infinity, child: _buttons(c)),
+                  ),
                 ],
               ),
             ),

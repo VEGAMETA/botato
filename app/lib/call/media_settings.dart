@@ -30,7 +30,6 @@ class AudioProfile {
   static Map<String, dynamic> constraints(AudioMode mode, String? deviceId) {
     final processing = mode == AudioMode.voice;
     return {
-      'deviceId': ?deviceId,
       'echoCancellation': processing,
       'noiseSuppression': processing,
       'autoGainControl': processing,
@@ -41,6 +40,8 @@ class AudioProfile {
         {'googNoiseSuppression': processing},
         {'googAutoGainControl': processing},
         {'googHighpassFilter': processing},
+        // Input device (desktop). In audio constraints flutter_webrtc treats `deviceId` as the output.
+        if (deviceId != null) {'sourceId': deviceId},
       ],
     };
   }

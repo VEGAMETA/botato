@@ -125,7 +125,7 @@ class CallForegroundService : Service() {
         )
         val person = Person.Builder().setName(s.peer.ifEmpty { "botato" }).setImportant(true).build()
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle(s.peer)
             .setContentText(s.status)
             .setContentIntent(open)
@@ -134,7 +134,7 @@ class CallForegroundService : Service() {
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, actionIntent(ACTION_HANGUP, 2)))
             .addAction(
-                if (s.muted) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_btn_speak_now,
+                if (s.muted) R.drawable.ic_call_mic_off else R.drawable.ic_call_mic,
                 if (s.muted) "Включить микрофон" else "Выключить микрофон",
                 actionIntent(ACTION_MUTE, 1),
             )

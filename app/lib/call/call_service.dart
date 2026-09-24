@@ -67,9 +67,8 @@ class CallService extends ChangeNotifier {
   RTCRtpSender? _audioSender;
   RTCRtpSender? _videoSender;
   MediaStreamTrack? _audioTrack;
-  MediaStreamTrack? _cameraTrack;
-  MediaStreamTrack? _screenTrack;
-  MediaStream? _localView;
+  MediaStream? _cameraStream;
+  MediaStream? _screenStream;
   MediaStream? _remoteView;
   bool _remoteSet = false;
   final _localIce = <RTCIceCandidate>[]; // outgoing: gathered before the answer
@@ -184,21 +183,20 @@ class CallService extends ChangeNotifier {
   Future<void> toggleCamera() async {
     if (_pc == null) return;
     if (cameraOn) {
-      final t = _cameraTrack;
-      _cameraTrack = null;
+      final s = _cameraStream;
+      _cameraStream = null;
       cameraOn = false;
       if (!screenOn) await _videoSender?.replaceTrack(null);
-      await t?.stop();
+      await _disposeStream(s);
     } else {
-      _cameraTrack = await _openCamera();
-      if (_cameraTrack == null) return;
+      _cameraStream = await _openCamera();
+      if (_cameraStream == null) return;
       cameraOn = true;
       if (!screenOn) await _videoSender?.replaceTrack(_cameraTrack);
       await notifier.update(camera: true);
     }
-    await _refreshLocalView();
+    _refreshLocalView();
     _sendMediaState();
-    notifyListeners();
   }
 
   /// Front/back camera on phones.
@@ -215,7 +213,7 @@ class CallService extends ChangeNotifier {
         if (!await Helper.requestCapturePermission()) return;
         await notifier.update(screen: true); // MediaProjection needs the foreground service type
       }
-      final stream = await navigator.mediaDevices.getDisplayMedia({
+      _screenStream = await navigator.mediaDevices.getDisplayMedia({
         'audio': false,
         'video': sourceId == null
             ? true
@@ -224,29 +222,28 @@ class CallService extends ChangeNotifier {
                 'mandatory': {'frameRate': 15.0},
               },
       });
-      _screenTrack = stream.getVideoTracks().first;
-      _screenTrack!.onEnded = stopScreenShare;
-      screenOn = true;
-      await _videoSender?.replaceTrack(_screenTrack);
-      await _refreshLocalView();
-      _sendMediaState();
-      notifyListeners();
     } catch (e) {
+      if (Platform.isAndroid) await notifier.update(screen: false);
       _toast('не удалось показать экран: $e');
+      return;
     }
+    screenOn = true;
+    _screenTrack?.onEnded = stopScreenShare;
+    await _videoSender?.replaceTrack(_screenTrack);
+    _refreshLocalView();
+    _sendMediaState();
   }
 
   Future<void> stopScreenShare() async {
     if (!screenOn) return;
-    final t = _screenTrack;
-    _screenTrack = null;
+    final s = _screenStream;
+    _screenStream = null;
     screenOn = false;
     await _videoSender?.replaceTrack(cameraOn ? _cameraTrack : null);
-    await t?.stop();
+    await _disposeStream(s);
     if (Platform.isAndroid) await notifier.update(screen: false);
-    await _refreshLocalView();
+    _refreshLocalView();
     _sendMediaState();
-    notifyListeners();
   }
 
   Future<void> setAudioMode(AudioMode mode) async {
@@ -263,16 +260,18 @@ class CallService extends ChangeNotifier {
   Future<void> setCamera(String? deviceId) async {
     settings.cameraId = deviceId;
     if (!cameraOn) return;
-    final old = _cameraTrack;
-    _cameraTrack = await _openCamera();
+    final old = _cameraStream;
+    final fresh = await _openCamera();
+    if (fresh == null) return;
+    _cameraStream = fresh;
     if (!screenOn) await _videoSender?.replaceTrack(_cameraTrack);
-    await old?.stop();
-    await _refreshLocalView();
+    await _disposeStream(old);
+    _refreshLocalView();
   }
 
   Future<void> setOutput(String? deviceId) async {
     settings.outputId = deviceId;
-    if (deviceId != null && isDesktop) await Helper.selectAudioOutput(deviceId);
+    await _applyOutput();
   }
 
   void toggleStats() {
@@ -395,21 +394,46 @@ class CallService extends ChangeNotifier {
 
   // ---- media
 
-  Future<MediaStreamTrack?> _openCamera() async {
+  MediaStreamTrack? get _cameraTrack => _cameraStream?.getVideoTracks().firstOrNull;
+  MediaStreamTrack? get _screenTrack => _screenStream?.getVideoTracks().firstOrNull;
+
+  static Future<void> _disposeStream(MediaStream? s) async {
+    if (s == null) return;
+    for (final t in s.getTracks()) {
+      await t.stop();
+    }
+    await s.dispose();
+  }
+
+  /// Desktop device ids go in `optional: [{sourceId}]` (flutter_webrtc on Windows reads
+  /// `deviceId` in audio constraints as the *output* device). A saved device that is gone
+  /// is forgotten and the default is used, so a stale setting never breaks a call.
+  Future<MediaStream?> _openCamera() async {
+    Map<String, dynamic> constraints(String? id) => {
+      'audio': false,
+      'video': {
+        if (id != null && isDesktop)
+          'optional': [
+            {'sourceId': id},
+          ]
+        else
+          'facingMode': 'user',
+        'width': 1280,
+        'height': 720,
+        'frameRate': 30,
+      },
+    };
+    final id = settings.cameraId;
     try {
-      final id = settings.cameraId;
-      final s = await navigator.mediaDevices.getUserMedia({
-        'audio': false,
-        'video': {
-          if (id != null && isDesktop) 'deviceId': id else 'facingMode': 'user',
-          'width': 1280,
-          'height': 720,
-          'frameRate': 30,
-        },
-      });
-      return s.getVideoTracks().first;
-    } catch (e) {
-      _toast('камера недоступна: $e');
+      return await navigator.mediaDevices.getUserMedia(constraints(id));
+    } catch (_) {
+      if (id != null && isDesktop) {
+        settings.cameraId = null;
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraints(null));
+        } catch (_) {}
+      }
+      _toast('камера недоступна');
       return null;
     }
   }
@@ -423,13 +447,28 @@ class CallService extends ChangeNotifier {
         mode == AudioMode.voice ? AndroidAudioConfiguration.communication : AndroidAudioConfiguration.media,
       );
     }
-    final s = await navigator.mediaDevices.getUserMedia({
-      'audio': AudioProfile.constraints(mode, isDesktop ? settings.micId : null),
-      'video': false,
-    });
+    final id = isDesktop ? settings.micId : null;
+    MediaStream s;
+    try {
+      s = await navigator.mediaDevices.getUserMedia({'audio': AudioProfile.constraints(mode, id), 'video': false});
+    } catch (_) {
+      if (id == null) rethrow;
+      settings.micId = null;
+      s = await navigator.mediaDevices.getUserMedia({'audio': AudioProfile.constraints(mode, null), 'video': false});
+    }
     final t = s.getAudioTracks().first;
     t.enabled = !muted;
     return t;
+  }
+
+  Future<void> _applyOutput() async {
+    final id = settings.outputId;
+    if (id == null || !isDesktop) return;
+    try {
+      await Helper.selectAudioOutput(id);
+    } catch (_) {
+      settings.outputId = null;
+    }
   }
 
   Future<void> _reopenMicrophone() async {
@@ -451,14 +490,9 @@ class CallService extends ChangeNotifier {
     await s.setParameters(p);
   }
 
-  Future<void> _refreshLocalView() async {
-    final view = _localView ??= await createLocalMediaStream('local');
-    for (final t in view.getVideoTracks()) {
-      await view.removeTrack(t);
-    }
-    final t = screenOn ? _screenTrack : (cameraOn ? _cameraTrack : null);
-    if (t != null) await view.addTrack(t);
-    localRenderer.srcObject = t == null ? null : view;
+  /// The preview shows the capture stream itself (no track juggling on native streams).
+  void _refreshLocalView() {
+    localRenderer.srcObject = screenOn ? _screenStream : (cameraOn ? _cameraStream : null);
     notifyListeners();
   }
 
@@ -475,11 +509,10 @@ class CallService extends ChangeNotifier {
       throw 'нет доступа к микрофону';
     }
     if (camera) {
-      _cameraTrack = await _openCamera();
-      cameraOn = _cameraTrack != null;
+      _cameraStream = await _openCamera();
+      cameraOn = _cameraStream != null;
     }
-    final outputId = settings.outputId;
-    if (outputId != null && isDesktop) await Helper.selectAudioOutput(outputId);
+    await _applyOutput();
 
     final ice = <Map<String, dynamic>>[
       for (final s in relay.stunServers) {'urls': s},
@@ -510,7 +543,7 @@ class CallService extends ChangeNotifier {
       _videoSender = v.sender;
       if (_cameraTrack != null) await _videoSender!.replaceTrack(_cameraTrack);
     }
-    await _refreshLocalView();
+    _refreshLocalView();
 
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
@@ -654,18 +687,20 @@ class CallService extends ChangeNotifier {
     _statsTimer = null;
     stats = null;
     final pc = _pc;
-    final tracks = [_audioTrack, _cameraTrack, _screenTrack];
+    final audio = _audioTrack;
+    final streams = [_cameraStream, _screenStream];
     _pc = null;
     _audioSender = null;
     _videoSender = null;
     _audioTrack = null;
-    _cameraTrack = null;
-    _screenTrack = null;
+    _cameraStream = null;
+    _screenStream = null;
     localRenderer.srcObject = null;
     remoteRenderer.srcObject = null;
     _remoteView = null;
-    for (final t in tracks) {
-      await t?.stop();
+    await audio?.stop();
+    for (final s in streams) {
+      await _disposeStream(s);
     }
     await pc?.close();
     if (Platform.isAndroid) await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration.communication);
