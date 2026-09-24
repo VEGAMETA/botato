@@ -5,6 +5,7 @@
 
 pub mod auth;
 pub mod cert;
+pub mod device;
 mod codec;
 pub mod enroll;
 pub mod frames;
