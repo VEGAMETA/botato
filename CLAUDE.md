@@ -226,11 +226,14 @@ nftables: входящие по умолчанию `drop` (молча, без re
 | 5349/tcp | TURN over TLS | всем |
 | 49160–49299/udp | relay-порты coturn | всем |
 | 22/tcp | SSH | только IP, прошедшему fwknop-knock (на 30 с, дальше живёт conntrack) |
+| 62201/udp | fwknopd (в Debian собран без pcap — обычный UDP-сокет, никогда не отвечает) | всем |
 | ICMP | PMTU, ICMPv6 ND | нужное для работы сети |
 
-- coturn: `denied-peer-ip` на приватные диапазоны (10/8, 172.16/12, 192.168/16, 127/8, fc00::/7, ::1), `no-multicast-peers`, `no-cli`, `no-tlsv1`, `no-tlsv1_1`. Relay-порты открыты в файрволе, но coturn пересылает только для аутентифицированных аллокаций.
+- coturn: слушает только публичный IP; `denied-peer-ip` на приватные и служебные диапазоны **и собственный публичный IP сервера** (иначе через TURN можно достучаться до локальных сервисов); `no-tcp-relay`, `no-multicast-peers`, `no-cli`; TLS не ниже 1.2 (в coturn 4.10 это умолчание). Relay-порты открыты в файрволе, но coturn пересылает только для аутентифицированных аллокаций. Проверено: чужой пир — ок, 10.0.0.1 и свой IP — 403.
 - **Docker обходит nftables** для опубликованных портов. Поэтому coturn работает в `network_mode: host`, relay наружу не публикуется (только внутренняя сеть до Caddy), Caddy публикует только 443. После деплоя проверять сканом снаружи.
 - SSH: только ключи, `PasswordAuthentication no`, `PermitRootLogin no`. Ansible стучит в `pre_tasks` (`delegate_to: localhost`). На свежем VPS SSH открыт до конца первого прогона, файрвол включается последним шагом.
+- fwknop: ключи в `~/.fwknoprc` (WSL), запись `[vpn-srv]`, `ALLOW_IP source` (без сторонних сервисов определения IP). В `~/.ssh/config` стоит `Match originalhost vpn-srv exec "fwknop ..."` — `ssh vpn-srv` стучит сам. SPA живёт 60 с: часы управляющей машины должны быть синхронизированы (служба w32time в Windows включена).
+- Файрвол применяется с автооткатом: `systemd-run` через 180 с удаляет таблицу, если Ansible не смог заново подключиться через knock.
 
 ### Текущий сервер
 
@@ -240,7 +243,8 @@ nftables: входящие по умолчанию `drop` (молча, без re
   - `vegameta` — администратор, вход по ключу, sudo с паролем;
   - `deploy` — для Ansible и Claude Code, ключ `~/.ssh/deploy_ed25519`, `NOPASSWD` sudo через `/etc/sudoers.d/deploy`;
   - вход по паролю и для root закрыт (`/etc/ssh/sshd_config.d/00-hardening.conf`), пароль root заблокирован.
-- Применены роли base и docker (Docker 26 из Debian). Наружу слушает только sshd:22; файрвола и fwknop пока нет.
+- Развёрнуто всё (base, docker, app, fwknop, firewall). Снаружи открыты только 443/tcp, 3478/tcp+udp, 5349/tcp, relay-порты coturn; 22 — только после knock (проверено сканом).
+- Relay: `wss://<домен>/ws`, TLS от Let's Encrypt через Caddy. Проверка живого relay: `cargo run -p relay --example probe -- wss://<домен>/ws <server_pub>`.
 - Инвентарь: `ansible_user=deploy`, `ansible_ssh_private_key_file=~/.ssh/deploy_ed25519`. SSH-алиас в WSL для диагностики — `vpn-srv`.
 
 ### Правила работы агента с сервером

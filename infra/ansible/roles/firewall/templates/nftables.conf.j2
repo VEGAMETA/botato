@@ -30,6 +30,9 @@ table inet botato {
 		# coturn relay ports.
 		udp dport {{ turn_min_port }}-{{ turn_max_port }} accept
 
+		# fwknopd (Debian builds it without pcap: it is a plain UDP listener that never replies).
+		udp dport {{ fwknop_port }} accept
+
 		# SSH only for addresses that knocked.
 		tcp dport {{ ssh_port }} ip saddr @ssh_allowed accept
 	}

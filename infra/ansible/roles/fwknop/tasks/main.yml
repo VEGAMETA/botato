@@ -1,10 +1,22 @@
-# fwknopd sniffs SPA packets with libpcap (it sees them even though nftables drops them)
-# and adds the knocking IP to the nftables set `ssh_allowed` for 30 s.
+# fwknopd (Debian: built without pcap, so a plain UDP listener; nftables must let
+# udp/{{ fwknop_port }} in) validates SPA packets and adds the knocking IP to the nftables set `ssh_allowed` for 30 s.
 # Keys come from the control machine's ~/.fwknoprc stanza — one source of truth.
+# fwknoprc is "NAME  value" per line, not INI key=value, so parse it with awk.
 - name: Read SPA keys from the control machine
+  delegate_to: localhost
+  become: false
+  ansible.builtin.shell: >-
+    awk -v s='[{{ fwknop_stanza }}]' -v k='{{ item }}'
+    '$0 == s { f = 1; next } /^\[/ { f = 0 } f && $1 == k { print $2 }' {{ fwknop_rc }}
+  loop: [KEY_BASE64, HMAC_KEY_BASE64]
+  register: fwknop_keys
+  changed_when: false
+  no_log: true
+
+- name: Keep the keys
   ansible.builtin.set_fact:
-    fwknop_key: "{{ lookup('ansible.builtin.ini', 'KEY_BASE64', section=fwknop_stanza, file=fwknop_rc) }}"
-    fwknop_hmac: "{{ lookup('ansible.builtin.ini', 'HMAC_KEY_BASE64', section=fwknop_stanza, file=fwknop_rc) }}"
+    fwknop_key: "{{ fwknop_keys.results[0].stdout }}"
+    fwknop_hmac: "{{ fwknop_keys.results[1].stdout }}"
   no_log: true
 
 - name: Keys present
@@ -23,8 +35,7 @@
     content: |
       # Managed by Ansible.
       PCAP_INTF               {{ ansible_default_ipv4.interface }};
-      PCAP_FILTER             udp port {{ fwknop_port }};
-      ENABLE_PCAP_PROMISC     N;
+      UDPSERV_PORT            {{ fwknop_port }};
       ENABLE_SPA_PACKET_AGING Y;
       MAX_SPA_PACKET_AGE      60;
       ENABLE_DIGEST_PERSISTENCE N;

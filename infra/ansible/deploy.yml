@@ -25,6 +25,6 @@
     - role: app
       tags: [app]
     - role: fwknop
-      tags: [firewall]
+      tags: [firewall, fwknop]
     - role: firewall
       tags: [firewall]
