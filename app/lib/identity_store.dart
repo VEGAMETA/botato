@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -11,6 +12,7 @@ class IdentityStore {
   static const _secretKey = 'device_secret_v1';
   static const _certKey = 'cert_v1';
   static const _nameKey = 'requested_name';
+  static const _dbKey = 'db_key_v1';
 
   final _storage = const FlutterSecureStorage();
 
@@ -21,6 +23,16 @@ class IdentityStore {
     final fresh = core.deviceGenerate();
     await _storage.write(key: _secretKey, value: base64Encode(fresh));
     return fresh;
+  }
+
+  /// Key for message bodies in the local history (created on first use).
+  Future<Uint8List> dbKey() async {
+    final stored = await _storage.read(key: _dbKey);
+    if (stored != null) return base64Decode(stored);
+    final r = Random.secure();
+    final key = Uint8List.fromList(List.generate(32, (_) => r.nextInt(256)));
+    await _storage.write(key: _dbKey, value: base64Encode(key));
+    return key;
   }
 
   Future<String?> cert() => _storage.read(key: _certKey);

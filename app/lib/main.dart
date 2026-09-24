@@ -49,7 +49,7 @@ class BotatoApp extends StatefulWidget {
   State<BotatoApp> createState() => _BotatoAppState();
 }
 
-class _BotatoAppState extends State<BotatoApp> {
+class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
   final _relay = RelayService();
   final _navigator = GlobalKey<NavigatorState>();
   late final _calls = CallService(_relay, _navigator, widget.media);
@@ -58,11 +58,23 @@ class _BotatoAppState extends State<BotatoApp> {
   @override
   void initState() {
     super.initState();
-    if (widget.cert != null) _relay.start(widget.secret, widget.cert!);
+    WidgetsBinding.instance.addObserver(this);
+    _relay.onNewMessage = (peer, name, text) => _calls.notifier.showMessage(peer, name, text);
+    if (widget.cert != null) _startRelay(widget.cert!);
+  }
+
+  Future<void> _startRelay(String cert) async {
+    await _relay.start(widget.secret, cert, await widget.store.dbKey());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _relay.foreground = state == AppLifecycleState.resumed;
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _calls.dispose();
     _relay.dispose();
     super.dispose();
@@ -81,7 +93,7 @@ class _BotatoAppState extends State<BotatoApp> {
               store: widget.store,
               secret: widget.secret,
               onCert: (cert, info) {
-                _relay.start(widget.secret, cert);
+                _startRelay(cert);
                 setState(() => _info = info);
               },
             )

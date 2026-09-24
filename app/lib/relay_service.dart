@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show PlatformInt64Util;
 import 'package:path_provider/path_provider.dart';
 
 import 'src/rust/api/client.dart' as core;
@@ -30,6 +31,21 @@ class RelayService extends ChangeNotifier {
   String detail = '';
   List<core.ContactInfo> contacts = [];
 
+  /// Last message and unread count per peer user.
+  Map<String, core.ConversationInfo> conversations = {};
+
+  /// Peer user whose chat is on screen (no notifications for it while in foreground).
+  String? activeChat;
+  bool foreground = true;
+
+  /// Called for a new incoming message that the user isn't looking at.
+  void Function(String peerUser, String name, String text)? onNewMessage;
+
+  final _messageUpdates = StreamController<String>.broadcast();
+
+  /// Peer users whose history changed.
+  Stream<String> get messageUpdates => _messageUpdates.stream;
+
   final _signals = StreamController<IncomingSignal>.broadcast();
   Stream<IncomingSignal> get signals => _signals.stream;
 
@@ -40,17 +56,22 @@ class RelayService extends ChangeNotifier {
 
   String? get myDevice => core.clientMyDevice();
 
-  Future<void> start(Uint8List secret, String cert) async {
+  Future<void> start(Uint8List secret, String cert, Uint8List dbKey) async {
     final dir = await getApplicationSupportDirectory();
     await _sub?.cancel();
-    _sub = core.clientStart(dataDir: dir.path, secret: secret, cert: cert).listen(_onEvent);
+    _sub = core.clientStart(dataDir: dir.path, secret: secret, cert: cert, dbKey: dbKey).listen(_onEvent);
     // Wi-Fi <-> LTE, VPN on/off: the old socket may be silently dead, dial again right away.
     _net ??= Connectivity().onConnectivityChanged.listen((r) {
       if (_lastNet != null && !listEquals(r, _lastNet)) reconnect();
       _lastNet = r;
     });
     contacts = core.clientContacts();
+    _loadConversations();
     notifyListeners();
+  }
+
+  void _loadConversations() {
+    conversations = {for (final c in core.clientConversations()) c.peerUser: c};
   }
 
   void _onEvent(core.ClientEvent e) {
@@ -78,6 +99,15 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_Turn(:final urls, :final username, :final credential):
         _turn.add(TurnCreds(urls, username, credential));
         return;
+      case core.ClientEvent_MessagesChanged(:final peerUser):
+        _loadConversations();
+        _messageUpdates.add(peerUser);
+      case core.ClientEvent_NewMessage(:final peerUser, :final text):
+        if (!foreground || activeChat != peerUser) {
+          final name = contacts.where((c) => c.userId == peerUser).firstOrNull?.name ?? 'сообщение';
+          onNewMessage?.call(peerUser, name, text);
+        }
+        return;
       case core.ClientEvent_Error(:final message):
         detail = message;
     }
@@ -87,6 +117,18 @@ class RelayService extends ChangeNotifier {
   /// Sends a call-signal JSON object to one device (sealed and signed in Rust).
   void signal(String toDevice, Map<String, dynamic> data) {
     core.clientSignal(toDevice: toDevice, payload: jsonEncode(data));
+  }
+
+  /// Throws with a readable message if the text can't be queued.
+  void sendText(String peerUser, String text) => core.clientSendText(peerUser: peerUser, text: text);
+
+  List<core.MessageInfo> messages(String peerUser, {int limit = 200}) =>
+      core.clientMessages(peerUser: peerUser, limit: PlatformInt64Util.from(limit));
+
+  void markRead(String peerUser) {
+    core.clientMarkRead(peerUser: peerUser);
+    _loadConversations();
+    notifyListeners();
   }
 
   void refreshContacts() => core.clientRefreshDirectory();

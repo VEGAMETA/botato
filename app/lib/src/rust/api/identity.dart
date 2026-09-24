@@ -10,25 +10,17 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 // These functions are ignored because they are not marked as `pub`: `cert_info`, `load`
 
 /// New device keys, as a blob for secure storage.
-Uint8List deviceGenerate() =>
-    RustLib.instance.api.crateApiIdentityDeviceGenerate();
+Uint8List deviceGenerate() => RustLib.instance.api.crateApiIdentityDeviceGenerate();
 
-DeviceInfo deviceInfo({required List<int> secret}) =>
-    RustLib.instance.api.crateApiIdentityDeviceInfo(secret: secret);
+DeviceInfo deviceInfo({required List<int> secret}) => RustLib.instance.api.crateApiIdentityDeviceInfo(secret: secret);
 
 /// `botato-req1:...` text for the admin (shown as QR and copyable text).
 String enrollmentRequest({required List<int> secret, required String name}) =>
-    RustLib.instance.api.crateApiIdentityEnrollmentRequest(
-      secret: secret,
-      name: name,
-    );
+    RustLib.instance.api.crateApiIdentityEnrollmentRequest(secret: secret, name: name);
 
 /// Verifies a `botato-cert1:...` text: admin signature, validity, and that it lists
 /// this very device with its keys. Returns the normalized text to store.
-(String, CertInfo) certImport({
-  required List<int> secret,
-  required String text,
-}) =>
+(String, CertInfo) certImport({required List<int> secret, required String text}) =>
     RustLib.instance.api.crateApiIdentityCertImport(secret: secret, text: text);
 
 class CertInfo {
@@ -37,16 +29,10 @@ class CertInfo {
   final BigInt expiresAt;
   final int devices;
 
-  const CertInfo({
-    required this.userId,
-    required this.name,
-    required this.expiresAt,
-    required this.devices,
-  });
+  const CertInfo({required this.userId, required this.name, required this.expiresAt, required this.devices});
 
   @override
-  int get hashCode =>
-      userId.hashCode ^ name.hashCode ^ expiresAt.hashCode ^ devices.hashCode;
+  int get hashCode => userId.hashCode ^ name.hashCode ^ expiresAt.hashCode ^ devices.hashCode;
 
   @override
   bool operator ==(Object other) =>

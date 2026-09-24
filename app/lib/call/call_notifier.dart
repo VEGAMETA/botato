@@ -10,6 +10,7 @@ class CallNotifier {
     if (Platform.isAndroid) {
       _channel.setMethodCallHandler((call) async {
         if (call.method == 'action') onAction?.call(call.arguments as String);
+        if (call.method == 'openChat') onOpenChat?.call(call.arguments as String);
       });
     }
   }
@@ -18,6 +19,25 @@ class CallNotifier {
 
   /// 'mute', 'hangup', 'accept' or 'decline' from the notifications.
   void Function(String action)? onAction;
+
+  /// Tap on a message notification: the peer user id.
+  void Function(String peerUser)? onOpenChat;
+
+  /// New-message notification (Android). The text stays on the device.
+  Future<void> showMessage(String peerUser, String name, String text) =>
+      _invoke('message', {'peer': peerUser, 'name': name, 'text': text});
+
+  Future<void> clearMessages(String peerUser) => _invoke('messageClear', {'peer': peerUser});
+
+  /// Chat whose notification launched the app (cold start), if any.
+  Future<String?> pendingChat() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('pendingChat');
+    } on MissingPluginException {
+      return null;
+    }
+  }
 
   bool _camera = false;
   bool _screen = false;

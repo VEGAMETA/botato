@@ -11,6 +11,8 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
+    /// Chat to open once Dart asks (a cold start from a notification tap).
+    private var pendingChat: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,6 +57,24 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
+                "message" -> {
+                    requestNotificationPermission()
+                    MessageNotification.show(
+                        this,
+                        call.argument<String>("peer") ?: "",
+                        call.argument<String>("name") ?: "",
+                        call.argument<String>("text") ?: "",
+                    )
+                    result.success(null)
+                }
+                "messageClear" -> {
+                    MessageNotification.cancel(this, call.argument<String>("peer") ?: "")
+                    result.success(null)
+                }
+                "pendingChat" -> {
+                    result.success(pendingChat)
+                    pendingChat = null
+                }
                 "incomingCancel" -> {
                     IncomingCallNotification.cancel(this)
                     result.success(null)
@@ -77,6 +97,11 @@ class MainActivity : FlutterActivity() {
     private fun handleCallIntent(intent: Intent?) {
         when (intent?.action) {
             IncomingCallNotification.ACTION_SHOW -> showOverLockScreen(true)
+            MessageNotification.ACTION_OPEN_CHAT -> {
+                val peer = intent.getStringExtra(MessageNotification.EXTRA_PEER) ?: return
+                pendingChat = peer
+                channel?.invokeMethod("openChat", peer)
+            }
             IncomingCallNotification.ACTION_ANSWER -> {
                 showOverLockScreen(true)
                 IncomingCallNotification.cancel(this)
