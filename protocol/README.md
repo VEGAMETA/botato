@@ -117,12 +117,16 @@ and that it has not seen a newer cert of the same user that omits this device. A
 | C→S | `turn {}` | |
 | S→C | `turn {urls, username, credential, ttl}` | coturn REST credentials: `username` = expiry unix time, `credential` = base64(HMAC-SHA1(secret, username)) |
 | C→S | `push_token {platform, token}` | `platform` ∈ `fcm`, `apns_voip`; token ≤4096 bytes; kept in RAM, resend after every connect |
+| C→S | `upload {id, data}` | encrypted attachment (§6.3), 1..2 MiB; `id` random, chosen by the sender. Kept 24 h. Same `id` again is a no-op success |
+| S→C | `uploaded {id}` | |
+| C→S | `download {id}` | any authenticated device that knows the `id` |
+| S→C | `file {id, data}` | or `error {ref: "download", id, code: "not_found"}` |
 | S→C | `ok {ref}` | |
 | S→C | `error {ref, id?, code}` | `ref` = `t` of the offending frame (empty if unparsable) |
 
 `from` set by the server is a routing hint only; the authenticated sender is inside the blob.
 
-Error codes: `bad_frame`, `too_large`, `quota`, `rate_limited`, `revoked`, `unavailable`, `internal`.
+Error codes: `bad_frame`, `too_large`, `quota`, `rate_limited`, `revoked`, `unavailable`, `internal`, `not_found`.
 
 Close codes: `4000` protocol error, `4001` auth failed, `4002` replaced by a newer session of the same device,
 `4003` revoked, `4004` handshake timeout, `1001` server shutdown.
@@ -139,6 +143,10 @@ Close codes: `4000` protocol error, `4001` auth failed, `4002` replaced by a new
 | Held signals per device | 32, 60 s |
 | Keepalive | server ping every 30 s; no inbound traffic for 75 s → close |
 | Wake-up push debounce | messages 30 s, calls 5 s |
+| Attachments | ≤2 MiB each, 24 h; per uploading device 64 MiB / 200 files; 1 GiB in total |
+
+Attachments are the one thing the relay keeps on disk (too big for RAM). Each file is encrypted again
+with a key that exists only in the relay's memory, and the directory is wiped at start. The index is in RAM.
 
 ## 5. Device secret (client storage, not on the wire)
 
@@ -199,7 +207,8 @@ it, and WebRTC checks the peer's DTLS certificate against the fingerprint in tha
 Sent through the mailbox (`send`), never through `signal`.
 
 ```
-kind 2: {"msg": hex id, "to": hex user id, "text": string}     text ≤ 16 KiB after trimming
+kind 2: {"msg": hex id, "to": hex user id, "text": string, "photo"?: Photo}   text ≤ 16 KiB after trimming
+Photo:  {"file": hex id, "key": b64 32 bytes, "size": u32, "w": u32, "h": u32, "thumb": b64 JPEG ≤ 8 KiB}
 kind 3: {"msg": hex id}
 ```
 
@@ -216,7 +225,26 @@ kind 3: {"msg": hex id}
 - Receipts are fire-and-forget: they leave the outbox once a relay stored them. If one is lost, the
   sender re-sends the message on its next connection and gets a new receipt.
 - Ordering: by the sender's `sent_at` (seconds), ties by local arrival order.
+- `text` may be empty only when `photo` is present (then it is the caption).
+
+### 6.3 Attachments
+
+The photo itself is uploaded separately (`upload`), encrypted with a fresh random key that travels
+only in the kind-2 payload. Vector: `vectors/file.json`.
+
+```
+blob = u8 version(1) | [24] nonce | XChaCha20-Poly1305(key, nonce, plaintext, AAD = "botato/v1/file\0" || file_id)
+```
+
+- Photos are re-encoded by the sender before sealing: JPEG, longest side ≤ 1600 px, EXIF dropped
+  (orientation applied to the pixels). `thumb` is the same image ≤ 64 px, shown until the file arrives.
+- The sender uploads before sending the message copies, on the same connection (the relay handles a
+  connection's frames in order). It re-uploads on every connection while some copy of the message is
+  still in its outbox: a restarted relay has lost its files.
+- A receiver downloads when the message arrives and retries on later connections; `not_found` more than
+  24 h after `sent_at` means the photo is gone. `size` is the blob length; a different length, or a
+  blob that does not open with `key`, is rejected.
 
 ## 7. Not yet specified
 
-History sync to a newly added device (not planned for v1), attachments.
+History sync to a newly added device (not planned for v1), attachments other than photos.

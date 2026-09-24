@@ -832,3 +832,47 @@ async fn reqwest_like_get(addr: &str, path: &str) -> Vec<u8> {
     let pos = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
     raw[pos + 4..].to_vec()
 }
+
+#[tokio::test]
+async fn attachments_upload_download_expire() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = Arc::new(relay::files::Files::open(dir.path(), Default::default()).unwrap());
+    let env = Env::with(|c| c.files = Some(files)).await;
+    let a = env.user("a", 1, T0).remove(0);
+    let b = env.user("b", 1, T0).remove(0);
+    let mut wa = env.connect(&a).await;
+    let mut wb = env.connect(&b).await;
+
+    // Bigger than a message blob: goes through the raised read limit.
+    let data = vec![0x5a; 300 * 1024];
+    let id = Id::random();
+    send(&mut wa, &ClientFrame::Upload { id, data: data.clone() }).await;
+    assert_eq!(recv(&mut wa).await, ServerFrame::Uploaded { id });
+    send(&mut wb, &ClientFrame::Download { id }).await;
+    assert_eq!(recv(&mut wb).await, ServerFrame::File { id, data });
+
+    let missing = Id::random();
+    send(&mut wb, &ClientFrame::Download { id: missing }).await;
+    assert_eq!(
+        recv(&mut wb).await,
+        ServerFrame::Error { r#ref: "download".into(), id: Some(missing), code: ErrorCode::NotFound }
+    );
+    let too_big = vec![0; proto::file::MAX_FILE + 1];
+    send(&mut wa, &ClientFrame::Upload { id: Id::random(), data: too_big }).await;
+    assert!(matches!(recv(&mut wa).await, ServerFrame::Error { code: ErrorCode::TooLarge, .. }));
+
+    env.clock.fetch_add(24 * 3600, Ordering::SeqCst);
+    env.relay.sweep();
+    send(&mut wb, &ClientFrame::Download { id }).await;
+    assert!(matches!(recv(&mut wb).await, ServerFrame::Error { code: ErrorCode::NotFound, .. }));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn attachments_unavailable_without_store() {
+    let env = Env::new().await;
+    let a = env.user("a", 1, T0).remove(0);
+    let mut wa = env.connect(&a).await;
+    send(&mut wa, &ClientFrame::Download { id: Id::random() }).await;
+    assert!(matches!(recv(&mut wa).await, ServerFrame::Error { code: ErrorCode::Unavailable, .. }));
+}

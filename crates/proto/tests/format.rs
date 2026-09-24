@@ -91,6 +91,21 @@ fn frames_json_shape() {
         r#"{"t":"error","ref":"send","code":"rate_limited"}"#
     );
 
+    let up = ClientFrame::Upload { id: Id([2; 16]), data: vec![9] };
+    assert_eq!(
+        serde_json::to_string(&up).unwrap(),
+        r#"{"t":"upload","id":"02020202020202020202020202020202","data":"CQ=="}"#
+    );
+    let f = ServerFrame::File { id: Id([2; 16]), data: vec![9] };
+    assert_eq!(
+        serde_json::to_string(&f).unwrap(),
+        r#"{"t":"file","id":"02020202020202020202020202020202","data":"CQ=="}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&ServerFrame::Error { r#ref: "download".into(), id: Some(Id([2; 16])), code: ErrorCode::NotFound }).unwrap(),
+        r#"{"t":"error","ref":"download","id":"02020202020202020202020202020202","code":"not_found"}"#
+    );
+
     // Uppercase hex, unknown fields, unknown types and bad base64 are rejected.
     for bad in [
         r#"{"t":"ack","id":"ABABABABABABABABABABABABABABABAB"}"#,

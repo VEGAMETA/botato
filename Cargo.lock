@@ -4082,6 +4082,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
+ "chacha20poly1305",
  "clap",
  "futures-util",
  "hex",
@@ -4093,9 +4094,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.11.0",
+ "tempfile",
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tokio-util",
+ "zeroize",
 ]
 
 [[package]]

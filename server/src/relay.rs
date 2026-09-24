@@ -10,6 +10,7 @@ use proto::{Id, SigningKey};
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
+use crate::files::Files;
 use crate::mailbox::{Limits, Mailbox};
 use crate::push::{NoopPusher, PushKind, PushToken, Pusher};
 use crate::turn::TurnConfig;
@@ -30,6 +31,8 @@ pub struct Config {
     pub server_key: SigningKey,
     pub turn: Option<TurnConfig>,
     pub pusher: Arc<dyn Pusher>,
+    /// Attachment store; `upload`/`download` answer `unavailable` without it.
+    pub files: Option<Arc<Files>>,
     pub clock: Clock,
     pub limits: Limits,
     pub auth_timeout: Duration,
@@ -53,10 +56,12 @@ impl Config {
             server_key,
             turn: None,
             pusher: Arc::new(NoopPusher),
+            files: None,
             clock: system_clock(),
             limits: Limits::default(),
             auth_timeout: Duration::from_secs(10),
-            write_timeout: Duration::from_secs(10),
+            // A 2 MiB attachment must reach a slow phone.
+            write_timeout: Duration::from_secs(30),
             ping_interval: Duration::from_secs(30),
             idle_timeout: Duration::from_secs(75),
             signal_hold_secs: 60,
@@ -239,6 +244,9 @@ impl Relay {
             h.kick(proto::frames::close::REVOKED, "revoked");
         }
         self.mailbox().purge(&purge);
+        if let Some(f) = &self.cfg.files {
+            f.sweep(self.now(), &purge);
+        }
         Ok(())
     }
 
@@ -386,6 +394,9 @@ impl Relay {
     pub fn sweep(&self) {
         let now = self.now();
         self.mailbox().expire(now);
+        if let Some(f) = &self.cfg.files {
+            f.sweep(now, &[]);
+        }
         let mut inner = self.inner();
         inner.held.retain(|_, q| {
             q.retain(|h| h.expires > now);

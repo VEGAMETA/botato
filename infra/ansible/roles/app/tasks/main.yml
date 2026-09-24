@@ -73,6 +73,8 @@
   loop:
     - { path: "{{ botato_dir }}", mode: "0755" }
     - { path: "{{ botato_dir }}/relay", owner: "{{ relay_uid }}", mode: "0700" }
+    # Encrypted attachments, ≤24 h; the relay wipes it at start (its key lives in RAM only).
+    - { path: "{{ botato_dir }}/files", owner: "{{ relay_uid }}", mode: "0700" }
     - { path: "{{ botato_dir }}/config", mode: "0755" }
     - { path: "{{ botato_dir }}/coturn", group: "{{ coturn_gid }}", mode: "0750" }
     - { path: "{{ botato_dir }}/coturn/certs", group: "{{ coturn_gid }}", mode: "0750" }

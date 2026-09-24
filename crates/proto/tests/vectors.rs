@@ -313,3 +313,25 @@ fn envelope_vector() {
         }),
     );
 }
+
+#[test]
+fn file_vector() {
+    use proto::file;
+    let key = [0x51u8; 32];
+    let file_id = id(0x52);
+    let nonce = [0x53u8; 24];
+    let plaintext = b"not really a jpeg";
+    let blob = file::seal_with(&key, &file_id, plaintext, nonce).unwrap();
+    assert_eq!(file::open(&key, &file_id, &blob).unwrap(), plaintext);
+    check(
+        "file.json",
+        json!({
+            "key": hex::encode(key),
+            "file_id": file_id.to_hex(),
+            "nonce": hex::encode(nonce),
+            "aad_ctx": hex::encode(proto::ctx::FILE),
+            "plaintext": hex::encode(plaintext),
+            "blob": hex::encode(&blob),
+        }),
+    );
+}

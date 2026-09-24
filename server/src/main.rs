@@ -49,6 +49,9 @@ struct ServeArgs {
     /// FCM service account JSON. Push is disabled if unset.
     #[arg(long, env = "RELAY_FCM_CREDENTIALS")]
     fcm_credentials: Option<PathBuf>,
+    /// Directory for encrypted attachments (wiped at start). Attachments are disabled if unset.
+    #[arg(long, env = "RELAY_FILES_DIR")]
+    files_dir: Option<PathBuf>,
 }
 
 fn main() {
@@ -114,6 +117,12 @@ fn serve(a: ServeArgs) -> Res<()> {
             urls: a.turn_urls.clone(),
             ttl_secs: 2 * 3600,
         });
+    }
+
+    if let Some(dir) = &a.files_dir {
+        let files = relay::files::Files::open(dir, Default::default())
+            .map_err(|e| format!("files dir: {e}"))?;
+        cfg.files = Some(std::sync::Arc::new(files));
     }
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;

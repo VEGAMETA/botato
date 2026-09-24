@@ -11,16 +11,18 @@ use proto::cert::Cert;
 use proto::frames::{
     ClientFrame, ErrorCode, MAX_BLOB, MAX_PUSH_TOKEN, PROTOCOL_VERSION, ServerFrame, close,
 };
+use proto::file::MAX_FILE;
 use proto::{Id, random_bytes};
 use tokio::sync::{Notify, OwnedSemaphorePermit, mpsc};
 use tokio::time::{interval, timeout};
 use tokio_util::sync::CancellationToken;
 
+use crate::files::FileError;
 use crate::push::PushToken;
 use crate::relay::{AuthCheck, Out, Relay, SessionHandle};
 
-/// Base64 inflates blobs by 4/3; leave room for the JSON envelope.
-pub const READ_LIMIT: usize = MAX_BLOB * 4 / 3 + 8 * 1024;
+/// Base64 inflates blobs by 4/3; leave room for the JSON envelope. Attachments are the largest.
+pub const READ_LIMIT: usize = if MAX_FILE > MAX_BLOB { MAX_FILE } else { MAX_BLOB } * 4 / 3 + 8 * 1024;
 const PUMP_BATCH: usize = 32;
 const QUEUE: usize = 64;
 
@@ -373,6 +375,31 @@ impl Reader {
                 })
                 .await;
             }
+            ClientFrame::Upload { id, data } => {
+                let Some(files) = &relay.cfg.files else {
+                    return self.error("upload", Some(id), ErrorCode::Unavailable).await;
+                };
+                if data.is_empty() {
+                    return self.error("upload", Some(id), ErrorCode::BadFrame).await;
+                }
+                if data.len() > MAX_FILE {
+                    return self.error("upload", Some(id), ErrorCode::TooLarge).await;
+                }
+                match files.put(self.device, id, &data, relay.now()).await {
+                    Ok(()) => self.reply(ServerFrame::Uploaded { id }).await,
+                    Err(FileError::Quota) => self.error("upload", Some(id), ErrorCode::Quota).await,
+                    Err(FileError::Io) => self.error("upload", Some(id), ErrorCode::Internal).await,
+                }
+            }
+            ClientFrame::Download { id } => {
+                let Some(files) = &relay.cfg.files else {
+                    return self.error("download", Some(id), ErrorCode::Unavailable).await;
+                };
+                match files.get(&id, relay.now()).await {
+                    Some(data) => self.reply(ServerFrame::File { id, data }).await,
+                    None => self.error("download", Some(id), ErrorCode::NotFound).await,
+                }
+            }
             ClientFrame::Hello { .. } | ClientFrame::Auth { .. } => {
                 self.error("auth", None, ErrorCode::BadFrame).await
             }
@@ -390,5 +417,7 @@ fn frame_ref(f: &ClientFrame) -> &'static str {
         ClientFrame::Directory {} => "directory",
         ClientFrame::Turn {} => "turn",
         ClientFrame::PushToken { .. } => "push_token",
+        ClientFrame::Upload { .. } => "upload",
+        ClientFrame::Download { .. } => "download",
     }
 }

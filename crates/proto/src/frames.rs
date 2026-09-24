@@ -45,6 +45,15 @@ pub enum ClientFrame {
         platform: Platform,
         token: String,
     },
+    /// Stores an encrypted attachment (`file::` blob) for 24 h. Same id again is a no-op.
+    Upload {
+        id: Id,
+        #[serde(with = "b64")]
+        data: Vec<u8>,
+    },
+    Download {
+        id: Id,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +99,14 @@ pub enum ServerFrame {
         credential: String,
         ttl: u64,
     },
+    Uploaded {
+        id: Id,
+    },
+    File {
+        id: Id,
+        #[serde(with = "b64")]
+        data: Vec<u8>,
+    },
     Ok {
         r#ref: String,
     },
@@ -118,6 +135,8 @@ pub enum ErrorCode {
     Revoked,
     Unavailable,
     Internal,
+    /// `download` of an unknown or expired file.
+    NotFound,
 }
 
 /// WebSocket close codes.
