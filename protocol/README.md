@@ -121,6 +121,8 @@ and that it has not seen a newer cert of the same user that omits this device. A
 | S→C | `uploaded {id}` | |
 | C→S | `download {id}` | any authenticated device that knows the `id` |
 | S→C | `file {id, data}` | or `error {ref: "download", id, code: "not_found"}` |
+| C→S | `presence {devices}` | ≤256 device ids |
+| S→C | `presence {online}` | the queried devices that have a session now (a phone asleep is offline but still reachable by push) |
 | S→C | `ok {ref}` | |
 | S→C | `error {ref, id?, code}` | `ref` = `t` of the offending frame (empty if unparsable) |
 

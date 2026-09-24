@@ -49,6 +49,8 @@ pub enum Event {
     MessagesChanged { peer: Id },
     /// A new incoming message (for a notification).
     NewMessage { peer: Id, text: String },
+    /// Answer to `Cmd::Presence`: the queried devices that are connected now.
+    Presence { online: Vec<Id> },
 }
 
 pub enum Cmd {
@@ -59,6 +61,8 @@ pub enum Cmd {
     Flush,
     /// (Re)register the push token with the relay.
     PushToken,
+    /// Ask which of these devices are connected.
+    Presence(Vec<Id>),
 }
 
 enum Exit {
@@ -216,6 +220,10 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                     Cmd::Turn => ClientFrame::Turn {},
                     Cmd::Flush => { flush(shared, &mut ws, &mut s).await?; continue; }
                     Cmd::PushToken => { send_push_token(shared, &mut ws).await?; continue; }
+                    Cmd::Presence(mut devices) => {
+                        devices.truncate(proto::frames::MAX_PRESENCE);
+                        ClientFrame::Presence { devices }
+                    }
                     Cmd::Signal { to, payload } => match seal_signal(shared, &to, &payload) {
                         Ok(blob) => ClientFrame::Signal { to, blob },
                         Err(e) => { emit(Event::Error { message: e.to_string() }); continue; }
@@ -350,6 +358,7 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
         ServerFrame::Signaled { to, online } => emit(Event::Signaled { to, online }),
         ServerFrame::Turn { urls, username, credential, .. } => emit(Event::Turn { urls, username, credential }),
         ServerFrame::Uploaded { .. } => {}
+        ServerFrame::Presence { online } => emit(Event::Presence { online }),
         ServerFrame::File { id, data } => {
             s.downloading.remove(&id);
             match messaging::on_file(shared, &id, &data) {

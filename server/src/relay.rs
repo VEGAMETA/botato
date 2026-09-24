@@ -316,6 +316,12 @@ impl Relay {
         }
     }
 
+    /// The subset of `devices` with a live session.
+    pub(crate) fn online(&self, devices: &[Id]) -> Vec<Id> {
+        let inner = self.inner();
+        devices.iter().filter(|d| inner.sessions.contains_key(d)).copied().collect()
+    }
+
     pub(crate) fn is_device_revoked(&self, device: &Id) -> bool {
         self.inner().device_revoked(device)
     }

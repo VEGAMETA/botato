@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1166575747;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -260904013;
 
 // Section: executor
 
@@ -327,6 +327,38 @@ fn wire__crate__api__client__client_photo_impl(
                     })(),
                 )
             }
+        },
+    )
+}
+fn wire__crate__api__client__client_query_presence_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "client_query_presence",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_devices = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::client::client_query_presence(api_devices)?;
+                    std::result::Result::Ok(output_ok)
+                })(),
+            )
         },
     )
 }
@@ -921,6 +953,10 @@ impl SseDecode for crate::api::client::ClientEvent {
                     text: var_text,
                 };
             }
+            10 => {
+                let mut var_online = <Vec<String>>::sse_decode(deserializer);
+                return crate::api::client::ClientEvent::Presence { online: var_online };
+            }
             _ => {
                 unimplemented!("");
             }
@@ -1185,10 +1221,10 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         9 => wire__crate__api__client__client_photo_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__client__client_send_photo_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__client__client_start_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__client__client_stop_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__info__init_app_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__client__client_send_photo_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__client__client_start_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__client__client_stop_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__info__init_app_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1209,16 +1245,17 @@ fn pde_ffi_dispatcher_sync_impl(
         6 => wire__crate__api__client__client_mark_read_impl(ptr, rust_vec_len, data_len),
         7 => wire__crate__api__client__client_messages_impl(ptr, rust_vec_len, data_len),
         8 => wire__crate__api__client__client_my_device_impl(ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__client__client_reconnect_impl(ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__client__client_refresh_directory_impl(ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__client__client_request_turn_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__client__client_send_text_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__client__client_set_push_token_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__client__client_signal_impl(ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__info__core_info_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__identity__device_generate_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__identity__device_info_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__identity__enrollment_request_impl(ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__client__client_query_presence_impl(ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__client__client_reconnect_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__client__client_refresh_directory_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__client__client_request_turn_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__client__client_send_text_impl(ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__client__client_set_push_token_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__client__client_signal_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__info__core_info_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__identity__device_generate_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__identity__device_info_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__identity__enrollment_request_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1302,6 +1339,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::client::ClientEvent {
                 text.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::client::ClientEvent::Presence { online } => {
+                [10.into_dart(), online.into_into_dart().into_dart()].into_dart()
+            }
             _ => {
                 unimplemented!("");
             }
@@ -1544,6 +1584,10 @@ impl SseEncode for crate::api::client::ClientEvent {
                 <i32>::sse_encode(9, serializer);
                 <String>::sse_encode(peer_user, serializer);
                 <String>::sse_encode(text, serializer);
+            }
+            crate::api::client::ClientEvent::Presence { online } => {
+                <i32>::sse_encode(10, serializer);
+                <Vec<String>>::sse_encode(online, serializer);
             }
             _ => {
                 unimplemented!("");

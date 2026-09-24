@@ -876,3 +876,17 @@ async fn attachments_unavailable_without_store() {
     send(&mut wa, &ClientFrame::Download { id: Id::random() }).await;
     assert!(matches!(recv(&mut wa).await, ServerFrame::Error { code: ErrorCode::Unavailable, .. }));
 }
+
+#[tokio::test]
+async fn presence_lists_connected_devices() {
+    let env = Env::new().await;
+    let a = env.user("a", 1, T0).remove(0);
+    let mut bs = env.user("b", 2, T0);
+    let (b1, b2) = (bs.remove(0), bs.remove(0));
+    let mut wa = env.connect(&a).await;
+    let _wb1 = env.connect(&b1).await;
+    send(&mut wa, &ClientFrame::Presence { devices: vec![b1.device, b2.device] }).await;
+    assert_eq!(recv(&mut wa).await, ServerFrame::Presence { online: vec![b1.device] });
+    send(&mut wa, &ClientFrame::Presence { devices: vec![Id::random(); 257] }).await;
+    assert!(matches!(recv(&mut wa).await, ServerFrame::Error { code: ErrorCode::BadFrame, .. }));
+}

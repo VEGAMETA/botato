@@ -23,6 +23,8 @@ pub enum ClientEvent {
     Error { message: String },
     MessagesChanged { peer_user: String },
     NewMessage { peer_user: String, text: String },
+    /// Devices (hex ids) connected to the relay right now, answering `client_query_presence`.
+    Presence { online: Vec<String> },
 }
 
 pub struct ContactInfo {
@@ -65,6 +67,7 @@ fn convert(e: Event) -> ClientEvent {
             payload,
         },
         Event::Signaled { to, online } => ClientEvent::Signaled { to_device: to.to_hex(), online },
+        Event::Presence { online } => ClientEvent::Presence { online: online.iter().map(Id::to_hex).collect() },
         Event::Turn { urls, username, credential } => ClientEvent::Turn { urls, username, credential },
         Event::Error { message } => ClientEvent::Error { message },
         Event::MessagesChanged { peer } => ClientEvent::MessagesChanged { peer_user: peer.to_hex() },
@@ -170,6 +173,13 @@ pub fn client_request_turn() -> anyhow::Result<()> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_refresh_directory() -> anyhow::Result<()> {
     with(|r| r.tx.send(Cmd::Directory))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
+}
+
+/// Asks the relay which of these devices are connected; answered by `ClientEvent::Presence`.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_query_presence(devices: Vec<String>) -> anyhow::Result<()> {
+    let ids = devices.iter().map(|d| parse_id(d)).collect::<anyhow::Result<Vec<_>>>()?;
+    with(|r| r.tx.send(Cmd::Presence(ids)))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
 }
 
 /// This device's id (hex).

@@ -47,6 +47,10 @@ void clientRequestTurn() =>
 void clientRefreshDirectory() =>
     RustLib.instance.api.crateApiClientClientRefreshDirectory();
 
+/// Asks the relay which of these devices are connected; answered by `ClientEvent::Presence`.
+void clientQueryPresence({required List<String> devices}) =>
+    RustLib.instance.api.crateApiClientClientQueryPresence(devices: devices);
+
 /// This device's id (hex).
 String? clientMyDevice() => RustLib.instance.api.crateApiClientClientMyDevice();
 
@@ -137,6 +141,10 @@ sealed class ClientEvent with _$ClientEvent {
     required String peerUser,
     required String text,
   }) = ClientEvent_NewMessage;
+
+  /// Devices (hex ids) connected to the relay right now, answering `client_query_presence`.
+  const factory ClientEvent.presence({required List<String> online}) =
+      ClientEvent_Presence;
 }
 
 class ContactInfo {

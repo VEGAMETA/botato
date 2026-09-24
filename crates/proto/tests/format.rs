@@ -106,6 +106,11 @@ fn frames_json_shape() {
         r#"{"t":"error","ref":"download","id":"02020202020202020202020202020202","code":"not_found"}"#
     );
 
+    assert_eq!(
+        serde_json::to_string(&ServerFrame::Presence { online: vec![Id([3; 16])] }).unwrap(),
+        r#"{"t":"presence","online":["03030303030303030303030303030303"]}"#
+    );
+
     // Uppercase hex, unknown fields, unknown types and bad base64 are rejected.
     for bad in [
         r#"{"t":"ack","id":"ABABABABABABABABABABABABABABABAB"}"#,

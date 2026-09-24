@@ -9,6 +9,8 @@ use crate::Id;
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_BLOB: usize = 64 * 1024;
 pub const MAX_PUSH_TOKEN: usize = 4096;
+/// Most device ids in one `presence` query.
+pub const MAX_PRESENCE: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case", deny_unknown_fields)]
@@ -53,6 +55,10 @@ pub enum ClientFrame {
     },
     Download {
         id: Id,
+    },
+    /// Which of these devices have a session right now.
+    Presence {
+        devices: Vec<Id>,
     },
 }
 
@@ -106,6 +112,10 @@ pub enum ServerFrame {
         id: Id,
         #[serde(with = "b64")]
         data: Vec<u8>,
+    },
+    /// The subset of the queried devices that are connected.
+    Presence {
+        online: Vec<Id>,
     },
     Ok {
         r#ref: String,

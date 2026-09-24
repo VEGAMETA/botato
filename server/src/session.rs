@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use proto::auth::{self, Nonce};
 use proto::cert::Cert;
 use proto::frames::{
-    ClientFrame, ErrorCode, MAX_BLOB, MAX_PUSH_TOKEN, PROTOCOL_VERSION, ServerFrame, close,
+    ClientFrame, ErrorCode, MAX_BLOB, MAX_PRESENCE, MAX_PUSH_TOKEN, PROTOCOL_VERSION, ServerFrame, close,
 };
 use proto::file::MAX_FILE;
 use proto::{Id, random_bytes};
@@ -400,6 +400,12 @@ impl Reader {
                     None => self.error("download", Some(id), ErrorCode::NotFound).await,
                 }
             }
+            ClientFrame::Presence { devices } => {
+                if devices.len() > MAX_PRESENCE {
+                    return self.error("presence", None, ErrorCode::BadFrame).await;
+                }
+                self.reply(ServerFrame::Presence { online: relay.online(&devices) }).await;
+            }
             ClientFrame::Hello { .. } | ClientFrame::Auth { .. } => {
                 self.error("auth", None, ErrorCode::BadFrame).await
             }
@@ -419,5 +425,6 @@ fn frame_ref(f: &ClientFrame) -> &'static str {
         ClientFrame::PushToken { .. } => "push_token",
         ClientFrame::Upload { .. } => "upload",
         ClientFrame::Download { .. } => "download",
+        ClientFrame::Presence { .. } => "presence",
     }
 }

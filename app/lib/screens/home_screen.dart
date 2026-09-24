@@ -138,10 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             // Why "no connection": the last error from the relay client, copyable.
             if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
-              row(
-                widget.relay.state == ConnState.connecting ? 'Подключение к' : 'Нет связи',
-                widget.relay.detail,
-              ),
+              row(widget.relay.state == ConnState.connecting ? 'Подключение к' : 'Нет связи', widget.relay.detail),
             row('ID пользователя', widget.info.userId),
             if (device != null) row('ID этого устройства', device),
           ],
@@ -233,6 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         contact: c,
                         conversation: r.conversations[c.userId],
                         enabled: online,
+                        peerOnline: r.isOnline(c),
                         onOpen: () => openChat(context, c),
                         onCall: () => widget.calls.startCall(c),
                         onVideo: () => widget.calls.startCall(c, video: true),
@@ -256,6 +254,7 @@ class _ContactCard extends StatelessWidget {
     required this.contact,
     required this.conversation,
     required this.enabled,
+    required this.peerOnline,
     required this.onOpen,
     required this.onCall,
     required this.onVideo,
@@ -267,6 +266,9 @@ class _ContactCard extends StatelessWidget {
   final core.ContactInfo contact;
   final core.ConversationInfo? conversation;
   final bool enabled;
+
+  /// Some device of the contact is connected to the relay now.
+  final bool peerOnline;
   final VoidCallback onOpen, onCall, onVideo, onPing, onForget, onRename;
 
   @override
@@ -290,7 +292,26 @@ class _ContactCard extends StatelessWidget {
                 isLabelVisible: unread > 0,
                 label: Text('$unread'),
                 backgroundColor: BotatoColors.ember,
-                child: Avatar(contact.name),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Avatar(contact.name),
+                    if (peerOnline)
+                      Positioned(
+                        right: -1,
+                        bottom: -1,
+                        child: Container(
+                          width: 13,
+                          height: 13,
+                          decoration: BoxDecoration(
+                            color: BotatoColors.ok,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Theme.of(context).colorScheme.surfaceContainerLow, width: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(

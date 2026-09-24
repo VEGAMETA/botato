@@ -167,6 +167,7 @@ S→C ready     {user_id, device_id}
 | `push_token {platform, token}` | `ok` | регистрация push-токена (только RAM, клиент шлёт при каждом подключении) |
 | `upload {id, data}` | `uploaded {id}` | вложение ≤2 МиБ (зашифровано случайным ключом из сообщения), хранится 24 ч |
 | `download {id}` | `file {id, data}` | любое аутентифицированное устройство, знающее `id`; иначе `error not_found` |
+| `presence {devices}` | `presence {online}` | какие из устройств сейчас подключены (для статуса «в сети») |
 | | `error {ref, id?, code}` | `bad_frame`, `too_large`, `quota`, `rate_limited`, `revoked`, `unavailable`, `internal`, `not_found` |
 
 `to`/`from` — это `device_id`. `from` от сервера — только подсказка: настоящий отправитель подписан внутри блоба. Push-токен, ящик и удержание сигналов — на устройство.

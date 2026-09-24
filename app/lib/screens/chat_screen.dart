@@ -155,7 +155,24 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             Avatar(widget.contact.name, size: 36),
             const SizedBox(width: 10),
-            Expanded(child: Text(widget.contact.name, overflow: TextOverflow.ellipsis)),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: widget.relay,
+                builder: (context, _) {
+                  final on = widget.relay.isOnline(widget.contact);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.contact.name, overflow: TextOverflow.ellipsis),
+                      Text(
+                        on ? 'в сети' : 'не в сети',
+                        style: TextStyle(fontSize: 12, color: on ? BotatoColors.ok : BotatoColors.smoke),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ],
         ),
         actions: [

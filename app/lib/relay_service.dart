@@ -95,6 +95,7 @@ class RelayService extends ChangeNotifier {
     final a = settings.addedContacts ?? {};
     if (!a.add(userId)) return;
     settings.addedContacts = a;
+    _queryPresence();
     notifyListeners();
   }
 
@@ -138,6 +139,24 @@ class RelayService extends ChangeNotifier {
 
   final _turn = StreamController<TurnCreds>.broadcast();
   StreamSubscription<core.ClientEvent>? _sub;
+  Timer? _presenceTimer;
+
+  /// Devices connected to the relay at the last presence answer.
+  Set<String> _onlineDevices = {};
+
+  /// Some device of the contact is connected now. A phone asleep counts as offline,
+  /// though calls and messages still reach it via push.
+  bool isOnline(core.ContactInfo c) => c.devices.any(_onlineDevices.contains);
+
+  void _queryPresence() {
+    if (state != ConnState.online) return;
+    final devices = [for (final c in visibleContacts) ...c.devices];
+    if (devices.isEmpty) return;
+    try {
+      core.clientQueryPresence(devices: devices);
+    } catch (_) {}
+  }
+
   StreamSubscription<List<ConnectivityResult>>? _net;
   List<ConnectivityResult>? _lastNet;
 
@@ -155,6 +174,7 @@ class RelayService extends ChangeNotifier {
     contacts = _loadContacts();
     _loadConversations();
     _migrateContacts();
+    _presenceTimer ??= Timer.periodic(const Duration(seconds: 15), (_) => _queryPresence());
     notifyListeners();
   }
 
@@ -171,11 +191,16 @@ class RelayService extends ChangeNotifier {
         state = ConnState.online;
         detail = server;
         contacts = _loadContacts();
+        _queryPresence();
       case core.ClientEvent_Offline(:final reason):
         state = ConnState.offline;
         detail = reason;
+        _onlineDevices = {};
       case core.ClientEvent_ContactsChanged():
         contacts = _loadContacts();
+        _queryPresence();
+      case core.ClientEvent_Presence(:final online):
+        _onlineDevices = online.toSet();
       case core.ClientEvent_Signal(:final fromUser, :final fromDevice, :final payload):
         add(fromUser); // whoever calls us shows up in the list
         try {
