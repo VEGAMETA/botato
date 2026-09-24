@@ -11,6 +11,8 @@ class CallNotifier {
       _channel.setMethodCallHandler((call) async {
         if (call.method == 'action') onAction?.call(call.arguments as String);
         if (call.method == 'openChat') onOpenChat?.call(call.arguments as String);
+        if (call.method == 'pushToken') onPushToken?.call(call.arguments as String);
+        if (call.method == 'wake') onWake?.call();
       });
     }
   }
@@ -19,6 +21,22 @@ class CallNotifier {
 
   /// 'mute', 'hangup', 'accept' or 'decline' from the notifications.
   void Function(String action)? onAction;
+
+  /// New FCM token (Android), to register with the relay.
+  void Function(String token)? onPushToken;
+
+  /// A push arrived while the app was running: the relay socket may be stale.
+  void Function()? onWake;
+
+  /// Current FCM token, or null (no Google services, not Android).
+  Future<String?> pushToken() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('pushToken');
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Tap on a message notification: the peer user id.
   void Function(String peerUser)? onOpenChat;

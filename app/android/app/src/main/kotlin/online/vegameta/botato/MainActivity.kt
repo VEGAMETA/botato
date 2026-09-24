@@ -1,92 +1,29 @@
 package online.vegameta.botato
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private var channel: MethodChannel? = null
-    /// Chat to open once Dart asks (a cold start from a notification tap).
-    private var pendingChat: String? = null
+    /** The shared engine: a call or relay session started by a push keeps running. */
+    override fun provideFlutterEngine(context: Context): FlutterEngine = BotatoApp.engine(context)
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "botato/call")
-        channel = ch
-        CallForegroundService.onAction = { action -> runOnUiThread { ch.invokeMethod("action", action) } }
-        ch.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "show" -> {
-                    requestNotificationPermission()
-                    CallForegroundService.show(
-                        this,
-                        CallForegroundService.State(
-                            peer = call.argument<String>("peer") ?: "",
-                            status = call.argument<String>("status") ?: "",
-                            muted = call.argument<Boolean>("muted") ?: false,
-                            camera = call.argument<Boolean>("camera") ?: false,
-                            screen = call.argument<Boolean>("screen") ?: false,
-                        ),
-                    )
-                    result.success(null)
-                }
-                "types" -> {
-                    CallForegroundService.setTypes(
-                        this,
-                        call.argument<Boolean>("camera") ?: false,
-                        call.argument<Boolean>("screen") ?: false,
-                    ) { runOnUiThread { result.success(null) } }
-                }
-                "hide" -> {
-                    CallForegroundService.hide(this)
-                    IncomingCallNotification.cancel(this)
-                    showOverLockScreen(false)
-                    result.success(null)
-                }
-                "incoming" -> {
-                    requestNotificationPermission()
-                    IncomingCallNotification.show(
-                        this,
-                        call.argument<String>("peer") ?: "",
-                        call.argument<Boolean>("video") ?: false,
-                    )
-                    result.success(null)
-                }
-                "message" -> {
-                    requestNotificationPermission()
-                    MessageNotification.show(
-                        this,
-                        call.argument<String>("peer") ?: "",
-                        call.argument<String>("name") ?: "",
-                        call.argument<String>("text") ?: "",
-                    )
-                    result.success(null)
-                }
-                "messageClear" -> {
-                    MessageNotification.cancel(this, call.argument<String>("peer") ?: "")
-                    result.success(null)
-                }
-                "pendingChat" -> {
-                    result.success(pendingChat)
-                    pendingChat = null
-                }
-                "incomingCancel" -> {
-                    IncomingCallNotification.cancel(this)
-                    result.success(null)
-                }
-                else -> result.notImplemented()
-            }
-        }
-    }
+    override fun shouldDestroyEngineWithHost(): Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        CallChannel.activity = this
         super.onCreate(savedInstanceState)
         handleCallIntent(intent)
+    }
+
+    override fun onDestroy() {
+        if (CallChannel.activity === this) CallChannel.activity = null
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -99,26 +36,26 @@ class MainActivity : FlutterActivity() {
             IncomingCallNotification.ACTION_SHOW -> showOverLockScreen(true)
             MessageNotification.ACTION_OPEN_CHAT -> {
                 val peer = intent.getStringExtra(MessageNotification.EXTRA_PEER) ?: return
-                pendingChat = peer
-                channel?.invokeMethod("openChat", peer)
+                CallChannel.pendingChat = peer
+                CallChannel.invoke("openChat", peer)
             }
             IncomingCallNotification.ACTION_ANSWER -> {
                 showOverLockScreen(true)
                 IncomingCallNotification.cancel(this)
-                channel?.invokeMethod("action", "accept")
+                CallChannel.invoke("action", "accept")
             }
         }
     }
 
     /** Only while a call is ringing or active; otherwise the app stays behind the lock screen. */
-    private fun showOverLockScreen(on: Boolean) {
+    fun showOverLockScreen(on: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(on)
             setTurnScreenOn(on)
         }
     }
 
-    private fun requestNotificationPermission() {
+    fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {

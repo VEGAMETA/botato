@@ -99,6 +99,7 @@ pub fn client_start(
         reconnect: tokio::sync::Notify::new(),
         store: Mutex::new(store),
         my_user,
+        push_token: Mutex::new(None),
     });
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -252,4 +253,13 @@ pub fn client_mark_read(peer_user: String) -> anyhow::Result<()> {
 pub fn client_delete_history(peer_user: String) -> anyhow::Result<()> {
     let peer = parse_id(&peer_user)?;
     with(|r| r.shared.store.lock().unwrap().delete_conversation(&peer))?
+}
+
+/// FCM registration token (Android). Kept in memory and sent to the relay on every connect.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_set_push_token(token: String) -> anyhow::Result<()> {
+    with(|r| {
+        *r.shared.push_token.lock().unwrap() = Some(token);
+        let _ = r.tx.send(Cmd::PushToken);
+    })
 }

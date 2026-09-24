@@ -800,6 +800,11 @@ class CallService extends ChangeNotifier {
     ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text(text)));
   }
 
+  /// Shows the call screen for a call that began before the UI existed.
+  void showScreenIfNeeded() {
+    if (busy && phase != CallPhase.ended) _showScreen();
+  }
+
   void _showScreen() {
     if (_screenShown) return;
     final nav = navigatorKey.currentState;

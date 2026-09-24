@@ -56,6 +56,8 @@ pub enum Cmd {
     Turn,
     /// Send outbox entries not yet sent in this session.
     Flush,
+    /// (Re)register the push token with the relay.
+    PushToken,
 }
 
 enum Exit {
@@ -73,6 +75,8 @@ pub struct Shared {
     pub store: Mutex<store::Store>,
     /// Our own user id (from our certificate).
     pub my_user: Id,
+    /// FCM token; sent to the relay on every connection (it keeps tokens in RAM only).
+    pub push_token: Mutex<Option<String>>,
 }
 
 pub type Emit = Arc<dyn Fn(Event) + Send + Sync>;
@@ -187,6 +191,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
     emit(Event::Online { server: server.url.clone() });
     send(&mut ws, &ClientFrame::Directory {}).await?;
 
+    send_push_token(shared, &mut ws).await?;
     let mut s = SessionState::default();
     expire(shared, emit);
     // Everything in the outbox goes out on every connect: the relay may have been restarted
@@ -208,6 +213,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                     Cmd::Directory => ClientFrame::Directory {},
                     Cmd::Turn => ClientFrame::Turn {},
                     Cmd::Flush => { flush(shared, &mut ws, &mut s).await?; continue; }
+                    Cmd::PushToken => { send_push_token(shared, &mut ws).await?; continue; }
                     Cmd::Signal { to, payload } => match seal_signal(shared, &to, &payload) {
                         Ok(blob) => ClientFrame::Signal { to, blob },
                         Err(e) => { emit(Event::Error { message: e.to_string() }); continue; }
@@ -235,6 +241,14 @@ struct SessionState {
     sent: std::collections::HashSet<Id>,
     /// Deliveries from senders we don't know yet (retried after a directory update).
     pending: Vec<(Id, Vec<u8>)>,
+}
+
+async fn send_push_token(shared: &Shared, ws: &mut Ws) -> anyhow::Result<()> {
+    let token = shared.push_token.lock().unwrap().clone();
+    if let Some(token) = token {
+        send(ws, &ClientFrame::PushToken { platform: proto::frames::Platform::Fcm, token }).await?;
+    }
+    Ok(())
 }
 
 async fn flush(shared: &Shared, ws: &mut Ws, s: &mut SessionState) -> anyhow::Result<()> {

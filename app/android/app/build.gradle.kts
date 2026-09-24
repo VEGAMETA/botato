@@ -4,6 +4,8 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Reads google-services.json (gitignored). Firebase is used only for empty wake-up pushes.
+    id("com.google.gms.google-services")
 }
 
 // Release signing key lives in the admin dir (backed up with root.key); key.properties is gitignored.
@@ -72,4 +74,6 @@ flutter {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-messaging")
 }

@@ -59,6 +59,9 @@ void clientMarkRead({required String peerUser}) =>
 void clientDeleteHistory({required String peerUser}) =>
     RustLib.instance.api.crateApiClientClientDeleteHistory(peerUser: peerUser);
 
+/// FCM registration token (Android). Kept in memory and sent to the relay on every connect.
+void clientSetPushToken({required String token}) => RustLib.instance.api.crateApiClientClientSetPushToken(token: token);
+
 @freezed
 sealed class ClientEvent with _$ClientEvent {
   const ClientEvent._();
