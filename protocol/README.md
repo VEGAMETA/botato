@@ -210,6 +210,7 @@ UTF-8 JSON object. Receivers drop signals with `|now − sent_at| > 120 s`.
 | `media` | `call`, `video` (bool), `screen` (bool) | what this side currently sends on its video track |
 | `reoffer` | `call`, `sdp` | caller → callee: ICE restart after a network change (`iceRestart`) |
 | `reanswer` | `call`, `sdp` | callee → caller: answer to `reoffer` |
+| `check` | `call` | callee → caller while reconnecting (every 5 s): is the call still on? |
 | `ping` / `pong` | — | diagnostics: round trip through the relay, answered automatically |
 
 Every call negotiates one audio and one video transceiver, both `sendrecv`, even for voice calls.
@@ -217,7 +218,10 @@ Camera, screen sharing, device changes and audio modes swap tracks (`replaceTrac
 parameters without renegotiation; `media` tells the peer what to render. Opus fmtp at setup:
 `stereo=1; sprop-stereo=1; useinbandfec=1; maxaveragebitrate=128000; maxplaybackrate=48000`
 (the actual audio bitrate per mode is set with `setParameters`). On ICE `disconnected`/`failed` the
-caller sends `reoffer` (repeated every 6 s until media flows); both sides give up after 40 s.
+caller sends `reoffer` (repeated every 5 s until media flows), the callee sends `check`; both sides give
+up after 40 s. A device that has already ended call `call` answers any later `reoffer`, `reanswer`,
+`ice`, `media` or `check` for it with `hangup` (at most every 2 s): a `hangup` lost while the peer's
+relay connection was being replaced must not leave it reconnecting for 40 s.
 
 `call` is a random 128-bit id (hex). SDP needs no separate signature: the envelope signature authenticates
 it, and WebRTC checks the peer's DTLS certificate against the fingerprint in that SDP.

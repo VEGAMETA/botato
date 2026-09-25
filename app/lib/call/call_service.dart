@@ -58,6 +58,7 @@ class CallService extends ChangeNotifier {
   bool screenOn = false;
   bool peerVideo = false; // the peer sends camera or screen
   bool reconnecting = false;
+  Timer? _checkTimer;
   String? endReason;
   DateTime? connectedAt;
   CallStats? stats;
@@ -78,6 +79,7 @@ class CallService extends ChangeNotifier {
   bool _renderersReady = false;
 
   String? _callId;
+  DateTime _lastHangupEcho = DateTime(0);
   bool _isCaller = false;
   String? _peerDevice; // the device we are actually talking to
   final _ringing = <String>{}; // outgoing: devices the offer went to
@@ -217,6 +219,7 @@ class CallService extends ChangeNotifier {
   void hangup({String reason = 'hangup'}) {
     if (!busy || phase == CallPhase.ended) return;
     final targets = _peerDevice != null ? {_peerDevice!} : _ringing;
+    _log('hangup sent ($reason, relay ${relay.state.name})');
     for (final d in targets) {
       relay.signal(d, {'type': 'hangup', 'call': _callId, 'reason': reason == 'no_answer' ? 'hangup' : reason});
     }
@@ -438,6 +441,18 @@ class CallService extends ChangeNotifier {
     }
     if (call != _callId) return;
     if (_peerDevice != null && s.fromDevice != _peerDevice && type != 'answer' && type != 'hangup') return;
+    if (phase == CallPhase.ended || phase == CallPhase.idle) {
+      // The peer still talks about a call we ended: our hangup was lost (typically while its
+      // relay connection was being replaced). Tell it again instead of letting it reconnect.
+      const echoes = {'reoffer', 'reanswer', 'ice', 'media', 'check'};
+      final now = DateTime.now();
+      if (echoes.contains(type) && now.difference(_lastHangupEcho) > const Duration(seconds: 2)) {
+        _lastHangupEcho = now;
+        _log('signal for the ended call, hangup again');
+        relay.signal(s.fromDevice, {'type': 'hangup', 'call': call, 'reason': 'hangup'});
+      }
+      return;
+    }
 
     switch (type) {
       case 'answer':
@@ -507,6 +522,7 @@ class CallService extends ChangeNotifier {
         notifyListeners();
       case 'hangup':
         final reason = d['reason'];
+        _log('hangup received ($reason)');
         if (phase == CallPhase.outgoing && _peerDevice == null) {
           _ringing.remove(s.fromDevice);
           if (_ringing.isEmpty) _end(reason == 'busy' ? 'занято' : 'отклонён');
@@ -901,7 +917,20 @@ class CallService extends ChangeNotifier {
       }
       _end('соединение потеряно');
     });
-    if (!_isCaller || _restartTimer?.isActive == true) return;
+    if (!_isCaller) {
+      // The callee only waits for a reoffer; ask now and then whether the caller is still
+      // there (an ended caller answers with hangup).
+      _checkTimer ??= Timer.periodic(const Duration(seconds: 5), (t) {
+        if (!reconnecting || _peerDevice == null) {
+          t.cancel();
+          _checkTimer = null;
+          return;
+        }
+        relay.signal(_peerDevice!, {'type': 'check', 'call': _callId});
+      });
+      return;
+    }
+    if (_restartTimer?.isActive == true) return;
     // "disconnected" often heals by itself; "failed" never does.
     _restartTimer = Timer(soft ? const Duration(seconds: 1) : Duration.zero, () {
       _restartIce();
@@ -960,6 +989,8 @@ class CallService extends ChangeNotifier {
     if (phase == CallPhase.ended || phase == CallPhase.idle) return;
     _ringTimer?.cancel();
     _restartTimer?.cancel();
+    _checkTimer?.cancel();
+    _checkTimer = null;
     _deadline?.cancel();
     _deadline = null;
     endReason = reason;
