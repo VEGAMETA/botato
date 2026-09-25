@@ -540,17 +540,6 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 setState(() {});
               },
             ),
-            if (s.audioMode == AudioMode.clean)
-              Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text(
-                  tr(
-                    'Без шумо- и эхоподавления, стерео 128 кбит/с. Только в наушниках, иначе будет эхо.',
-                    'No noise or echo suppression, stereo 128 kbit/s. Headphones only, otherwise there will be echo.',
-                  ),
-                  style: TextStyle(color: Colors.orange),
-                ),
-              ),
             if (c.isDesktop) ...[
               _picker(tr('Микрофон', 'Microphone'), 'audioinput', s.micId, c.setMicrophone),
               _picker(tr('Вывод звука', 'Audio output'), 'audiooutput', s.outputId, c.setOutput),
@@ -591,25 +580,13 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                   onChanged: (v) => setState(() => s.videoCodec = v),
                 ),
               ),
-            Text(
-              tr(
-                'Кодек выбирает тот, кто звонит; применяется со следующего звонка. Если у собеседника такого нет — будет другой.',
-                'The caller picks the codec; applies from the next call. If the other side doesn\'t have it, another one is used.',
-              ),
-              style: TextStyle(color: BotatoColors.smoke, fontSize: 12),
-            ),
             if (Platform.isAndroid)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: s.rawMic,
                 onChanged: (v) => setState(() => s.rawMic = v),
                 title: Text(tr('Микрофон без обработки системы', 'Microphone without system processing')),
-                subtitle: Text(
-                  tr(
-                    'Обычный микрофон вместо «звонкового» (по умолчанию): громче и чище. Если собеседник не слышит вас через Bluetooth-гарнитуру — выключите. Применится после перезапуска приложения.',
-                    'The plain microphone instead of the call one (default): louder and cleaner. If the other side can\'t hear you through a Bluetooth headset, turn it off. Applies after restarting the app.',
-                  ),
-                ),
+                subtitle: Text(tr('после перезапуска', 'after a restart')),
               ),
             if (Platform.isAndroid)
               SwitchListTile(
@@ -617,12 +594,7 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 value: s.hwAudioProcessing,
                 onChanged: (v) => setState(() => s.hwAudioProcessing = v),
                 title: Text(tr('Шумоподавление телефона', 'Phone noise suppression')),
-                subtitle: Text(
-                  tr(
-                    'Встроенная обработка микрофона телефона. Работает только с «звонковым» микрофоном (когда «Микрофон без обработки системы» выключен). Применится после перезапуска приложения.',
-                    'The phone\'s built-in microphone processing. Works only with the call microphone (when "Microphone without system processing" is off). Applies after restarting the app.',
-                  ),
-                ),
+                subtitle: Text(tr('после перезапуска', 'after a restart')),
               ),
           ],
         ),
