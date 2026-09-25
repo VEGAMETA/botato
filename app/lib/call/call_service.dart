@@ -59,6 +59,8 @@ class CallService extends ChangeNotifier {
   bool peerVideo = false; // the peer sends camera or screen
   bool peerScreen = false; // ... and it is its screen
   int _idleVideoSamples = 0;
+  int _busyVideoSamples = 0;
+  DateTime _lastMediaAt = DateTime(0);
   bool reconnecting = false;
   Timer? _checkTimer;
   String? endReason;
@@ -520,6 +522,8 @@ class CallService extends ChangeNotifier {
           _remoteIce.add(c);
         }
       case 'media':
+        _log('media received: video ${d['video']}, screen ${d['screen']}');
+        _lastMediaAt = DateTime.now();
         peerScreen = d['screen'] == true;
         _setPeerVideo(d['video'] == true || d['screen'] == true);
         notifyListeners();
@@ -557,6 +561,7 @@ class CallService extends ChangeNotifier {
     }
     peerVideo = on;
     _idleVideoSamples = 0;
+    _busyVideoSamples = 0;
   }
 
   /// The `media` signal is the fast path, but it can be lost with a relay reconnect: frames
@@ -565,9 +570,14 @@ class CallService extends ChangeNotifier {
     // Decoded frames only: bandwidth probing sends padding on the video stream even when the
     // peer has no track, so the bitrate alone would show an empty window.
     final receiving = s.videoInFps >= 1;
+    // A fresh media signal wins: after "off" the last frames still trickle in for a second or
+    // two, and showing them again froze the picture until the silence timeout.
+    final signalQuiet = DateTime.now().difference(_lastMediaAt) > const Duration(seconds: 6);
     if (receiving && !peerVideo) {
-      _log('video frames arrive without a media signal, showing');
-      _setPeerVideo(true);
+      if (++_busyVideoSamples >= 3 && signalQuiet) {
+        _log('video frames keep arriving without a media signal, showing');
+        _setPeerVideo(true);
+      }
     } else if (!receiving && peerVideo && phase == CallPhase.active && !reconnecting) {
       if (++_idleVideoSamples >= 5) {
         _log('no video frames for a while, hiding');
@@ -577,6 +587,7 @@ class CallService extends ChangeNotifier {
       }
     } else {
       _idleVideoSamples = 0;
+      if (!receiving) _busyVideoSamples = 0;
     }
   }
 
@@ -608,6 +619,7 @@ class CallService extends ChangeNotifier {
 
   void _sendMediaState() {
     if (_peerDevice == null) return;
+    _log('media sent: video $cameraOn, screen $screenOn');
     relay.signal(_peerDevice!, {'type': 'media', 'call': _callId, 'video': cameraOn, 'screen': screenOn});
   }
 
@@ -1112,6 +1124,8 @@ class CallService extends ChangeNotifier {
     peerVideo = false;
     peerScreen = false;
     _idleVideoSamples = 0;
+    _busyVideoSamples = 0;
+    _lastMediaAt = DateTime(0);
     _videoTrouble = '';
     _diagTick = 0;
     reconnecting = false;
