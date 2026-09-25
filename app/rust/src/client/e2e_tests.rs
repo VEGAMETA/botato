@@ -329,3 +329,35 @@ async fn manifest_offer_newer_signed_only_and_persisted() {
     assert!(!a.shared.offer_manifest_signed_by(&old, &root).unwrap());
     assert!(a.shared.manifest().is_revoked(&Id([0x77; 16])), "no rollback");
 }
+
+#[tokio::test]
+async fn voice_message_roundtrip() {
+    let net = net().await;
+    let (alice, mut a_devs, a_cert) = user(&net, "alice", 1);
+    let (bob, mut b_devs, b_cert) = user(&net, "bob", 1);
+    let mut a = start(&net, a_devs.remove(0), alice, &a_cert);
+    let mut b = start(&net, b_devs.remove(0), bob, &b_cert);
+    a.online().await;
+    b.online().await;
+    a.shared.contacts.lock().unwrap().merge(&[b_cert.clone()], config::now(), &net.manifest);
+    b.shared.contacts.lock().unwrap().merge(&[a_cert.clone()], config::now(), &net.manifest);
+
+    let audio = vec![0x42u8; 50_000]; // stands for an M4A file: sent as is
+    let wave: Vec<u8> = (0..48).map(|i| (i * 5) as u8).collect();
+    let msg = messaging::compose_voice(&a.shared, &bob, audio.clone(), 3_500, wave.clone(), None).unwrap();
+    a.tx.send(Cmd::Flush).unwrap();
+    let e = b.wait(|e| matches!(e, Event::NewMessage { .. })).await;
+    let Event::NewMessage { text, .. } = e else { unreachable!() };
+    assert_eq!(text, "🎤 Голосовое");
+    for _ in 0..100 {
+        if b.shared.store.lock().unwrap().photo_data(&msg).unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(b.shared.store.lock().unwrap().photo_data(&msg).unwrap().unwrap(), audio);
+    let m = b.shared.store.lock().unwrap().messages(&alice, None, 10).unwrap().remove(0);
+    let v = m.photo.unwrap();
+    assert_eq!((v.kind, v.w, v.thumb, v.ready), (store::KIND_VOICE, 3_500, wave, true));
+    assert!(messaging::compose_voice(&a.shared, &bob, vec![], 1, vec![], None).is_err());
+}

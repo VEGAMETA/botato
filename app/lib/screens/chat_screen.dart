@@ -12,6 +12,7 @@ import '../src/rust/api/client.dart' as core;
 import '../emoji.dart';
 import '../image_prep.dart';
 import '../link_text.dart';
+import '../voice.dart';
 import '../theme.dart';
 import 'photo_view.dart';
 
@@ -50,6 +51,42 @@ class _ChatScreenState extends State<ChatScreen> {
   List<core.MessageInfo> _messages = [];
   StreamSubscription<String>? _sub;
   bool _sendingPhoto = false;
+
+  final _recorder = VoiceRecorder();
+
+  Future<void> _startVoice() async {
+    if (widget.calls.busy) {
+      _toast('Во время звонка голосовые недоступны');
+      return;
+    }
+    await VoicePlayer.instance.stop();
+    try {
+      await _recorder.start();
+    } catch (e) {
+      _toast('$e');
+    }
+  }
+
+  Future<void> _sendVoice() async {
+    final v = await _recorder.stop();
+    if (v == null) {
+      _toast('Слишком коротко');
+      return;
+    }
+    try {
+      await core.clientSendVoice(
+        peerUser: _peer,
+        audio: v.audio,
+        durationMs: v.duration.inMilliseconds,
+        waveform: v.wave,
+        replyTo: _replyTo?.msgId,
+      );
+      if (mounted) setState(() => _replyTo = null);
+      _reload();
+    } catch (e) {
+      _toast('$e');
+    }
+  }
 
   /// How many of the newest messages are loaded (grows to reach a search hit).
   int _limit = 200;
@@ -146,6 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     if (widget.relay.activeChat == _peer) widget.relay.activeChat = null;
     _sub?.cancel();
+    _recorder.dispose();
     _input.dispose();
     _scroll.dispose();
     _searchField.dispose();
@@ -648,44 +686,53 @@ class _ChatScreenState extends State<ChatScreen> {
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(4, 4, 6, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  IconButton(
-                    tooltip: 'Фото',
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    onPressed: _sendingPhoto ? null : _pickPhoto,
-                  ),
-                  Expanded(
-                    child: CallbackShortcuts(
-                      // Desktop: Enter sends, Shift+Enter makes a new line.
-                      bindings: {
-                        const SingleActivator(LogicalKeyboardKey.enter): _send,
-                        const SingleActivator(LogicalKeyboardKey.escape): _cancelCompose,
-                      },
-                      child: TextField(
-                        controller: _input,
-                        focusNode: _focus,
-                        autofocus: true,
-                        minLines: 1,
-                        maxLines: 6,
-                        textCapitalization: TextCapitalization.sentences,
-                        decoration: InputDecoration(
-                          hintText: 'Сообщение',
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surfaceContainer,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
+              child: ListenableBuilder(
+                listenable: Listenable.merge([_recorder, _input]),
+                builder: (context, _) => _recorder.recording
+                    ? _RecordingBar(recorder: _recorder, onCancel: _recorder.cancel, onSend: _sendVoice)
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            tooltip: 'Фото',
+                            icon: const Icon(Icons.add_photo_alternate_outlined),
+                            onPressed: _sendingPhoto ? null : _pickPhoto,
                           ),
-                        ),
+                          Expanded(
+                            child: CallbackShortcuts(
+                              // Desktop: Enter sends, Shift+Enter makes a new line.
+                              bindings: {
+                                const SingleActivator(LogicalKeyboardKey.enter): _send,
+                                const SingleActivator(LogicalKeyboardKey.escape): _cancelCompose,
+                              },
+                              child: TextField(
+                                controller: _input,
+                                focusNode: _focus,
+                                autofocus: true,
+                                minLines: 1,
+                                maxLines: 6,
+                                textCapitalization: TextCapitalization.sentences,
+                                decoration: InputDecoration(
+                                  hintText: 'Сообщение',
+                                  filled: true,
+                                  fillColor: Theme.of(context).colorScheme.surfaceContainer,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Empty input: record a voice message instead (like Telegram).
+                          if (_input.text.trim().isEmpty && _editing == null)
+                            IconButton.filled(tooltip: 'Голосовое', icon: const Icon(Icons.mic), onPressed: _startVoice)
+                          else
+                            IconButton.filled(icon: const Icon(Icons.send), onPressed: _send),
+                        ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton.filled(icon: const Icon(Icons.send), onPressed: _send),
-                ],
               ),
             ),
           ),
@@ -839,6 +886,7 @@ class _Bubble extends StatelessWidget {
                       widthFactor: 1,
                       child: _Quote(name: nameOf(r.fromUser), text: r.text),
                     ),
+                  if (m.voice case final v?) _VoiceBubble(msgId: m.msgId, voice: v),
                   if (m.photo case final photo?) ...[
                     PhotoContent(key: ValueKey(m.msgId), msgId: m.msgId, photo: photo, gallery: gallery),
                     if (m.text.isNotEmpty) const SizedBox(height: 6),
@@ -1025,4 +1073,113 @@ class _Snippet extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
     );
   }
+}
+
+/// Replaces the input while recording: live level, timer, cancel, send.
+class _RecordingBar extends StatelessWidget {
+  const _RecordingBar({required this.recorder, required this.onCancel, required this.onSend});
+
+  final VoiceRecorder recorder;
+  final VoidCallback onCancel;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = recorder.elapsed;
+    final mm = t.inMinutes.toString().padLeft(2, '0');
+    final ss = (t.inSeconds % 60).toString().padLeft(2, '0');
+    return Row(
+      children: [
+        IconButton(tooltip: 'Отменить', icon: const Icon(Icons.delete_outline), onPressed: onCancel),
+        const SizedBox(width: 4),
+        Container(
+          width: 12 + 12 * recorder.level,
+          height: 12 + 12 * recorder.level,
+          decoration: const BoxDecoration(color: BotatoColors.danger, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 12),
+        Text('$mm:$ss', style: const TextStyle(fontSize: 16, fontFeatures: [FontFeature.tabularFigures()])),
+        const Expanded(child: SizedBox()),
+        IconButton.filled(tooltip: 'Отправить', icon: const Icon(Icons.send), onPressed: onSend),
+      ],
+    );
+  }
+}
+
+/// Voice message in a bubble: play/pause, waveform with progress, duration.
+class _VoiceBubble extends StatelessWidget {
+  const _VoiceBubble({required this.msgId, required this.voice});
+
+  final String msgId;
+  final core.VoiceInfo voice;
+
+  @override
+  Widget build(BuildContext context) {
+    final player = VoicePlayer.instance;
+    return ListenableBuilder(
+      listenable: player,
+      builder: (context, _) {
+        final total = Duration(milliseconds: voice.durationMs);
+        final mine = player.playing == msgId;
+        final pos = mine ? player.position : Duration.zero;
+        final progress = total.inMilliseconds == 0 ? 0.0 : (pos.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+        final shown = mine ? pos : total;
+        final label = '${shown.inMinutes}:${(shown.inSeconds % 60).toString().padLeft(2, '0')}';
+        return SizedBox(
+          width: 240,
+          child: Row(
+            children: [
+              if (voice.gone)
+                const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.mic_off, color: BotatoColors.smoke),
+                )
+              else if (!voice.ready)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              else
+                IconButton.filledTonal(
+                  icon: Icon(player.isPlaying(msgId) ? Icons.pause : Icons.play_arrow),
+                  onPressed: () => player.toggle(msgId, () => core.clientPhoto(msgId: msgId)),
+                ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: SizedBox(height: 28, child: CustomPaint(painter: _WavePainter(voice.waveform, progress))),
+              ),
+              const SizedBox(width: 8),
+              Text(voice.gone ? 'недоступно' : label, style: const TextStyle(color: BotatoColors.smoke, fontSize: 12)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _WavePainter extends CustomPainter {
+  _WavePainter(this.wave, this.progress);
+
+  final List<int> wave;
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bars = wave.isEmpty ? List<int>.filled(24, 60) : wave;
+    final w = size.width / bars.length;
+    final played = Paint()..color = BotatoColors.potato;
+    final rest = Paint()..color = BotatoColors.smoke.withValues(alpha: 0.6);
+    for (var i = 0; i < bars.length; i++) {
+      final h = size.height * (0.15 + 0.85 * bars[i] / 255);
+      final r = RRect.fromRectAndRadius(
+        Rect.fromLTWH(i * w + w * 0.2, (size.height - h) / 2, w * 0.6, h),
+        const Radius.circular(2),
+      );
+      canvas.drawRRect(r, (i + 0.5) / bars.length <= progress ? played : rest);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WavePainter old) => old.progress != progress || old.wave != wave;
 }

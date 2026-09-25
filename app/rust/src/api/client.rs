@@ -261,6 +261,7 @@ pub struct MessageInfo {
     /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
     pub status: i64,
     pub photo: Option<PhotoInfo>,
+    pub voice: Option<VoiceInfo>,
     pub edited: bool,
     /// Deleted for everyone: show a placeholder.
     pub deleted: bool,
@@ -290,6 +291,15 @@ pub struct PhotoInfo {
     /// The full photo is on this device (`client_photo`).
     pub ready: bool,
     /// Expired on the relay before we got it.
+    pub gone: bool,
+}
+
+pub struct VoiceInfo {
+    pub duration_ms: u32,
+    /// Loudness bars, 0..=255.
+    pub waveform: Vec<u8>,
+    /// The audio is on this device (`client_photo` returns it).
+    pub ready: bool,
     pub gone: bool,
 }
 
@@ -397,6 +407,23 @@ pub fn client_search(peer_user: Option<String>, query: String, limit: u32) -> an
         .collect())
 }
 
+/// Queues a voice message: `audio` as the recorder wrote it (AAC in M4A), its duration and a
+/// waveform for the bubble. Not re-encoded.
+pub fn client_send_voice(
+    peer_user: String,
+    audio: Vec<u8>,
+    duration_ms: u32,
+    waveform: Vec<u8>,
+    reply_to: Option<String>,
+) -> anyhow::Result<String> {
+    let peer = parse_id(&peer_user)?;
+    let reply = reply_to.as_deref().map(parse_id).transpose()?;
+    let (shared, tx) = running()?;
+    let msg_id = client::messaging::compose_voice(&shared, &peer, audio, duration_ms, waveform, reply.as_ref())?;
+    let _ = tx.send(Cmd::Flush);
+    Ok(msg_id.to_hex())
+}
+
 /// The full JPEG of a photo message, if downloaded.
 pub fn client_photo(msg_id: String) -> anyhow::Result<Option<Vec<u8>>> {
     let id = parse_id(&msg_id)?;
@@ -416,7 +443,16 @@ pub fn client_messages(peer_user: String, before: Option<i64>, limit: i64) -> an
                 text: m.text,
                 sent_at: m.sent_at,
                 status: m.status,
-                photo: m.photo.map(|p| PhotoInfo { width: p.w, height: p.h, thumb: p.thumb, ready: p.ready, gone: p.gone }),
+                voice: m.photo.as_ref().filter(|p| p.kind == client::store::KIND_VOICE).map(|p| VoiceInfo {
+                    duration_ms: p.w,
+                    waveform: p.thumb.clone(),
+                    ready: p.ready,
+                    gone: p.gone,
+                }),
+                photo: m
+                    .photo
+                    .filter(|p| p.kind == client::store::KIND_PHOTO)
+                    .map(|p| PhotoInfo { width: p.w, height: p.h, thumb: p.thumb, ready: p.ready, gone: p.gone }),
                 edited: m.edited,
                 deleted: m.deleted,
                 reply: m.extra.reply.map(|r| ReplyInfo { msg_id: r.msg.to_hex(), from_user: r.from.to_hex(), text: r.text }),
@@ -441,7 +477,7 @@ pub fn client_conversations() -> Vec<ConversationInfo> {
             last_text: if c.last_deleted {
                 "сообщение удалено".into()
             } else {
-                client::messaging::preview(&c.last_text, c.last_photo)
+                client::messaging::preview(&c.last_text, c.last_attach)
             },
             last_at: c.last_at,
             last_from_me: c.last_from_me,

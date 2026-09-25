@@ -70,12 +70,20 @@ pub struct PhotoMeta {
     pub file_id: Id,
     pub key: [u8; 32],
     pub size: u32,
+    /// Photo: width. Voice: duration in ms.
     pub w: u32,
     pub h: u32,
+    /// Photo: JPEG preview. Voice: waveform (one byte per bar).
     pub thumb: Vec<u8>,
+    /// `KIND_PHOTO` or `KIND_VOICE`.
+    pub kind: u8,
 }
 
+pub const KIND_PHOTO: u8 = 0;
+pub const KIND_VOICE: u8 = 1;
+
 pub struct PhotoView {
+    pub kind: u8,
     pub w: u32,
     pub h: u32,
     pub thumb: Vec<u8>,
@@ -94,7 +102,8 @@ pub struct Upload {
 pub struct Conversation {
     pub peer_user: Id,
     pub last_text: String,
-    pub last_photo: bool,
+    /// Kind of the last message's attachment, if any.
+    pub last_attach: Option<u8>,
     pub last_deleted: bool,
     pub last_at: i64,
     pub last_from_me: bool,
@@ -158,6 +167,13 @@ fn migrate(db: &Connection) -> anyhow::Result<()> {
         if !cols.iter().any(|c| c == name) {
             db.execute(&format!("ALTER TABLE messages ADD COLUMN {name} {ddl}"), [])?;
         }
+    }
+    let photo_cols: Vec<String> = db
+        .prepare("PRAGMA table_info(photos)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<Result<_, _>>()?;
+    if !photo_cols.iter().any(|c| c == "kind") {
+        db.execute("ALTER TABLE photos ADD COLUMN kind INTEGER NOT NULL DEFAULT 0", [])?;
     }
     // 0.1.3 kept "deleted" placeholders; deletions now leave nothing.
     db.execute("DELETE FROM messages WHERE deleted = 1", [])?;
@@ -224,39 +240,47 @@ impl Store {
         self.seal_bytes(&Self::photo_aad(msg_id, b"meta"), &b)
     }
 
-    fn unseal_meta(&self, msg_id: &Id, file_id: Id, sealed: &[u8]) -> Option<PhotoMeta> {
+    fn unseal_meta(&self, msg_id: &Id, file_id: Id, kind: u8, sealed: &[u8]) -> Option<PhotoMeta> {
         let b = self.unseal_bytes(&Self::photo_aad(msg_id, b"meta"), sealed)?;
         if b.len() < 44 {
             return None;
         }
         let u = |i: usize| u32::from_be_bytes(b[i..i + 4].try_into().unwrap());
-        Some(PhotoMeta { file_id, key: b[..32].try_into().unwrap(), size: u(32), w: u(36), h: u(40), thumb: b[44..].to_vec() })
+        Some(PhotoMeta {
+            file_id,
+            key: b[..32].try_into().unwrap(),
+            size: u(32),
+            w: u(36),
+            h: u(40),
+            thumb: b[44..].to_vec(),
+            kind,
+        })
     }
 
     /// Attaches a photo to a message. `data` = the JPEG when we already have it (we sent it).
     pub fn insert_photo(&self, msg_id: &Id, meta: &PhotoMeta, data: Option<&[u8]>) -> anyhow::Result<()> {
         let data = data.map(|d| self.seal_bytes(&Self::photo_aad(msg_id, b"data"), d));
         self.db.execute(
-            "INSERT OR IGNORE INTO photos (msg_id, file_id, meta, data) VALUES (?1, ?2, ?3, ?4)",
-            params![&msg_id.0[..], &meta.file_id.0[..], self.seal_meta(msg_id, meta), data],
+            "INSERT OR IGNORE INTO photos (msg_id, file_id, meta, data, kind) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![&msg_id.0[..], &meta.file_id.0[..], self.seal_meta(msg_id, meta), data, meta.kind],
         )?;
         Ok(())
     }
 
     /// A photo still to fetch, by its file id: (msg_id, meta, sent_at, peer).
     pub fn photo_by_file(&self, file_id: &Id) -> anyhow::Result<Option<(Id, PhotoMeta, i64, Id)>> {
-        let row: Option<(Vec<u8>, Vec<u8>, i64, Vec<u8>)> = self
+        let row: Option<(Vec<u8>, Vec<u8>, i64, Vec<u8>, u8)> = self
             .db
             .query_row(
-                "SELECT p.msg_id, p.meta, m.sent_at, m.peer_user FROM photos p JOIN messages m ON m.msg_id = p.msg_id
+                "SELECT p.msg_id, p.meta, m.sent_at, m.peer_user, p.kind FROM photos p JOIN messages m ON m.msg_id = p.msg_id
                  WHERE p.file_id = ?1 AND p.data IS NULL AND p.gone = 0",
                 [&file_id.0[..]],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()?;
-        Ok(row.and_then(|(msg, meta, sent_at, peer)| {
+        Ok(row.and_then(|(msg, meta, sent_at, peer, kind)| {
             let msg = id(msg);
-            self.unseal_meta(&msg, *file_id, &meta).map(|m| (msg, m, sent_at, id(peer)))
+            self.unseal_meta(&msg, *file_id, kind, &meta).map(|m| (msg, m, sent_at, id(peer)))
         }))
     }
 
@@ -310,7 +334,7 @@ impl Store {
         let mut out = vec![];
         for row in rows {
             let (file_id, msg_id, meta, data) = row?;
-            let meta = self.unseal_meta(&msg_id, file_id, &meta);
+            let meta = self.unseal_meta(&msg_id, file_id, KIND_PHOTO, &meta);
             let data = data.and_then(|d| self.unseal_bytes(&Self::photo_aad(&msg_id, b"data"), &d));
             if let (Some(meta), Some(data)) = (meta, data) {
                 out.push(Upload { file_id, key: meta.key, data });
@@ -516,14 +540,14 @@ impl Store {
             )
             .optional()?;
         let Some((peer, from_me, body, deleted)) = row else { return Ok(None) };
-        let photo: Option<(Vec<u8>, Vec<u8>, Option<Vec<u8>>)> = self
+        let photo: Option<(Vec<u8>, Vec<u8>, Option<Vec<u8>>, u8)> = self
             .db
-            .query_row("SELECT file_id, meta, data FROM photos WHERE msg_id = ?1", [&msg_id.0[..]], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            .query_row("SELECT file_id, meta, data, kind FROM photos WHERE msg_id = ?1", [&msg_id.0[..]], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })
             .optional()?;
-        let photo = photo.and_then(|(file, meta, data)| {
-            let meta = self.unseal_meta(msg_id, id(file), &meta)?;
+        let photo = photo.and_then(|(file, meta, data, kind)| {
+            let meta = self.unseal_meta(msg_id, id(file), kind, &meta)?;
             let data = data.and_then(|d| self.unseal_bytes(&Self::photo_aad(msg_id, b"data"), &d));
             Some((meta, data))
         });
@@ -553,7 +577,7 @@ impl Store {
     pub fn messages(&self, peer_user: &Id, before: Option<i64>, limit: i64) -> anyhow::Result<Vec<Message>> {
         let mut st = self.db.prepare(
             "SELECT m.msg_id, m.from_me, m.sent_at, m.body, m.status, p.file_id, p.meta, p.data IS NOT NULL, p.gone,
-                    m.edited_at IS NOT NULL, m.deleted, m.extra
+                    m.edited_at IS NOT NULL, m.deleted, m.extra, p.kind
              FROM messages m LEFT JOIN photos p ON p.msg_id = m.msg_id
              WHERE m.peer_user = ?1 AND m.sent_at < ?2 ORDER BY m.sent_at DESC, m.rowid DESC LIMIT ?3",
         )?;
@@ -565,9 +589,10 @@ impl Store {
                 Some(file_id) => {
                     let meta: Vec<u8> = r.get(6)?;
                     let (ready, gone): (bool, bool) = (r.get(7)?, r.get(8)?);
-                    Some(match self.unseal_meta(&msg_id, id(file_id), &meta) {
-                        Some(m) => PhotoView { w: m.w, h: m.h, thumb: m.thumb, ready, gone },
-                        None => PhotoView { w: 1, h: 1, thumb: vec![], ready: false, gone: true },
+                    let kind: u8 = r.get(12)?;
+                    Some(match self.unseal_meta(&msg_id, id(file_id), kind, &meta) {
+                        Some(m) => PhotoView { kind, w: m.w, h: m.h, thumb: m.thumb, ready, gone },
+                        None => PhotoView { kind, w: 1, h: 1, thumb: vec![], ready: false, gone: true },
                     })
                 }
             };
@@ -593,7 +618,7 @@ impl Store {
         let mut st = self.db.prepare(
             "SELECT m.peer_user, m.msg_id, m.body, m.sent_at, m.from_me,
                     (SELECT COUNT(*) FROM messages u WHERE u.peer_user = m.peer_user AND u.read = 0),
-                    EXISTS (SELECT 1 FROM photos p WHERE p.msg_id = m.msg_id), m.deleted
+                    (SELECT kind FROM photos p WHERE p.msg_id = m.msg_id), m.deleted
              FROM messages m
              WHERE m.rowid = (SELECT x.rowid FROM messages x WHERE x.peer_user = m.peer_user
                               ORDER BY x.sent_at DESC, x.rowid DESC LIMIT 1)
@@ -607,7 +632,7 @@ impl Store {
                 last_at: r.get(3)?,
                 last_from_me: r.get(4)?,
                 unread: r.get(5)?,
-                last_photo: r.get(6)?,
+                last_attach: r.get(6)?,
                 last_deleted: r.get(7)?,
             })
         })?;
@@ -730,7 +755,7 @@ mod tests {
     fn photos_download_and_upload_lifecycle() {
         let (_d, s) = store();
         let (peer, msg, dev) = (Id([1; 16]), Id([2; 16]), Id([3; 16]));
-        let meta = PhotoMeta { file_id: Id([4; 16]), key: [5; 32], size: 99, w: 30, h: 20, thumb: vec![1, 2, 3] };
+        let meta = PhotoMeta { file_id: Id([4; 16]), key: [5; 32], size: 99, w: 30, h: 20, thumb: vec![1, 2, 3], kind: KIND_PHOTO };
         // Incoming: no data yet.
         s.insert_message(&msg, &peer, false, "", 10, RECEIVED).unwrap();
         s.insert_photo(&msg, &meta, None).unwrap();
@@ -743,7 +768,7 @@ mod tests {
         assert!(s.pending_downloads().unwrap().is_empty());
         assert!(s.photo_by_file(&meta.file_id).unwrap().is_none());
         assert_eq!(s.photo_data(&msg).unwrap().unwrap(), b"jpeg");
-        assert!(s.conversations().unwrap()[0].last_photo);
+        assert_eq!(s.conversations().unwrap()[0].last_attach, Some(KIND_PHOTO));
 
         // Outgoing: uploaded while some copy is still in the outbox.
         let (msg2, file2) = (Id([6; 16]), Id([7; 16]));

@@ -7,6 +7,7 @@ environment:
   sdk: ^3.13.4
 
 dependencies:
+  audioplayers: ^6.8.1
   botato_core:
     path: rust_builder
   connectivity_plus: ^7.3.1
@@ -21,6 +22,7 @@ dependencies:
   local_notifier: ^0.1.6
   path_provider: ^2.1.6
   qr_flutter: ^4.1.0
+  record: ^7.1.1
   shared_preferences: ^2.5.5
   tray_manager: ^0.5.2
   url_launcher: ^6.3.2

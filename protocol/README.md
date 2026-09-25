@@ -227,9 +227,10 @@ it, and WebRTC checks the peer's DTLS certificate against the fingerprint in tha
 Sent through the mailbox (`send`), never through `signal`.
 
 ```
-kind 2: {"msg": hex id, "to": hex user id, "text": string, "photo"?: Photo, "reply"?: Reply, "fwd"?: string}
+kind 2: {"msg": hex id, "to": hex user id, "text": string, "photo"?: Photo, "voice"?: Voice, "reply"?: Reply, "fwd"?: string}
         text ≤ 16 KiB after trimming; fwd = display name of the original author (≤ 64 chars)
 Photo:  {"file": hex id, "key": b64 32 bytes, "size": u32, "w": u32, "h": u32, "thumb": b64 JPEG ≤ 8 KiB}
+Voice:  {"file": hex id, "key": b64 32 bytes, "size": u32, "ms": u32 (1..600000), "wave": b64 ≤ 128 bytes}
 Reply:  {"msg": hex id, "from": hex user id, "text": string ≤ 200 chars}      quoted snapshot
 kind 4: {"id": hex id, "msg": hex id, "to": hex user id, "op": "edit" | "delete" | "react",
          "text"?: string (edit), "emoji"?: string ≤ 32 bytes (react; "" removes)}
@@ -249,7 +250,9 @@ kind 3: {"msg": hex id}
 - Receipts are fire-and-forget: they leave the outbox once a relay stored them. If one is lost, the
   sender re-sends the message on its next connection and gets a new receipt.
 - Ordering: by the sender's `sent_at` (seconds), ties by local arrival order.
-- `text` may be empty only when `photo` is present (then it is the caption).
+- `text` may be empty only when `photo` or `voice` is present (then it is the caption). At most one of them.
+- `voice`: AAC-LC in an MP4/M4A container as recorded, not re-encoded; `ms` is the duration, `wave` one
+  loudness byte per bar for the bubble. Uploaded, fetched and checked exactly like a photo file (§6.3).
 - `reply` carries a snapshot of the quoted message, so it renders even where the original is gone.
 - kind 4 (`id` = its own logical id) travels exactly like kind 2: one copy per device of the partner and
   per own other device, kept in the outbox until receipted (receipt `msg` = the update's `id`).

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 223810567;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -652179133;
 
 // Section: executor
 
@@ -812,6 +812,51 @@ fn wire__crate__api__client__client_send_text_impl(
         },
     )
 }
+fn wire__crate__api__client__client_send_voice_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "client_send_voice",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_peer_user = <String>::sse_decode(&mut deserializer);
+            let api_audio = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_duration_ms = <u32>::sse_decode(&mut deserializer);
+            let api_waveform = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_reply_to = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::client::client_send_voice(
+                            api_peer_user,
+                            api_audio,
+                            api_duration_ms,
+                            api_waveform,
+                            api_reply_to,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__client__client_set_push_token_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1515,6 +1560,7 @@ impl SseDecode for crate::api::client::MessageInfo {
         let mut var_sentAt = <i64>::sse_decode(deserializer);
         let mut var_status = <i64>::sse_decode(deserializer);
         let mut var_photo = <Option<crate::api::client::PhotoInfo>>::sse_decode(deserializer);
+        let mut var_voice = <Option<crate::api::client::VoiceInfo>>::sse_decode(deserializer);
         let mut var_edited = <bool>::sse_decode(deserializer);
         let mut var_deleted = <bool>::sse_decode(deserializer);
         let mut var_reply = <Option<crate::api::client::ReplyInfo>>::sse_decode(deserializer);
@@ -1527,6 +1573,7 @@ impl SseDecode for crate::api::client::MessageInfo {
             sent_at: var_sentAt,
             status: var_status,
             photo: var_photo,
+            voice: var_voice,
             edited: var_edited,
             deleted: var_deleted,
             reply: var_reply,
@@ -1585,6 +1632,17 @@ impl SseDecode for Option<crate::api::update::UpdateInfo> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::update::UpdateInfo>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::client::VoiceInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::client::VoiceInfo>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -1719,6 +1777,22 @@ impl SseDecode for crate::api::update::UpdateInfo {
     }
 }
 
+impl SseDecode for crate::api::client::VoiceInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_durationMs = <u32>::sse_decode(deserializer);
+        let mut var_waveform = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_ready = <bool>::sse_decode(deserializer);
+        let mut var_gone = <bool>::sse_decode(deserializer);
+        return crate::api::client::VoiceInfo {
+            duration_ms: var_durationMs,
+            waveform: var_waveform,
+            ready: var_ready,
+            gone: var_gone,
+        };
+    }
+}
+
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1739,10 +1813,11 @@ fn pde_ffi_dispatcher_primary_impl(
         15 => wire__crate__api__client__client_photo_impl(port, ptr, rust_vec_len, data_len),
         21 => wire__crate__api__client__client_search_impl(port, ptr, rust_vec_len, data_len),
         22 => wire__crate__api__client__client_send_photo_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__client__client_start_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__client__client_stop_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__info__init_app_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__update__update_verify_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__client__client_send_voice_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__client__client_start_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__client__client_stop_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__info__init_app_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__update__update_verify_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1774,14 +1849,14 @@ fn pde_ffi_dispatcher_sync_impl(
         19 => wire__crate__api__client__client_refresh_directory_impl(ptr, rust_vec_len, data_len),
         20 => wire__crate__api__client__client_request_turn_impl(ptr, rust_vec_len, data_len),
         23 => wire__crate__api__client__client_send_text_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__client__client_set_push_token_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__client__client_signal_impl(ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__info__core_info_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__identity__device_generate_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__identity__device_info_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__identity__enrollment_request_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__update__update_bases_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__update__update_check_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__client__client_set_push_token_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__client__client_signal_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__info__core_info_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__identity__device_generate_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__identity__device_info_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__identity__enrollment_request_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__update__update_bases_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__update__update_check_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1998,6 +2073,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::client::MessageInfo {
             self.sent_at.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.photo.into_into_dart().into_dart(),
+            self.voice.into_into_dart().into_dart(),
             self.edited.into_into_dart().into_dart(),
             self.deleted.into_into_dart().into_dart(),
             self.reply.into_into_dart().into_dart(),
@@ -2122,6 +2198,26 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::update::UpdateInfo>
     for crate::api::update::UpdateInfo
 {
     fn into_into_dart(self) -> crate::api::update::UpdateInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::client::VoiceInfo {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.duration_ms.into_into_dart().into_dart(),
+            self.waveform.into_into_dart().into_dart(),
+            self.ready.into_into_dart().into_dart(),
+            self.gone.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::client::VoiceInfo {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::client::VoiceInfo>
+    for crate::api::client::VoiceInfo
+{
+    fn into_into_dart(self) -> crate::api::client::VoiceInfo {
         self
     }
 }
@@ -2364,6 +2460,7 @@ impl SseEncode for crate::api::client::MessageInfo {
         <i64>::sse_encode(self.sent_at, serializer);
         <i64>::sse_encode(self.status, serializer);
         <Option<crate::api::client::PhotoInfo>>::sse_encode(self.photo, serializer);
+        <Option<crate::api::client::VoiceInfo>>::sse_encode(self.voice, serializer);
         <bool>::sse_encode(self.edited, serializer);
         <bool>::sse_encode(self.deleted, serializer);
         <Option<crate::api::client::ReplyInfo>>::sse_encode(self.reply, serializer);
@@ -2418,6 +2515,16 @@ impl SseEncode for Option<crate::api::update::UpdateInfo> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::update::UpdateInfo>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::client::VoiceInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::client::VoiceInfo>::sse_encode(value, serializer);
         }
     }
 }
@@ -2514,6 +2621,16 @@ impl SseEncode for crate::api::update::UpdateInfo {
         <String>::sse_encode(self.file, serializer);
         <u64>::sse_encode(self.size, serializer);
         <String>::sse_encode(self.sha256, serializer);
+    }
+}
+
+impl SseEncode for crate::api::client::VoiceInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.duration_ms, serializer);
+        <Vec<u8>>::sse_encode(self.waveform, serializer);
+        <bool>::sse_encode(self.ready, serializer);
+        <bool>::sse_encode(self.gone, serializer);
     }
 }
 

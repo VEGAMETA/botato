@@ -154,6 +154,22 @@ Future<List<SearchHit>> clientSearch({
   limit: limit,
 );
 
+/// Queues a voice message: `audio` as the recorder wrote it (AAC in M4A), its duration and a
+/// waveform for the bubble. Not re-encoded.
+Future<String> clientSendVoice({
+  required String peerUser,
+  required List<int> audio,
+  required int durationMs,
+  required List<int> waveform,
+  String? replyTo,
+}) => RustLib.instance.api.crateApiClientClientSendVoice(
+  peerUser: peerUser,
+  audio: audio,
+  durationMs: durationMs,
+  waveform: waveform,
+  replyTo: replyTo,
+);
+
 /// The full JPEG of a photo message, if downloaded.
 Future<Uint8List?> clientPhoto({required String msgId}) =>
     RustLib.instance.api.crateApiClientClientPhoto(msgId: msgId);
@@ -314,6 +330,7 @@ class MessageInfo {
   /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
   final PlatformInt64 status;
   final PhotoInfo? photo;
+  final VoiceInfo? voice;
   final bool edited;
 
   /// Deleted for everyone: show a placeholder.
@@ -331,6 +348,7 @@ class MessageInfo {
     required this.sentAt,
     required this.status,
     this.photo,
+    this.voice,
     required this.edited,
     required this.deleted,
     this.reply,
@@ -346,6 +364,7 @@ class MessageInfo {
       sentAt.hashCode ^
       status.hashCode ^
       photo.hashCode ^
+      voice.hashCode ^
       edited.hashCode ^
       deleted.hashCode ^
       reply.hashCode ^
@@ -363,6 +382,7 @@ class MessageInfo {
           sentAt == other.sentAt &&
           status == other.status &&
           photo == other.photo &&
+          voice == other.voice &&
           edited == other.edited &&
           deleted == other.deleted &&
           reply == other.reply &&
@@ -488,4 +508,36 @@ class SearchHit {
           text == other.text &&
           sentAt == other.sentAt &&
           fromMe == other.fromMe;
+}
+
+class VoiceInfo {
+  final int durationMs;
+
+  /// Loudness bars, 0..=255.
+  final Uint8List waveform;
+
+  /// The audio is on this device (`client_photo` returns it).
+  final bool ready;
+  final bool gone;
+
+  const VoiceInfo({
+    required this.durationMs,
+    required this.waveform,
+    required this.ready,
+    required this.gone,
+  });
+
+  @override
+  int get hashCode =>
+      durationMs.hashCode ^ waveform.hashCode ^ ready.hashCode ^ gone.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VoiceInfo &&
+          runtimeType == other.runtimeType &&
+          durationMs == other.durationMs &&
+          waveform == other.waveform &&
+          ready == other.ready &&
+          gone == other.gone;
 }

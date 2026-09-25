@@ -23,6 +23,8 @@ struct MessagePayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     photo: Option<PhotoPayload>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    voice: Option<VoicePayload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     reply: Option<ReplyRef>,
     /// Display name of the original author of a forwarded message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,7 +70,52 @@ impl PhotoPayload {
             && self.thumb.len() <= photo::MAX_THUMB
             && (1..=photo::MAX_SIDE * 4).contains(&self.w)
             && (1..=photo::MAX_SIDE * 4).contains(&self.h);
-        ok.then(|| PhotoMeta { file_id: self.file, key, size: self.size, w: self.w, h: self.h, thumb: self.thumb.clone() })
+        ok.then(|| PhotoMeta {
+            file_id: self.file,
+            key,
+            size: self.size,
+            w: self.w,
+            h: self.h,
+            thumb: self.thumb.clone(),
+            kind: store::KIND_PHOTO,
+        })
+    }
+}
+
+/// §6.3: a voice message (AAC in MP4/M4A), fetched and opened like a photo.
+#[derive(Serialize, Deserialize)]
+struct VoicePayload {
+    file: Id,
+    #[serde(with = "b64")]
+    key: Vec<u8>,
+    size: u32,
+    /// Duration, milliseconds.
+    ms: u32,
+    /// Loudness bars for the bubble, 0..=255 each.
+    #[serde(with = "b64")]
+    wave: Vec<u8>,
+}
+
+/// Longest voice message, ms.
+pub const MAX_VOICE_MS: u32 = 10 * 60 * 1000;
+/// Waveform bars carried in the message.
+pub const MAX_WAVE: usize = 128;
+
+impl VoicePayload {
+    fn meta(&self) -> Option<PhotoMeta> {
+        let key: [u8; 32] = self.key.as_slice().try_into().ok()?;
+        let ok = self.size as usize <= proto::file::MAX_FILE
+            && (1..=MAX_VOICE_MS).contains(&self.ms)
+            && self.wave.len() <= MAX_WAVE;
+        ok.then(|| PhotoMeta {
+            file_id: self.file,
+            key,
+            size: self.size,
+            w: self.ms,
+            h: 0,
+            thumb: self.wave.clone(),
+            kind: store::KIND_VOICE,
+        })
     }
 }
 
@@ -90,13 +137,14 @@ struct ReceiptPayload {
     msg: Id,
 }
 
-/// Notification / conversation-list text for a message.
-pub fn preview(text: &str, photo: bool) -> String {
-    match (photo, text.is_empty()) {
-        (false, _) => text.to_owned(),
-        (true, true) => "📷 Фото".to_owned(),
-        (true, false) => format!("📷 {text}"),
-    }
+/// Notification / conversation-list text for a message with an attachment of `attach` kind.
+pub fn preview(text: &str, attach: Option<u8>) -> String {
+    let label = match attach {
+        None => return text.to_owned(),
+        Some(store::KIND_VOICE) => "🎤 Голосовое",
+        Some(_) => "📷 Фото",
+    };
+    if text.is_empty() { label.to_owned() } else { format!("{} {text}", label.split(' ').next().unwrap_or("")) }
 }
 
 /// Writes the message and its copies to the store. The session sends the outbox.
@@ -120,7 +168,27 @@ pub fn compose_photo(
 ) -> anyhow::Result<Id> {
     let p = photo::prepare(image, keep_png)?;
     let extra = Extra { reply: reply.map(|r| reply_ref(shared, r)).transpose()?, fwd: None };
-    compose_with(shared, peer_user, caption, Some(new_photo(p.data, p.thumb, p.w, p.h)?), extra)
+    compose_with(shared, peer_user, caption, Some(new_attachment(store::KIND_PHOTO, p.data, p.thumb, p.w, p.h)?), extra)
+}
+
+/// Queues a recorded voice message (AAC in M4A as the recorder wrote it; sent as is).
+pub fn compose_voice(
+    shared: &Shared,
+    peer_user: &Id,
+    audio: Vec<u8>,
+    ms: u32,
+    wave: Vec<u8>,
+    reply: Option<&Id>,
+) -> anyhow::Result<Id> {
+    if audio.is_empty() || audio.len() > proto::file::MAX_PLAINTEXT {
+        anyhow::bail!("голосовое слишком длинное");
+    }
+    if !(1..=MAX_VOICE_MS).contains(&ms) {
+        anyhow::bail!("голосовое слишком длинное");
+    }
+    let wave: Vec<u8> = wave.into_iter().take(MAX_WAVE).collect();
+    let extra = Extra { reply: reply.map(|r| reply_ref(shared, r)).transpose()?, fwd: None };
+    compose_with(shared, peer_user, "", Some(new_attachment(store::KIND_VOICE, audio, wave, ms, 0)?), extra)
 }
 
 /// Sends a copy of a stored message to `to_peer`, marked as forwarded from `from_name`.
@@ -131,7 +199,7 @@ pub fn forward(shared: &Shared, msg_id: &Id, to_peer: &Id, from_name: &str) -> a
     let photo = match o.photo {
         None => None,
         Some((_, None)) => anyhow::bail!("фото ещё не загрузилось"),
-        Some((meta, Some(jpeg))) => Some(new_photo(jpeg, meta.thumb, meta.w, meta.h)?),
+        Some((meta, Some(data))) => Some(new_attachment(meta.kind, data, meta.thumb, meta.w, meta.h)?),
     };
     if photo.is_none() && o.text.trim().is_empty() {
         anyhow::bail!("нечего пересылать");
@@ -140,18 +208,19 @@ pub fn forward(shared: &Shared, msg_id: &Id, to_peer: &Id, from_name: &str) -> a
     compose_with(shared, to_peer, &o.text, photo, Extra { reply: None, fwd: Some(fwd) })
 }
 
-fn new_photo(jpeg: Vec<u8>, thumb: Vec<u8>, w: u32, h: u32) -> anyhow::Result<(PhotoMeta, Vec<u8>)> {
+/// A fresh file id and key for an attachment (photo or voice) about to be uploaded.
+fn new_attachment(kind: u8, data: Vec<u8>, thumb: Vec<u8>, w: u32, h: u32) -> anyhow::Result<(PhotoMeta, Vec<u8>)> {
     let key: [u8; 32] = proto::random_bytes();
     let file_id = Id::random();
-    let size = proto::file::seal(&key, &file_id, &jpeg).map_err(|e| anyhow::anyhow!("{e}"))?.len() as u32;
-    Ok((PhotoMeta { file_id, key, size, w, h, thumb }, jpeg))
+    let size = proto::file::seal(&key, &file_id, &data).map_err(|e| anyhow::anyhow!("{e}"))?.len() as u32;
+    Ok((PhotoMeta { file_id, key, size, w, h, thumb, kind }, data))
 }
 
 /// Snapshot of the quoted message (§6.2 Reply).
 fn reply_ref(shared: &Shared, msg: &Id) -> anyhow::Result<ReplyRef> {
     let original = shared.store.lock().unwrap().original(msg)?;
     let Some(o) = original else { anyhow::bail!("сообщения нет") };
-    let text = preview(&o.text, o.photo.is_some());
+    let text = preview(&o.text, o.photo.as_ref().map(|(m, _)| m.kind));
     Ok(ReplyRef {
         msg: *msg,
         from: if o.from_me { shared.my_user } else { o.peer },
@@ -209,7 +278,7 @@ fn compose_with(
     }
     let msg_id = Id::random();
     let now = config::now();
-    let photo_payload = photo.as_ref().map(|(m, _)| PhotoPayload {
+    let photo_payload = photo.as_ref().filter(|(m, _)| m.kind == store::KIND_PHOTO).map(|(m, _)| PhotoPayload {
         file: m.file_id,
         key: m.key.to_vec(),
         size: m.size,
@@ -217,11 +286,19 @@ fn compose_with(
         h: m.h,
         thumb: m.thumb.clone(),
     });
+    let voice_payload = photo.as_ref().filter(|(m, _)| m.kind == store::KIND_VOICE).map(|(m, _)| VoicePayload {
+        file: m.file_id,
+        key: m.key.to_vec(),
+        size: m.size,
+        ms: m.w,
+        wave: m.thumb.clone(),
+    });
     let payload = serde_json::to_vec(&MessagePayload {
         msg: msg_id,
         to: *peer_user,
         text: text.to_owned(),
         photo: photo_payload,
+        voice: voice_payload,
         reply: extra.reply.clone(),
         fwd: extra.fwd.clone(),
     })?;
@@ -330,12 +407,16 @@ pub fn on_deliver(shared: &Shared, blob: &[u8]) -> anyhow::Result<Delivered> {
             let from_me = sender_user == shared.my_user;
             let peer = if from_me { p.to } else { sender_user };
             let status = if from_me { store::SENT } else { RECEIVED };
-            let meta = match &p.photo {
+            let meta = match (&p.photo, &p.voice) {
+                (None, None) => None,
+                (Some(ph), None) => Some(ph.meta().ok_or(()).map_err(|_| ())),
+                (None, Some(v)) => Some(v.meta().ok_or(()).map_err(|_| ())),
+                (Some(_), Some(_)) => return Ok(DROP), // one attachment per message
+            };
+            let meta = match meta {
                 None => None,
-                Some(ph) => match ph.meta() {
-                    Some(m) => Some(m),
-                    None => return Ok(DROP), // malformed
-                },
+                Some(Ok(m)) => Some(m),
+                Some(Err(())) => return Ok(DROP), // malformed
             };
             let fresh = store.insert_message(&p.msg, &peer, from_me, &p.text, opened.sent_at as i64, status)?;
             if fresh {
@@ -354,7 +435,7 @@ pub fn on_deliver(shared: &Shared, blob: &[u8]) -> anyhow::Result<Delivered> {
                 store.insert_photo(&p.msg, m, None)?;
             }
             receipt(&p.msg)?;
-            let new_text = (fresh && !from_me).then(|| (peer, preview(&p.text, meta.is_some())));
+            let new_text = (fresh && !from_me).then(|| (peer, preview(&p.text, meta.as_ref().map(|m| m.kind))));
             Ok(Delivered::Done { changed: fresh.then_some(peer), new_text })
         }
         KIND_UPDATE => {
