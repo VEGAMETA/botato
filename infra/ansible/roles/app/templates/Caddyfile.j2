@@ -23,6 +23,12 @@
 	handle /manifest {
 		reverse_proxy relay:8080
 	}
+	# App updates; clients verify the admin signature in release.bin before installing.
+	handle /releases/* {
+		root * /srv
+		header /releases/release.bin Cache-Control no-cache
+		file_server
+	}
 	handle {
 		respond 404
 	}

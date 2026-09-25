@@ -90,6 +90,14 @@ object CallChannel {
                     Proximity.set(ctx, call.arguments as Boolean)
                     result.success(null)
                 }
+                "installApk" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    if (Updates.install(ctx, path)) {
+                        result.success(null)
+                    } else {
+                        result.error("permission", "разрешите botato устанавливать приложения и нажмите «Обновить» ещё раз", null)
+                    }
+                }
                 "saveImage" -> {
                     val name = call.argument<String>("name") ?: "botato.jpg"
                     val data = call.argument<ByteArray>("data") ?: ByteArray(0)

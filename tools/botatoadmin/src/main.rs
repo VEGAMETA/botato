@@ -3,6 +3,8 @@
 
 #![windows_subsystem = "windows"]
 
+mod release;
+
 use std::path::PathBuf;
 
 use admin::{Admin, DEFAULT_CERT_DAYS, parse_id};
@@ -51,6 +53,7 @@ struct App {
     /// User whose devices are listed for removal.
     selected: Option<String>,
     remove_password: String,
+    release: release::ReleasePanel,
 }
 
 impl App {
@@ -75,6 +78,7 @@ impl App {
             qr: None,
             selected: None,
             remove_password: String::new(),
+            release: release::ReleasePanel::new(),
         }
     }
 
@@ -169,10 +173,12 @@ impl App {
                 self.status = Some((
                     true,
                     format!(
-                        "Устройство {} удалено, манифест v{version} подписан.                          Задеплойте манифест на сервер (deploy.yml --tags app).",
+                        "Устройство {} удалено, манифест v{version} подписан и выкатывается на сервер (ниже).",
                         &device[..8]
                     ),
                 ));
+                // The relay drops a revoked device only once it has the new manifest.
+                self.release.publish(ctx, "manifest");
                 match cert {
                     Some(text) => self.show_cert(ctx, "Перевыпущенный сертификат".into(), text),
                     None => {
@@ -422,6 +428,16 @@ impl eframe::App for App {
                         msg,
                     );
                 }
+
+                ui.add_space(16.0);
+                ui.separator();
+                egui::CollapsingHeader::new(egui::RichText::new("Релиз и выкатка").heading())
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        if let Ok(admin) = self.admin.as_mut() {
+                            self.release.ui(ui, admin);
+                        }
+                    });
 
                 if let Some((title, text)) = self.cert_text.clone() {
                     ui.separator();

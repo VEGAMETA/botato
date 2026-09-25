@@ -19,6 +19,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - ./releases:/srv/releases:ro
     tmpfs: [/tmp]
     networks: [web]
     mem_limit: 128m

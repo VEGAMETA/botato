@@ -408,6 +408,46 @@ impl Admin {
         Ok((version, path))
     }
 
+    /// Signs an app release (protocol/README.md §3b): copies the files into `releases/` under
+    /// their published names, hashes them and writes `releases/release.bin`. Older files there
+    /// are removed, so the folder always mirrors what the server should serve.
+    pub fn sign_release(
+        &self,
+        root: &SigningKey,
+        version: &str,
+        build: u64,
+        files: &[(&str, &Path, String)],
+        now: u64,
+    ) -> Result<PathBuf> {
+        use sha2::{Digest, Sha256};
+        let dir = self.dir.join("releases");
+        ctx!(fs::create_dir_all(&dir), "create releases dir")?;
+        let mut entries = vec![];
+        for (platform, src, name) in files {
+            let data = ctx!(fs::read(src), format!("read {}", src.display()))?;
+            let dest = dir.join(name);
+            ctx!(fs::write(&dest, &data), format!("write {}", dest.display()))?;
+            entries.push(proto::release::ReleaseFile {
+                platform: platform.to_string(),
+                file: name.clone(),
+                size: data.len() as u64,
+                sha256: Sha256::digest(&data).into(),
+            });
+        }
+        let rel = proto::release::Release { version: version.into(), build, issued_at: now, files: entries };
+        let signed = ctx!(rel.sign(root), "sign release")?;
+        let path = dir.join("release.bin");
+        write_atomic(&path, &signed)?;
+        let keep: Vec<&str> = files.iter().map(|f| f.2.as_str()).chain(["release.bin"]).collect();
+        for e in ctx!(fs::read_dir(&dir), "list releases dir")?.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !keep.contains(&name.as_str()) {
+                let _ = fs::remove_file(e.path());
+            }
+        }
+        Ok(path)
+    }
+
     pub fn cert_text(&self, user_id: &Id) -> Result<String> {
         let p = self
             .dir

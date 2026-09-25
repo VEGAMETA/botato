@@ -4,7 +4,10 @@
 ; Output: app\build\installer\botato-setup-<version>.exe
 
 #define AppName "botato"
-#define AppVersion "0.1.3"
+; tools/build-release.ps1 passes /DAppVersion=<pubspec version>.
+#ifndef AppVersion
+  #define AppVersion "0.0.0"
+#endif
 #define Release "..\..\build\windows\x64\runner\Release"
 
 [Setup]

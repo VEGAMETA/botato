@@ -7,6 +7,23 @@ pub fn root_pub() -> [u8; 32] {
 }
 
 /// Signed manifest shipped with the build; may be empty.
+/// From pubspec.yaml at build time.
+pub const APP_VERSION: &str = env!("APP_VERSION");
+pub fn app_build() -> u64 {
+    env!("APP_BUILD").parse().unwrap_or(0)
+}
+
+/// Release platform of this build (protocol/README.md §3b), if updates are offered for it.
+pub fn release_platform() -> Option<&'static str> {
+    if cfg!(all(target_os = "android", target_arch = "aarch64")) {
+        Some(proto::release::ANDROID_ARM64)
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        Some(proto::release::WINDOWS_X64)
+    } else {
+        None
+    }
+}
+
 pub const BUILTIN_MANIFEST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/manifest.bin"));
 
 pub fn now() -> u64 {

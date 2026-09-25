@@ -6,6 +6,7 @@
 import 'api/client.dart';
 import 'api/identity.dart';
 import 'api/info.dart';
+import 'api/update.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -35,6 +36,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AppVersion dco_decode_app_version(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -45,6 +49,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplyInfo dco_decode_box_autoadd_reply_info(dynamic raw);
+
+  @protected
+  UpdateInfo dco_decode_box_autoadd_update_info(dynamic raw);
 
   @protected
   CertInfo dco_decode_cert_info(dynamic raw);
@@ -104,6 +111,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReplyInfo? dco_decode_opt_box_autoadd_reply_info(dynamic raw);
 
   @protected
+  UpdateInfo? dco_decode_opt_box_autoadd_update_info(dynamic raw);
+
+  @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -131,6 +141,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void dco_decode_unit(dynamic raw);
 
   @protected
+  UpdateInfo dco_decode_update_info(dynamic raw);
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
@@ -140,6 +153,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
+
+  @protected
+  AppVersion sse_decode_app_version(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
@@ -152,6 +168,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplyInfo sse_decode_box_autoadd_reply_info(SseDeserializer deserializer);
+
+  @protected
+  UpdateInfo sse_decode_box_autoadd_update_info(SseDeserializer deserializer);
 
   @protected
   CertInfo sse_decode_cert_info(SseDeserializer deserializer);
@@ -219,6 +238,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  UpdateInfo? sse_decode_opt_box_autoadd_update_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -248,6 +272,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
+  UpdateInfo sse_decode_update_info(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -264,6 +291,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_app_version(AppVersion self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
@@ -283,6 +313,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_reply_info(
     ReplyInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_update_info(
+    UpdateInfo self,
     SseSerializer serializer,
   );
 
@@ -371,6 +407,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_update_info(
+    UpdateInfo? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
     SseSerializer serializer,
@@ -402,6 +444,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_update_info(UpdateInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);

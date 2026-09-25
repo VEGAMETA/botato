@@ -161,3 +161,19 @@ fn root_pub_is_readable_without_password() {
         hex::encode(root.verifying_key().to_bytes())
     );
 }
+
+#[test]
+fn release_is_signed_and_mirrors_files() {
+    let (dir, a, root) = setup();
+    let apk = dir.path().join("in.apk");
+    std::fs::write(&apk, b"apk bytes").unwrap();
+    std::fs::create_dir_all(dir.path().join("releases")).unwrap();
+    std::fs::write(dir.path().join("releases").join("old.apk"), b"x").unwrap();
+    let path = a
+        .sign_release(&root, "0.1.4", 4, &[("android-arm64", apk.as_path(), "botato-0.1.4.apk".into())], 100)
+        .unwrap();
+    let rel = proto::release::Release::verify(root.verifying_key().as_bytes(), &std::fs::read(path).unwrap()).unwrap();
+    assert_eq!((rel.version.as_str(), rel.build, rel.files[0].size), ("0.1.4", 4, 9));
+    assert!(dir.path().join("releases").join("botato-0.1.4.apk").exists());
+    assert!(!dir.path().join("releases").join("old.apk").exists());
+}

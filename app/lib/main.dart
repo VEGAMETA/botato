@@ -10,6 +10,7 @@ import 'call/media_settings.dart';
 import 'desktop.dart';
 import 'identity_store.dart';
 import 'relay_service.dart';
+import 'update_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
 import 'src/rust/api/client.dart' as client;
@@ -27,6 +28,7 @@ class Services {
   final Uint8List secret;
   final RelayService relay;
   final CallService calls;
+  final updates = UpdateService();
   final GlobalKey<NavigatorState> navigator;
 
   String? cert;
@@ -66,6 +68,7 @@ class Services {
     this.cert = cert;
     this.info = info;
     await relay.start(secret, cert, await store.dbKey());
+    updates.start();
     // Not awaited: on a fresh install the FCM token can take a long time (or never come
     // without Google services), and the home screen must not wait for it.
     calls.notifier.pushToken().then((token) {
@@ -143,7 +146,7 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
                 setState(() {});
               },
             )
-          : HomeScreen(info: info, relay: s.relay, calls: s.calls),
+          : HomeScreen(info: info, relay: s.relay, calls: s.calls, updates: s.updates),
     );
   }
 }

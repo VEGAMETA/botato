@@ -64,6 +64,7 @@
 # ---- directories and secrets (generated on the server, never leave it)
 
 - name: Directories
+  tags: [app, manifest, release]
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
@@ -76,6 +77,7 @@
     # Encrypted attachments, ≤24 h; the relay wipes it at start (its key lives in RAM only).
     - { path: "{{ botato_dir }}/files", owner: "{{ relay_uid }}", mode: "0700" }
     - { path: "{{ botato_dir }}/config", mode: "0755" }
+    - { path: "{{ botato_dir }}/releases", mode: "0755" }
     - { path: "{{ botato_dir }}/coturn", group: "{{ coturn_gid }}", mode: "0750" }
     - { path: "{{ botato_dir }}/coturn/certs", group: "{{ coturn_gid }}", mode: "0750" }
 
@@ -134,12 +136,40 @@
     path: "{{ botato_dir }}/relay/fcm.json"
   register: fcm_file
 
+# The relay re-reads the manifest every 30 s: `--tags manifest` alone is enough to publish one.
 - name: Signed manifest from the admin machine
   when: admin_manifest is defined and admin_manifest is file
+  tags: [app, manifest]
   ansible.builtin.copy:
     src: "{{ admin_manifest }}"
     dest: "{{ botato_dir }}/config/manifest.bin"
     mode: "0644"
+
+# App updates, served by Caddy under /releases/. Trusted by clients only through the admin
+# signature in release.bin (protocol/README.md §3b). `--tags release` publishes a new one.
+- name: Release files from the admin machine
+  when: admin_releases is defined and admin_releases is directory
+  tags: [app, release]
+  block:
+    - name: Upload release files
+      ansible.builtin.copy:
+        src: "{{ admin_releases }}/"
+        dest: "{{ botato_dir }}/releases/"
+        mode: "0644"
+
+    - name: List published release files
+      ansible.builtin.find:
+        paths: "{{ botato_dir }}/releases"
+      register: published
+
+    - name: Remove release files the admin folder no longer has
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ published.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when: (item.path | basename) not in (lookup('ansible.builtin.fileglob', admin_releases + '/*', wantlist=True) | map('basename') | list)
 
 # ---- configs
 

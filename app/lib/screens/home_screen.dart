@@ -6,17 +6,19 @@ import 'package:flutter/services.dart';
 import '../call/call_screen.dart';
 import '../call/call_service.dart';
 import '../relay_service.dart';
+import '../update_service.dart';
 import '../src/rust/api/client.dart' as core;
 import '../src/rust/api/identity.dart' as id;
 import '../theme.dart';
 import 'chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.info, required this.relay, required this.calls});
+  const HomeScreen({super.key, required this.info, required this.relay, required this.calls, required this.updates});
 
   final id.CertInfo info;
   final RelayService relay;
   final CallService calls;
+  final UpdateService updates;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -140,6 +142,25 @@ class _HomeScreenState extends State<HomeScreen> {
             if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
               row(widget.relay.state == ConnState.connecting ? 'Подключение к' : 'Нет связи', widget.relay.detail),
             row('ID пользователя', widget.info.userId),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Версия', style: TextStyle(color: BotatoColors.smoke, fontSize: 13)),
+              subtitle: Text(widget.updates.current, style: const TextStyle(fontSize: 15)),
+              trailing: TextButton(
+                onPressed: () async {
+                  final ok = await widget.updates.check();
+                  final u = widget.updates;
+                  _toast(
+                    u.available != null
+                        ? 'Доступна версия ${u.available!.version}'
+                        : ok
+                        ? 'Установлена последняя версия'
+                        : 'Не удалось проверить: ${u.error ?? 'нет связи'}',
+                  );
+                },
+                child: const Text('Проверить'),
+              ),
+            ),
             if (device != null) row('ID этого устройства', device),
           ],
         ),
@@ -224,29 +245,88 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          body: others.isEmpty
-              ? _Empty(online: online)
-              : ListView(
-                  padding: const EdgeInsets.only(top: 8, bottom: 24),
-                  children: [
-                    for (final c in others)
-                      _ContactCard(
-                        contact: c,
-                        conversation: r.conversations[c.userId],
-                        enabled: online,
-                        peerOnline: r.isOnline(c),
-                        onOpen: () => openChat(context, c),
-                        onCall: () => widget.calls.startCall(c),
-                        onVideo: () => widget.calls.startCall(c, video: true),
-                        onPing: () => _ping(c),
-                        onForget: () => _forget(context, c),
-                        onRename: () => showDialog<void>(
-                          context: context,
-                          builder: (_) => _RenameDialog(relay: widget.relay, contact: c),
-                        ),
+          body: Column(
+            children: [
+              _UpdateBanner(updates: widget.updates, onError: _toast),
+              Expanded(
+                child: others.isEmpty
+                    ? _Empty(online: online)
+                    : ListView(
+                        padding: const EdgeInsets.only(top: 8, bottom: 24),
+                        children: [
+                          for (final c in others)
+                            _ContactCard(
+                              contact: c,
+                              conversation: r.conversations[c.userId],
+                              enabled: online,
+                              peerOnline: r.isOnline(c),
+                              onOpen: () => openChat(context, c),
+                              onCall: () => widget.calls.startCall(c),
+                              onVideo: () => widget.calls.startCall(c, video: true),
+                              onPing: () => _ping(c),
+                              onForget: () => _forget(context, c),
+                              onRename: () => showDialog<void>(
+                                context: context,
+                                builder: (_) => _RenameDialog(relay: widget.relay, contact: c),
+                              ),
+                            ),
+                        ],
                       ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// "A new version is available" above the contact list, with download progress.
+class _UpdateBanner extends StatelessWidget {
+  const _UpdateBanner({required this.updates, required this.onError});
+
+  final UpdateService updates;
+  final void Function(String) onError;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: updates,
+      builder: (context, _) {
+        final u = updates.available;
+        if (u == null) return const SizedBox.shrink();
+        final p = updates.progress;
+        return Card(
+          margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          color: BotatoColors.potatoShade.withValues(alpha: 0.5),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.system_update_alt),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text('Доступна версия ${u.version}  (у вас ${updates.version.version})')),
+                    FilledButton(
+                      onPressed: p != null
+                          ? null
+                          : () async {
+                              try {
+                                await updates.install();
+                              } catch (e) {
+                                onError(updates.error ?? '$e');
+                              }
+                            },
+                      child: Text(p == null ? 'Обновить' : '${(p * 100).round()}%'),
+                    ),
                   ],
                 ),
+                if (p != null) ...[const SizedBox(height: 8), LinearProgressIndicator(value: p)],
+              ],
+            ),
+          ),
         );
       },
     );

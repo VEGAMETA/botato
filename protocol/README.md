@@ -79,6 +79,23 @@ the fingerprint by voice or in person before issuing a cert:
 `h = SHA-256("botato/v1/fingerprint\0" || device_id || sign_pub || enc_pub)`; take `h[0..20]` as four
 5-byte big-endian integers, each `mod 100000`, zero-padded to 5 digits, joined by spaces (`12345 67890 …`).
 
+## 3b. Release (signed by the admin root key)
+
+App updates are served by the relay host (`GET /releases/release.bin` and the files next to it) but
+trusted only through this signature. Vector: `vectors/release.json`.
+
+```
+body = u8 format(1) | str version | u64 build | u64 issued_at
+     | u8 n_files (1..8) | n × (str platform | str file | u64 size | [32] sha256)
+sig  = Ed25519(root, "botato/v1/release\0" || body)
+```
+
+- `build` is monotonic; a client offers the update only if it is higher than its own build.
+- `platform`: `android-arm64`, `windows-x64`. `file` is a bare file name (no `/`, `\`, `..`), fetched from
+  `/releases/<file>`.
+- The client downloads the file, checks length and SHA-256 against the signed entry, and only then hands
+  it to the OS installer. A server can withhold or delay updates, not substitute them.
+
 ## 4. Transport
 
 WebSocket at `/ws`, text frames only, one JSON object per frame with a string discriminator `t`.
