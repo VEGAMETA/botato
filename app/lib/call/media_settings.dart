@@ -22,13 +22,14 @@ class MediaSettings {
   String? get outputId => _prefs.getString('output');
   set outputId(String? v) => _set('output', v);
 
-  /// Android: always clean audio. Any WebRTC processing on the phone's plain mic (even echo
-  /// cancellation alone) made the voice choppy and squashed in tests; the price is echo for the
-  /// other side when the phone is on the loudspeaker without headphones.
-  AudioMode get audioMode {
-    if (Platform.isAndroid) return AudioMode.clean;
-    return _prefs.getString('audio_mode') == 'clean' ? AudioMode.clean : AudioMode.voice;
-  }
+  /// Phones default to clean audio: WebRTC processing on the plain phone mic sounded choppy
+  /// and squashed in tests (the price: echo for the other side on the loudspeaker without
+  /// headphones). Desktop defaults to voice: speakers without echo cancellation echo.
+  AudioMode get audioMode => switch (_prefs.getString('audio_mode')) {
+    'clean' => AudioMode.clean,
+    'voice' => AudioMode.voice,
+    _ => Platform.isAndroid ? AudioMode.clean : AudioMode.voice,
+  };
 
   set audioMode(AudioMode m) => _prefs.setString('audio_mode', m.name);
 
@@ -84,7 +85,7 @@ class MediaSettings {
   bool get secureScreen => _prefs.getBool('secure_screen') ?? true;
   set secureScreen(bool v) => _prefs.setBool('secure_screen', v);
 
-  bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? true;
+  bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? false;
 
   /// Android: record the plain microphone (no system voice processing, stereo) instead of the
   /// call source. On by default: with the call source a Samsung S21 Ultra sent -50..-100 dBFS

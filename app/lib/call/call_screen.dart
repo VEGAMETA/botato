@@ -521,27 +521,26 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
           children: [
             Text(tr('Звук', 'Audio'), style: TextStyle(fontSize: 18)),
             const SizedBox(height: 8),
-            if (c.isDesktop)
-              SegmentedButton<AudioMode>(
-                segments: [
-                  ButtonSegment(
-                    value: AudioMode.voice,
-                    label: Text(tr('Голос', 'Voice')),
-                    icon: Icon(Icons.record_voice_over),
-                  ),
-                  ButtonSegment(
-                    value: AudioMode.clean,
-                    label: Text(tr('Чистый звук', 'Clean audio')),
-                    icon: Icon(Icons.graphic_eq),
-                  ),
-                ],
-                selected: {s.audioMode},
-                onSelectionChanged: (v) async {
-                  await c.setAudioMode(v.first);
-                  setState(() {});
-                },
-              ),
-            if (s.audioMode == AudioMode.clean && c.isDesktop)
+            SegmentedButton<AudioMode>(
+              segments: [
+                ButtonSegment(
+                  value: AudioMode.voice,
+                  label: Text(tr('Голос', 'Voice')),
+                  icon: Icon(Icons.record_voice_over),
+                ),
+                ButtonSegment(
+                  value: AudioMode.clean,
+                  label: Text(tr('Чистый звук', 'Clean audio')),
+                  icon: Icon(Icons.graphic_eq),
+                ),
+              ],
+              selected: {s.audioMode},
+              onSelectionChanged: (v) async {
+                await c.setAudioMode(v.first);
+                setState(() {});
+              },
+            ),
+            if (s.audioMode == AudioMode.clean)
               Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
@@ -612,8 +611,7 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                   ),
                 ),
               ),
-            // The phone's own AEC/NS only exist with the call microphone source.
-            if (Platform.isAndroid && !s.rawMic)
+            if (Platform.isAndroid)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: s.hwAudioProcessing,
@@ -621,8 +619,8 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 title: Text(tr('Шумоподавление телефона', 'Phone noise suppression')),
                 subtitle: Text(
                   tr(
-                    'Встроенная обработка микрофона. Если голос тихий или слышно только вблизи — выключите. Применится после перезапуска приложения.',
-                    'The phone\'s built-in microphone processing. Turn it off if your voice is quiet or only heard up close. Applies after restarting the app.',
+                    'Встроенная обработка микрофона телефона. Работает только с «звонковым» микрофоном (когда «Микрофон без обработки системы» выключен). Применится после перезапуска приложения.',
+                    'The phone\'s built-in microphone processing. Works only with the call microphone (when "Microphone without system processing" is off). Applies after restarting the app.',
                   ),
                 ),
               ),
