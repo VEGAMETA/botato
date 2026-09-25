@@ -92,9 +92,12 @@ class _PhotoContentState extends State<PhotoContent> {
         onTap: () {
           var ids = widget.gallery();
           if (!ids.contains(widget.msgId)) ids = [widget.msgId];
+          // Transparent route: while the photo is dragged away, the chat shows through.
           Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => PhotoViewer(ids: ids, initial: ids.indexOf(widget.msgId)),
+            PageRouteBuilder<void>(
+              opaque: false,
+              pageBuilder: (_, _, _) => PhotoViewer(ids: ids, initial: ids.indexOf(widget.msgId)),
+              transitionsBuilder: (_, anim, _, child) => FadeTransition(opacity: anim, child: child),
             ),
           );
         },
@@ -171,12 +174,36 @@ class _PhotoViewerState extends State<PhotoViewer> {
   /// Quarter turns per photo, view only.
   final _turns = <String, int>{};
 
+  /// Toolbar and arrows are shown; a tap on the photo toggles them (Telegram-like).
+  bool _chrome = true;
+
+  /// Vertical drag of an unzoomed photo: far or fast enough closes the viewer.
+  double _dragDy = 0;
+
   static bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
 
   @override
   void dispose() {
     _pages.dispose();
+    if (Platform.isAndroid) SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  void _toggleChrome() => setState(() => _chrome = !_chrome);
+
+  void _dragEnd(DragEndDetails d) {
+    final fast = (d.primaryVelocity ?? 0).abs() > 900;
+    if (_dragDy.abs() > 120 || fast) {
+      Navigator.of(context).maybePop();
+    } else {
+      setState(() => _dragDy = 0);
+    }
   }
 
   void _go(int delta) {
@@ -247,51 +274,64 @@ class _PhotoViewerState extends State<PhotoViewer> {
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            title: count > 1 ? Text('${_index + 1} из $count', style: const TextStyle(fontSize: 16)) : null,
-            actions: [
-              IconButton(
-                tooltip: 'Повернуть',
-                icon: const Icon(Icons.rotate_90_degrees_cw_outlined),
-                onPressed: () => setState(() {
-                  final id = widget.ids[_index];
-                  _turns[id] = ((_turns[id] ?? 0) + 1) % 4;
-                }),
-              ),
-              if (Platform.isAndroid)
-                IconButton(tooltip: 'Поделиться', icon: const Icon(Icons.share), onPressed: _share),
-              if (_desktop || Platform.isAndroid)
-                IconButton(
-                  tooltip: _desktop ? 'Сохранить как…' : 'Сохранить в галерею',
-                  icon: const Icon(Icons.save_alt),
-                  onPressed: _save,
+          // Fades out while the photo is dragged away, uncovering the chat.
+          backgroundColor: Colors.black.withValues(alpha: (1 - _dragDy.abs() / 400).clamp(0.0, 1.0)),
+          extendBodyBehindAppBar: true,
+          appBar: !_chrome || _dragDy != 0
+              ? null
+              : AppBar(
+                  backgroundColor: Colors.black54,
+                  foregroundColor: Colors.white,
+                  title: count > 1 ? Text('${_index + 1} из $count', style: const TextStyle(fontSize: 16)) : null,
+                  actions: [
+                    IconButton(
+                      tooltip: 'Повернуть',
+                      icon: const Icon(Icons.rotate_90_degrees_cw_outlined),
+                      onPressed: () => setState(() {
+                        final id = widget.ids[_index];
+                        _turns[id] = ((_turns[id] ?? 0) + 1) % 4;
+                      }),
+                    ),
+                    if (Platform.isAndroid)
+                      IconButton(tooltip: 'Поделиться', icon: const Icon(Icons.share), onPressed: _share),
+                    if (_desktop || Platform.isAndroid)
+                      IconButton(
+                        tooltip: _desktop ? 'Сохранить как…' : 'Сохранить в галерею',
+                        icon: const Icon(Icons.save_alt),
+                        onPressed: _save,
+                      ),
+                  ],
                 ),
-            ],
-          ),
           body: Stack(
             children: [
-              PageView.builder(
-                controller: _pages,
-                physics: _zoomed ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
-                itemCount: count,
-                onPageChanged: (i) => setState(() {
-                  _index = i;
-                  _zoomed = false;
-                }),
-                itemBuilder: (_, i) => _ZoomablePhoto(
-                  key: ValueKey(widget.ids[i]),
-                  msgId: widget.ids[i],
-                  turns: _turns[widget.ids[i]] ?? 0,
-                  onZoomed: (z) {
-                    if (z != _zoomed) setState(() => _zoomed = z);
-                  },
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleChrome,
+                onVerticalDragUpdate: _zoomed ? null : (d) => setState(() => _dragDy += d.delta.dy),
+                onVerticalDragEnd: _zoomed ? null : _dragEnd,
+                child: Transform.translate(
+                  offset: Offset(0, _dragDy),
+                  child: PageView.builder(
+                    controller: _pages,
+                    physics: _zoomed ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
+                    itemCount: count,
+                    onPageChanged: (i) => setState(() {
+                      _index = i;
+                      _zoomed = false;
+                    }),
+                    itemBuilder: (_, i) => _ZoomablePhoto(
+                      key: ValueKey(widget.ids[i]),
+                      msgId: widget.ids[i],
+                      turns: _turns[widget.ids[i]] ?? 0,
+                      onZoomed: (z) {
+                        if (z != _zoomed) setState(() => _zoomed = z);
+                      },
+                    ),
+                  ),
                 ),
               ),
-              if (_desktop && _index > 0) _Arrow(left: true, onTap: () => _go(-1)),
-              if (_desktop && _index < count - 1) _Arrow(left: false, onTap: () => _go(1)),
+              if (_chrome && _desktop && _index > 0) _Arrow(left: true, onTap: () => _go(-1)),
+              if (_chrome && _desktop && _index < count - 1) _Arrow(left: false, onTap: () => _go(1)),
             ],
           ),
         ),
@@ -337,10 +377,14 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto> {
       transformationController: _transform,
       maxScale: 8,
       onInteractionEnd: (_) => widget.onZoomed(_transform.value.getMaxScaleOnAxis() > 1.01),
-      child: Center(
+      // Fills the screen: small photos are scaled up to fit, like large ones are scaled down.
+      child: SizedBox.expand(
         child: Hero(
           tag: widget.msgId,
-          child: RotatedBox(quarterTurns: widget.turns, child: Image.memory(data)),
+          child: RotatedBox(
+            quarterTurns: widget.turns,
+            child: Image.memory(data, fit: BoxFit.contain, filterQuality: FilterQuality.medium),
+          ),
         ),
       ),
     );
