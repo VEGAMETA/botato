@@ -48,7 +48,7 @@ object IncomingCallNotification {
         fun activity(action: String, code: Int) = PendingIntent.getActivity(
             ctx,
             code,
-            Intent(ctx, MainActivity::class.java)
+            IntentGuard.sign(Intent(ctx, MainActivity::class.java))
                 .setAction(action)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             flags,

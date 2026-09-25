@@ -227,6 +227,14 @@
   register: compose_up
   changed_when: "'Started' in compose_up.stderr or 'Recreated' in compose_up.stderr or 'Created' in compose_up.stderr"
 
+# Every deploy builds a new relay tag; keep only the running one.
+- name: Remove old relay images
+  ansible.builtin.shell: |
+    docker images --format '{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}' {{ relay_image }} \
+      | grep -v ':{{ relay_tag }}$' | xargs -r docker rmi
+  register: old_images
+  changed_when: old_images.stdout != ''
+
 - name: Restart services whose mounted config changed
   ansible.builtin.command: "{{ compose_bin.stdout }} -p botato restart {{ item.svc }}"
   args:

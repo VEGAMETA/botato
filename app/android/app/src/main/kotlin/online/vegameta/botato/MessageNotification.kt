@@ -26,7 +26,7 @@ object MessageNotification {
         val open = PendingIntent.getActivity(
             ctx,
             id(peer),
-            Intent(ctx, MainActivity::class.java)
+            IntentGuard.sign(Intent(ctx, MainActivity::class.java))
                 .setAction(ACTION_OPEN_CHAT)
                 .putExtra(EXTRA_PEER, peer)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -41,6 +41,15 @@ object MessageNotification {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(open)
+            // On a locked screen only "botato: новое сообщение"; sender and text after unlocking.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(ctx, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_stat_message)
+                    .setContentTitle("botato")
+                    .setContentText("Новое сообщение")
+                    .build(),
+            )
             .build()
         manager.notify(id(peer), n)
     }

@@ -43,6 +43,8 @@ class MainActivity : FlutterActivity() {
             }.start()
             return
         }
+        // Other apps can start us too: side effects only for our own notifications' intents.
+        if (!IntentGuard.isOurs(intent)) return
         when (intent?.action) {
             IncomingCallNotification.ACTION_SHOW -> showOverLockScreen(true)
             MessageNotification.ACTION_OPEN_CHAT -> {

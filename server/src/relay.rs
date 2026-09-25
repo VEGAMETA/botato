@@ -66,7 +66,9 @@ impl Config {
             idle_timeout: Duration::from_secs(75),
             signal_hold_secs: 60,
             max_held_signals: 32,
-            max_handshakes: 64,
+            // Each unauthenticated socket may buffer one message up to READ_LIMIT (~2.8 MB,
+            // sized for attachments): 16 of them stay far below the container's memory limit.
+            max_handshakes: 16,
             rate_per_sec: 20.0,
             rate_burst: 100.0,
             push_debounce_msg_secs: 30,

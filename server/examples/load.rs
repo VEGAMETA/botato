@@ -56,8 +56,8 @@ struct Args {
     photos_per_min: f64,
     #[arg(long, default_value_t = 400)]
     photo_kb: usize,
-    /// Simultaneous handshakes (the relay allows 64 by default).
-    #[arg(long, default_value_t = 32)]
+    /// Simultaneous handshakes (the relay allows 16 by default).
+    #[arg(long, default_value_t = 12)]
     connect_parallel: usize,
 }
 

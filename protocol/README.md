@@ -158,7 +158,7 @@ Close codes: `4000` protocol error, `4001` auth failed, `4002` replaced by a new
 | Pending per sender | 1000 messages / 16 MiB |
 | Pending per recipient device | 2000 messages / 32 MiB |
 | Rate | token bucket, 20 frames/s, burst 100, per connection |
-| Concurrent unfinished handshakes | 64 |
+| Concurrent unfinished handshakes | 16 (each may buffer one message up to the attachment size) |
 | Held signals per device | 32, 60 s |
 | Keepalive | server ping every 30 s; no inbound traffic for 75 s → close |
 | Wake-up push debounce | messages 30 s, calls 5 s |

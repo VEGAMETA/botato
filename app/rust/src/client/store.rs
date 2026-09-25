@@ -464,7 +464,8 @@ impl Store {
     /// Sets `user`'s reaction (empty = none); newer wins.
     pub fn apply_react(&self, msg_id: &Id, user: &Id, my_user: &Id, emoji: &str, at: i64) -> anyhow::Result<Option<Id>> {
         let Some((_, peer, deleted)) = self.author(msg_id, my_user)? else { return Ok(None) };
-        if deleted {
+        // Only the two sides of the conversation react on its messages.
+        if deleted || (*user != peer && *user != *my_user) {
             return Ok(None);
         }
         let prev: Option<i64> = self

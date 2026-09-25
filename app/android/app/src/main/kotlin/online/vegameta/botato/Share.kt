@@ -31,7 +31,10 @@ object Share {
             intent.parcelable(Intent.EXTRA_STREAM)?.let { uris.add(it) }
         }
         val files = mutableListOf<String>()
-        for ((i, uri) in uris.take(MAX_FILES).withIndex()) {
+        // Only other apps' content: a file:// or our own provider's URI would let a malicious
+        // sender make us read our private files (history database, keys) with our permissions.
+        val foreign = uris.filter { it.scheme == "content" && it.authority?.startsWith(ctx.packageName) != true }
+        for ((i, uri) in foreign.take(MAX_FILES).withIndex()) {
             val out = File(dir, "shared-$i")
             runCatching {
                 ctx.contentResolver.openInputStream(uri)?.use { input ->
