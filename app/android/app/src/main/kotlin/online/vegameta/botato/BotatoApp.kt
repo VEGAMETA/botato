@@ -28,4 +28,18 @@ class BotatoApp : Application() {
 
         fun hasEngine(): Boolean = FlutterEngineCache.getInstance().contains(ENGINE_ID)
     }
+
+    override fun onCreate() {
+        super.onCreate()
+        // Uncaught Kotlin/Java exceptions go to the app's error journal (<files>/errors.log,
+        // shared with Dart and Rust), then to the system's handler as before.
+        val journal = java.io.File(filesDir, "errors.log")
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            runCatching {
+                journal.appendText("${System.currentTimeMillis() / 1000} [kotlin] ${thread.name}: ${e.stackTraceToString().take(4000)}\n")
+            }
+            previous?.uncaughtException(thread, e)
+        }
+    }
 }

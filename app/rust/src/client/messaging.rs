@@ -166,7 +166,7 @@ fn targets(shared: &Shared, peer_user: &Id) -> anyhow::Result<Vec<(Id, [u8; 32])
     let mut peer_devices = 0;
     for c in contacts.all().filter(|c| c.user_id == *peer_user || c.user_id == shared.my_user) {
         for d in &c.devices {
-            if d.device_id == shared.me.device_id || shared.manifest.is_revoked(&d.device_id) {
+            if d.device_id == shared.me.device_id || shared.manifest().is_revoked(&d.device_id) {
                 continue;
             }
             peer_devices += (c.user_id == *peer_user) as usize;
@@ -304,7 +304,7 @@ pub fn on_deliver(shared: &Shared, blob: &[u8]) -> anyhow::Result<Delivered> {
     let sender = unverified.sender();
     let (sender_user, sender_enc, opened) = {
         let contacts = shared.contacts.lock().unwrap();
-        let Some((cert, dev)) = contacts.device(&sender, &shared.manifest) else {
+        let Some((cert, dev)) = contacts.device(&sender, &shared.manifest()) else {
             return Ok(Delivered::UnknownSender);
         };
         let (user, enc) = (cert.user_id, dev.enc_pub);

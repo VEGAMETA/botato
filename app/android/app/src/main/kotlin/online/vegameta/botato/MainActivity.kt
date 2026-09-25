@@ -18,6 +18,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         CallChannel.activity = this
         super.onCreate(savedInstanceState)
+        applySecure()
         handleCallIntent(intent)
     }
 
@@ -57,6 +58,15 @@ class MainActivity : FlutterActivity() {
                 IncomingCallNotification.cancel(this)
                 CallChannel.invoke("action", "accept")
             }
+        }
+    }
+
+    /** No chats in the recent-apps preview and no screenshots, unless turned off in the profile. */
+    fun applySecure() {
+        if (CallChannel.secure) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 

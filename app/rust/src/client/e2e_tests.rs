@@ -84,7 +84,8 @@ fn start_in(net: &Net, me: DeviceSecret, user: Id, cert: &[u8], dir: &std::path:
         me,
         cert: cert.to_vec(),
         contacts: Mutex::new(contacts),
-        manifest: net.manifest.clone(),
+        manifest: std::sync::RwLock::new(Arc::new(net.manifest.clone())),
+        manifest_path: dir.join("manifest.bin"),
         reconnect: tokio::sync::Notify::new(),
         store: Mutex::new(Store::open(&dir.join("botato.db"), [9; 32]).unwrap()),
         my_user: user,
@@ -301,4 +302,30 @@ async fn replies_forwards_edits_deletes_reactions() {
     until(|| msg(&b, &alice, &reply).is_none()).await;
     // Updates are receipted and leave the outbox like messages.
     until(|| a.shared.store.lock().unwrap().outbox().unwrap().is_empty()).await;
+}
+
+#[tokio::test]
+async fn manifest_offer_newer_signed_only_and_persisted() {
+    let net = net().await;
+    let (alice, mut a_devs, a_cert) = user(&net, "alice", 1);
+    let a = start(&net, a_devs.remove(0), alice, &a_cert);
+    let mut newer = net.manifest.clone();
+    newer.version = net.manifest.version + 1;
+    newer.revoked = vec![Id([0x77; 16])];
+    let signed = newer.sign(&net.root).unwrap();
+    // The client's root is the build's (config::root_pub), not this test's throwaway root:
+    // a manifest signed by anyone else must be refused.
+    assert!(a.shared.offer_manifest(&signed).is_err());
+    assert_eq!(a.shared.manifest().version, net.manifest.version);
+    assert!(!a.shared.manifest_path.exists());
+
+    // Signed by the right root: applied and saved; the same or an older version is not.
+    let root = net.root.verifying_key().to_bytes();
+    assert!(a.shared.offer_manifest_signed_by(&signed, &root).unwrap());
+    assert!(a.shared.manifest().is_revoked(&Id([0x77; 16])));
+    assert_eq!(std::fs::read(&a.shared.manifest_path).unwrap(), signed);
+    assert!(!a.shared.offer_manifest_signed_by(&signed, &root).unwrap());
+    let old = net.manifest.sign(&net.root).unwrap();
+    assert!(!a.shared.offer_manifest_signed_by(&old, &root).unwrap());
+    assert!(a.shared.manifest().is_revoked(&Id([0x77; 16])), "no rollback");
 }

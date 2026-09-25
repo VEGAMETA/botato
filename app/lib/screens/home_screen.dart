@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../call/call_screen.dart';
 import '../call/call_notifier.dart';
 import '../call/call_service.dart';
+import '../error_log.dart';
 import '../relay_service.dart';
 import '../update_service.dart';
 import '../src/rust/api/client.dart' as core;
@@ -151,6 +153,47 @@ class _HomeScreenState extends State<HomeScreen> {
     _toast(added.length == 1 ? 'Добавлен: ${added.first.name}' : 'Добавлено: ${added.length}');
   }
 
+  Future<void> _showErrorLog(BuildContext context) async {
+    final text = ErrorLog.read();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Журнал ошибок'),
+        content: SizedBox(
+          width: 560,
+          height: 360,
+          child: text.isEmpty
+              ? const Center(
+                  child: Text('Ошибок нет', style: TextStyle(color: BotatoColors.smoke)),
+                )
+              : SingleChildScrollView(
+                  reverse: true,
+                  child: SelectableText(text, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                ),
+        ),
+        actions: [
+          if (text.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                ErrorLog.clear();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Очистить'),
+            ),
+          if (text.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: text));
+                _toast('Скопировано');
+              },
+              child: const Text('Скопировать'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showMe(BuildContext context) async {
     final device = core.clientMyDevice();
     Widget row(String label, String value) => ListTile(
@@ -177,6 +220,39 @@ class _HomeScreenState extends State<HomeScreen> {
             if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
               row(widget.relay.state == ConnState.connecting ? 'Подключение к' : 'Нет связи', widget.relay.detail),
             row('ID пользователя', widget.info.userId),
+            StatefulBuilder(
+              builder: (ctx, set) {
+                final s = widget.calls.settings;
+                return Column(
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Текст в уведомлениях'),
+                      subtitle: const Text('Выкл.: только «новое сообщение», без имени и текста'),
+                      value: s.notifyPreview,
+                      onChanged: (v) => set(() => s.notifyPreview = v),
+                    ),
+                    if (Platform.isAndroid)
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Защита экрана'),
+                        subtitle: const Text('Скрыть чаты в «Недавних», запретить скриншоты'),
+                        value: s.secureScreen,
+                        onChanged: (v) => set(() {
+                          s.secureScreen = v;
+                          widget.calls.notifier.secureScreen(v);
+                        }),
+                      ),
+                  ],
+                );
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.bug_report_outlined),
+              title: const Text('Журнал ошибок'),
+              onTap: () => _showErrorLog(context),
+            ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Версия', style: TextStyle(color: BotatoColors.smoke, fontSize: 13)),
@@ -225,10 +301,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ConnState.offline => (BotatoColors.danger, 'нет связи'),
         };
         final others = r.visibleContacts
-          // Recent conversations first, then alphabetically.
+          // Most recent first (last message or when added), then alphabetically.
           ..sort((a, b) {
-            final ta = r.conversations[a.userId]?.lastAt.toInt() ?? 0;
-            final tb = r.conversations[b.userId]?.lastAt.toInt() ?? 0;
+            final ta = r.recency(a.userId), tb = r.recency(b.userId);
             return ta != tb ? tb.compareTo(ta) : a.name.compareTo(b.name);
           });
         return Scaffold(

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -31,6 +33,42 @@ class RelayService extends ChangeNotifier {
   RelayService(this.settings);
 
   final MediaSettings settings;
+
+  DateTime? _manifestCheckedAt;
+
+  /// Fetches the signed manifest from the relay host (at most hourly, after connecting):
+  /// revocations and server changes reach the app without a new build. Rust accepts it only
+  /// with the admin signature and a higher version.
+  Future<void> _refreshManifest() async {
+    final last = _manifestCheckedAt;
+    if (last != null && DateTime.now().difference(last) < const Duration(hours: 1)) return;
+    _manifestCheckedAt = DateTime.now();
+    for (final url in core.clientManifestUrls()) {
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+      try {
+        final res = await (await client.getUrl(Uri.parse(url))).close().timeout(const Duration(seconds: 20));
+        if (res.statusCode != 200) continue;
+        final b = BytesBuilder(copy: false);
+        await for (final chunk in res) {
+          b.add(chunk);
+          if (b.length > 64 * 1024) break; // a manifest is small
+        }
+        if (core.clientOfferManifest(raw: b.takeBytes())) debugPrint('[relay] newer manifest applied');
+        return;
+      } catch (e) {
+        debugPrint('[relay] manifest fetch failed: $e');
+      } finally {
+        client.close();
+      }
+    }
+  }
+
+  /// Sort key of a contact: its last message or when it was added, whichever is newer.
+  int recency(String userId) {
+    final msg = conversations[userId]?.lastAt.toInt() ?? 0;
+    final added = settings.contactAddedAt[userId] ?? 0;
+    return msg > added ? msg : added;
+  }
 
   /// Contacts shown in the list: only those the user added (or who called or wrote).
   List<core.ContactInfo> get visibleContacts {
@@ -95,6 +133,7 @@ class RelayService extends ChangeNotifier {
     final a = settings.addedContacts ?? {};
     if (!a.add(userId)) return;
     settings.addedContacts = a;
+    settings.contactAddedAt = settings.contactAddedAt..[userId] = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     _queryPresence();
     notifyListeners();
   }
@@ -192,6 +231,7 @@ class RelayService extends ChangeNotifier {
         detail = server;
       case core.ClientEvent_Online(:final server):
         if (state != ConnState.online) debugPrint('[relay] online');
+        _refreshManifest();
         state = ConnState.online;
         detail = server;
         contacts = _loadContacts();

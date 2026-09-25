@@ -28,6 +28,17 @@ class MediaSettings {
   Set<String>? get addedContacts => _prefs.getStringList('added_contacts')?.toSet();
   set addedContacts(Set<String>? v) => _prefs.setStringList('added_contacts', (v ?? const {}).toList());
 
+  /// When each contact was added (unix seconds): a new contact sorts like a fresh message.
+  Map<String, int> get contactAddedAt {
+    try {
+      return Map<String, int>.from(jsonDecode(_prefs.getString('contact_added_at') ?? '{}') as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  set contactAddedAt(Map<String, int> v) => _prefs.setString('contact_added_at', jsonEncode(v));
+
   /// Local display names for other users (user id -> name). Never leave the device.
   Map<String, String> get contactAliases {
     try {
@@ -56,6 +67,15 @@ class MediaSettings {
   set videoCodec(String? v) => _set('video_codec', v);
 
   /// Android: the phone's own echo/noise processing (applied at app start).
+  /// Sender and text in message notifications. Off: only "botato: новое сообщение" (Windows
+  /// keeps shown notifications in its own database on disk).
+  bool get notifyPreview => _prefs.getBool('notify_preview') ?? true;
+  set notifyPreview(bool v) => _prefs.setBool('notify_preview', v);
+
+  /// Android: FLAG_SECURE — no chats in the recent-apps preview, no screenshots.
+  bool get secureScreen => _prefs.getBool('secure_screen') ?? true;
+  set secureScreen(bool v) => _prefs.setBool('secure_screen', v);
+
   bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? true;
   set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);
 

@@ -22,6 +22,9 @@ object CallChannel {
     /** Chat to open when Dart asks (cold start from a notification tap). */
     var pendingChat: String? = null
 
+    /** FLAG_SECURE wanted (Dart's setting); on until Dart says otherwise. */
+    var secure = true
+
     /** Content shared from another app, until Dart takes it: `{text, files}`. */
     @Volatile var pendingShare: Map<String, Any?>? = null
 
@@ -111,6 +114,11 @@ object CallChannel {
                             if (err == null) result.success(null) else result.error("save", err.message, null)
                         }
                     }.start()
+                }
+                "secureScreen" -> {
+                    secure = call.arguments as Boolean
+                    activity?.applySecure()
+                    result.success(null)
                 }
                 "pendingShare" -> {
                     result.success(pendingShare)

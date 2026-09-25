@@ -63,6 +63,9 @@ class CallNotifier {
     }
   }
 
+  /// Android: FLAG_SECURE on the app window (recent-apps preview hidden, no screenshots).
+  Future<void> secureScreen(bool on) => _invoke('secureScreen', on);
+
   /// Android: the system share sheet for a file in the app's cache `share/` folder.
   static Future<void> shareFile(String path, String mime) async {
     try {

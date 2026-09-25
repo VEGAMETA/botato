@@ -8,6 +8,7 @@ import 'call/call_banner.dart';
 import 'call/call_service.dart';
 import 'call/media_settings.dart';
 import 'desktop.dart';
+import 'error_log.dart';
 import 'identity_store.dart';
 import 'relay_service.dart';
 import 'update_service.dart';
@@ -46,7 +47,10 @@ class Services {
     final navigator = GlobalKey<NavigatorState>();
     final calls = CallService(relay, navigator, media);
     final s = Services._(store, media, secret, relay, calls, navigator);
-    relay.onNewMessage = (peer, name, text) => calls.notifier.showMessage(peer, name, text);
+    relay.onNewMessage = (peer, name, text) => media.notifyPreview
+        ? calls.notifier.showMessage(peer, name, text)
+        : calls.notifier.showMessage(peer, 'botato', 'Новое сообщение');
+    calls.notifier.secureScreen(media.secureScreen);
     calls.notifier.onPushToken = (token) => client.clientSetPushToken(token: token);
     calls.notifier.onWake = relay.reconnect;
     // Desktop: "in front" means the window has focus (it may sit hidden in the tray).
@@ -79,6 +83,7 @@ class Services {
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ErrorLog.init();
   // --minimized: started at Windows logon, stay in the tray.
   if (isDesktop) await Desktop.instance.init(hidden: args.contains('--minimized'));
   await RustLib.init();

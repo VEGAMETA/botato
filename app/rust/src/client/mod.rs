@@ -74,7 +74,10 @@ pub struct Shared {
     pub me: DeviceSecret,
     pub cert: Vec<u8>,
     pub contacts: Mutex<Contacts>,
-    pub manifest: Manifest,
+    /// The newest signed manifest known: built in, saved, or fetched from a relay.
+    pub manifest: std::sync::RwLock<Arc<Manifest>>,
+    /// Where a newer manifest is saved (survives restarts; the built-in one only changes with a release).
+    pub manifest_path: std::path::PathBuf,
     /// Drop the current connection and dial again at once (network changed).
     pub reconnect: tokio::sync::Notify,
     pub store: Mutex<store::Store>,
@@ -94,6 +97,44 @@ pub fn load_manifest() -> anyhow::Result<Manifest> {
     Manifest::verify(&config::root_pub(), config::BUILTIN_MANIFEST).map_err(|e| anyhow::anyhow!("манифест: {e}"))
 }
 
+/// The built-in manifest, or the saved one at `path` if it is valid and newer.
+pub fn load_manifest_from(path: &std::path::Path) -> anyhow::Result<Manifest> {
+    let builtin = load_manifest();
+    let saved = std::fs::read(path).ok().and_then(|raw| Manifest::verify(&config::root_pub(), &raw).ok());
+    match (builtin, saved) {
+        (Ok(b), Some(s)) if s.version > b.version => Ok(s),
+        (Ok(b), _) => Ok(b),
+        (Err(_), Some(s)) => Ok(s),
+        (Err(e), None) => Err(e),
+    }
+}
+
+impl Shared {
+    pub fn manifest(&self) -> Arc<Manifest> {
+        self.manifest.read().unwrap().clone()
+    }
+
+    /// Takes a signed manifest from any channel: accepted only with the admin signature and a
+    /// higher version than the current one (a relay can withhold a manifest, not roll it back).
+    /// Returns true if it replaced the current one.
+    pub fn offer_manifest(&self, raw: &[u8]) -> anyhow::Result<bool> {
+        self.offer_manifest_signed_by(raw, &config::root_pub())
+    }
+
+    fn offer_manifest_signed_by(&self, raw: &[u8], root_pub: &[u8; 32]) -> anyhow::Result<bool> {
+        let m = Manifest::verify(root_pub, raw).map_err(|e| anyhow::anyhow!("манифест: {e}"))?;
+        let mut cur = self.manifest.write().unwrap();
+        if m.version <= cur.version {
+            return Ok(false);
+        }
+        let tmp = self.manifest_path.with_extension("tmp");
+        std::fs::write(&tmp, raw)?;
+        std::fs::rename(&tmp, &self.manifest_path)?;
+        *cur = Arc::new(m);
+        Ok(true)
+    }
+}
+
 pub fn parse_cert(text: &str) -> anyhow::Result<Vec<u8>> {
     enroll::from_text(enroll::CERT_PREFIX, text).map_err(|_| anyhow::anyhow!("bad cert"))
 }
@@ -102,7 +143,7 @@ pub fn parse_cert(text: &str) -> anyhow::Result<Vec<u8>> {
 pub async fn run(shared: Arc<Shared>, mut cmds: mpsc::UnboundedReceiver<Cmd>, emit: Emit) {
     let mut backoff = 1u64;
     loop {
-        for server in shared.manifest.servers.clone() {
+        for server in shared.manifest().servers.clone() {
             emit(Event::Connecting { server: server.url.clone() });
             match session(&shared, &server, &mut cmds, &emit).await {
                 Ok(Exit::Stopped) => return, // command channel closed: the app stopped the client
@@ -326,14 +367,14 @@ async fn deliver(shared: &Shared, ws: &mut Ws, s: &mut SessionState, id: Id, blo
 
 fn seal_signal(shared: &Shared, to: &Id, payload: &[u8]) -> anyhow::Result<Vec<u8>> {
     let contacts = shared.contacts.lock().unwrap();
-    let (_, dev) = contacts.device(to, &shared.manifest).ok_or_else(|| anyhow::anyhow!("неизвестное устройство"))?;
+    let (_, dev) = contacts.device(to, &shared.manifest()).ok_or_else(|| anyhow::anyhow!("неизвестное устройство"))?;
     envelope::seal(&shared.me, to, &dev.enc_pub, KIND_SIGNAL, config::now(), payload).map_err(|e| anyhow::anyhow!("seal: {e}"))
 }
 
 async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: ServerFrame, emit: &Emit) -> anyhow::Result<()> {
     match frame {
         ServerFrame::Directory { certs } => {
-            let changed = shared.contacts.lock().unwrap().merge(&certs, config::now(), &shared.manifest);
+            let changed = shared.contacts.lock().unwrap().merge(&certs, config::now(), &shared.manifest());
             if changed {
                 emit(Event::ContactsChanged);
             }
@@ -387,7 +428,7 @@ fn open_signal(shared: &Shared, blob: &[u8]) -> anyhow::Result<Option<Event>> {
     let unverified = envelope::open(&shared.me, blob).map_err(|e| anyhow::anyhow!("{e}"))?;
     let sender = unverified.sender();
     let contacts = shared.contacts.lock().unwrap();
-    let Some((cert, dev)) = contacts.device(&sender, &shared.manifest) else { return Ok(None) };
+    let Some((cert, dev)) = contacts.device(&sender, &shared.manifest()) else { return Ok(None) };
     let from_user = cert.user_id;
     let opened = unverified.verify(&dev.sign_pub).map_err(|e| anyhow::anyhow!("{e}"))?;
     drop(contacts);

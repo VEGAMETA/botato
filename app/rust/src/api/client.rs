@@ -55,6 +55,30 @@ static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 
 static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
 
+/// Rust panics go to `<data_dir>/errors.log` (the app's error journal, shared with Dart and
+/// Kotlin), then to the default hook. Location and message only: never message contents.
+fn log_panics(data_dir: &str) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    let path = std::path::Path::new(data_dir).join("errors.log");
+    ONCE.call_once(move || {
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            use std::io::Write;
+            let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+            let msg = info
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                .unwrap_or_default();
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = writeln!(f, "{} [rust] panic at {at}: {msg}", config::now());
+            }
+            default(info);
+        }));
+    });
+}
+
 fn convert(e: Event) -> ClientEvent {
     match e {
         Event::Connecting { server } => ClientEvent::Connecting { server },
@@ -85,9 +109,11 @@ pub fn client_start(
     sink: StreamSink<ClientEvent>,
 ) -> anyhow::Result<()> {
     client_stop();
+    log_panics(&data_dir);
     let me = DeviceSecret::from_bytes(&secret).map_err(|e| anyhow::anyhow!("device secret: {e}"))?;
     let cert = client::parse_cert(&cert)?;
-    let manifest = client::load_manifest()?;
+    let manifest_path = std::path::Path::new(&data_dir).join("manifest.bin");
+    let manifest = client::load_manifest_from(&manifest_path)?;
     let now = config::now();
     let mut contacts = Contacts::load(std::path::Path::new(&data_dir).join("contacts.json"), config::root_pub(), now);
     contacts.merge(std::slice::from_ref(&cert), now, &manifest);
@@ -98,7 +124,8 @@ pub fn client_start(
         me,
         cert,
         contacts: Mutex::new(contacts),
-        manifest,
+        manifest: std::sync::RwLock::new(Arc::new(manifest)),
+        manifest_path,
         reconnect: tokio::sync::Notify::new(),
         store: Mutex::new(store),
         my_user,
@@ -188,10 +215,39 @@ pub fn client_my_device() -> Option<String> {
     with(|r| r.shared.me.device_id.to_hex()).ok()
 }
 
+/// `https://<relay host>/manifest` for every server in the current manifest.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_manifest_urls() -> Vec<String> {
+    with(|r| {
+        r.shared
+            .manifest()
+            .servers
+            .iter()
+            .filter_map(|s| {
+                let host = s.url.strip_prefix("wss://")?.split('/').next()?;
+                Some(format!("https://{host}/manifest"))
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// A manifest fetched from a relay (or any channel): applied only if signed by the admin and
+/// newer. Returns true if it replaced the current one. Revocations apply at once; new servers
+/// from the next connection.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_offer_manifest(raw: Vec<u8>) -> anyhow::Result<bool> {
+    let changed = with(|r| r.shared.offer_manifest(&raw))??;
+    if changed {
+        let _ = with(|r| r.tx.send(Cmd::Directory));
+    }
+    Ok(changed)
+}
+
 /// STUN servers from the manifest; TURN comes via `client_request_turn`.
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_ice_config() -> IceConfig {
-    IceConfig { stun: with(|r| r.shared.manifest.stun.clone()).unwrap_or_default() }
+    IceConfig { stun: with(|r| r.shared.manifest().stun.clone()).unwrap_or_default() }
 }
 
 // ---- messages

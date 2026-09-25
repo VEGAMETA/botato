@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'client.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `convert`, `parse_id`, `running`, `send_update`, `with`
+// These functions are ignored because they are not marked as `pub`: `convert`, `log_panics`, `parse_id`, `running`, `send_update`, `with`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
 
 /// Starts (or restarts) the relay client. Events arrive on `sink` until `client_stop`.
@@ -53,6 +53,16 @@ void clientQueryPresence({required List<String> devices}) =>
 
 /// This device's id (hex).
 String? clientMyDevice() => RustLib.instance.api.crateApiClientClientMyDevice();
+
+/// `https://<relay host>/manifest` for every server in the current manifest.
+List<String> clientManifestUrls() =>
+    RustLib.instance.api.crateApiClientClientManifestUrls();
+
+/// A manifest fetched from a relay (or any channel): applied only if signed by the admin and
+/// newer. Returns true if it replaced the current one. Revocations apply at once; new servers
+/// from the next connection.
+bool clientOfferManifest({required List<int> raw}) =>
+    RustLib.instance.api.crateApiClientClientOfferManifest(raw: raw);
 
 /// STUN servers from the manifest; TURN comes via `client_request_turn`.
 IceConfig clientIceConfig() =>
