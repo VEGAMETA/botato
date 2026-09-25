@@ -63,6 +63,17 @@ class CallNotifier {
     }
   }
 
+  /// Android: true if the phone is unlocked, or the user unlocked it now (system prompt).
+  /// A call shown over the lock screen must not become a way into the chats.
+  Future<bool> ensureUnlocked() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _channel.invokeMethod<bool>('unlock') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Android 14+: may incoming calls take the full screen on a locked phone?
   Future<bool> fullScreenAllowed() async {
     if (!Platform.isAndroid) return true;

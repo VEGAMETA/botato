@@ -135,6 +135,25 @@ object CallChannel {
                 // Android 14+: full-screen notifications need a special permission, off by
                 // default for apps not installed from Google Play. Without it an incoming call on
                 // a locked phone is only a notification.
+                // Over the lock screen only the call is shown: chats need the phone unlocked.
+                "unlock" -> {
+                    val keyguard = ctx.getSystemService(android.app.KeyguardManager::class.java)
+                    val a = activity
+                    if (!keyguard.isKeyguardLocked) {
+                        result.success(true)
+                    } else if (a == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+                        result.success(false)
+                    } else {
+                        keyguard.requestDismissKeyguard(
+                            a,
+                            object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                                override fun onDismissSucceeded() = result.success(true)
+                                override fun onDismissCancelled() = result.success(false)
+                                override fun onDismissError() = result.success(false)
+                            },
+                        )
+                    }
+                }
                 "fullScreenAllowed" -> {
                     val allowed = android.os.Build.VERSION.SDK_INT < 34 ||
                         ctx.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()

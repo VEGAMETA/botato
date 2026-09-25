@@ -36,9 +36,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _sub = widget.relay.signals.listen(_onSignal);
     // Tap on a message notification.
-    widget.calls.notifier.onOpenChat = (peerUser) {
+    widget.calls.notifier.onOpenChat = (peerUser) async {
       final c = widget.relay.contacts.where((c) => c.userId == peerUser).firstOrNull;
-      if (c != null && mounted) openChat(context, c);
+      // During a call the app may be shown over the lock screen: chats only after unlocking.
+      if (c == null || !await widget.calls.notifier.ensureUnlocked() || !mounted) return;
+      openChat(context, c);
     };
     widget.calls.notifier.onShare = _handleShare;
     WidgetsBinding.instance.addPostFrameCallback((_) async {

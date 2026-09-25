@@ -69,9 +69,17 @@ class _CallScreenState extends State<CallScreen> {
     setState(() {});
   }
 
+  /// Leaves the call screen (the call goes on, the banner leads back) — only on an unlocked
+  /// phone: over the lock screen the chats stay closed.
+  Future<void> _minimize() async {
+    if (!await widget.calls.notifier.ensureUnlocked() || !mounted) return;
+    Navigator.of(context).pop();
+  }
+
   /// Leaves the call running and shows the chat with the peer; the banner leads back.
-  void _openChat() {
+  Future<void> _openChat() async {
     final c = widget.calls;
+    if (!await c.notifier.ensureUnlocked() || !mounted) return;
     final contact = c.peerUser == null ? null : c.relay.contacts.where((x) => x.userId == c.peerUser).firstOrNull;
     final nav = Navigator.of(context);
     nav.pop();
@@ -86,6 +94,8 @@ class _CallScreenState extends State<CallScreen> {
 
   void _onChange() {
     if (widget.calls.phase == CallPhase.idle && mounted) {
+      // The call is over: PopScope lets it close without unlocking (the show-over-lock-screen
+      // flag was already dropped when the call ended).
       Navigator.of(context).maybePop();
     } else {
       // Video just appeared: start the auto-hide; it went away: bring the buttons back.
@@ -139,8 +149,12 @@ class _CallScreenState extends State<CallScreen> {
       child: Focus(
         autofocus: true,
         child: PopScope(
-          // Back minimizes a running call (the banner brings it back); only ringing can't be left.
-          canPop: c.phase != CallPhase.incoming,
+          // A finished call closes freely. A running one is minimized by Back (the banner brings
+          // it back) — after unlocking if the phone is locked; ringing can't be left.
+          canPop: c.phase == CallPhase.idle || c.phase == CallPhase.ended,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && c.phase != CallPhase.incoming) _minimize();
+          },
           child: Scaffold(
             backgroundColor: BotatoColors.night,
             body: Stack(
@@ -235,7 +249,7 @@ class _CallScreenState extends State<CallScreen> {
                             IconButton(
                               tooltip: 'Свернуть',
                               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70),
-                              onPressed: () => Navigator.of(context).maybePop(),
+                              onPressed: _minimize,
                             ),
                         ],
                       ),
