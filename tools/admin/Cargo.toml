@@ -13,9 +13,11 @@ hex = "0.4.3"
 proto = { version = "0.1.0", path = "../../crates/proto" }
 qrcode = "0.14.1"
 rpassword = "7.5.4"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11"
+tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 zeroize = "1.9.0"
 
 [dev-dependencies]

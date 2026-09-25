@@ -574,6 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           body: Column(
             children: [
+              if (widget.relay.serverDown) const _ServerDownBanner(),
               _UpdateBanner(updates: widget.updates, onError: _toast),
               Expanded(
                 child: others.isEmpty
@@ -609,6 +610,38 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// "A new version is available" above the contact list, with download progress.
+/// Our server has been unreachable for a minute: what still works.
+class _ServerDownBanner extends StatelessWidget {
+  const _ServerDownBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: BotatoColors.danger.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, color: BotatoColors.danger),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              tr(
+                'Сервер недоступен. Звонки идут через резервный канал, если собеседник в приложении; сообщения уйдут, когда связь вернётся.',
+                'The server is unreachable. Calls go over the backup channel if the other side has the app open; messages will go out when it is back.',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _UpdateBanner extends StatelessWidget {
   const _UpdateBanner({required this.updates, required this.onError});
 

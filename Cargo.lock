@@ -157,10 +157,12 @@ dependencies = [
  "proto",
  "qrcode",
  "rpassword",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "tungstenite 0.30.0",
  "zeroize",
 ]
 
@@ -5481,6 +5483,7 @@ dependencies = [
  "rustls-pki-types",
  "sha1 0.11.0",
  "thiserror 2.0.21",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]

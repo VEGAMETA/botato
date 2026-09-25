@@ -58,6 +58,15 @@ class Services {
     calls.notifier.onPushToken = (token) => client.clientSetPushToken(token: token);
     calls.notifier.onUpdateFailed = (m) => s.updates.installFailed(m);
     calls.notifier.onWake = relay.reconnect;
+    // Nostr fallback subscribed while the app is active: desktop always, a phone in front or in a call.
+    void nostrActive() {
+      try {
+        client.clientNostrActive(active: isDesktop || relay.foreground || calls.busy);
+      } catch (_) {} // client not started yet: it follows on the next change
+    }
+
+    relay.addListener(nostrActive);
+    calls.addListener(nostrActive);
     // Desktop: "in front" means the window has focus (it may sit hidden in the tray).
     if (isDesktop) Desktop.instance.onFocusChanged = (f) => relay.foreground = f;
 

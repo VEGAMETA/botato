@@ -57,6 +57,44 @@ async fn probe(url: &str) -> Result<Duration, String> {
     got.map_err(|_| "event did not come back".to_string())?
 }
 
+/// The manifest event (kind 30078) must be stored: publish one under a random `d`, read it back.
+async fn probe_stored(url: &str) -> Result<(), String> {
+    let t = Duration::from_secs(8);
+    let (mut ws, _) = timeout(t, tokio_tungstenite::connect_async(url)).await.map_err(|_| "connect timeout")?.map_err(|e| format!("connect: {e}"))?;
+    let root = proto::random_bytes::<32>();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let ev = proto::nostr::manifest_event(&proto::nostr::random_secp_key(), b"probe", &root, now).map_err(|e| e.to_string())?;
+    ws.send(Message::Text(json!(["EVENT", ev.to_json()]).to_string().into())).await.map_err(|e| e.to_string())?;
+    let ok = timeout(t, async {
+        while let Some(Ok(Message::Text(m))) = ws.next().await {
+            let v: Value = serde_json::from_str(m.as_str()).unwrap_or(Value::Null);
+            if v[0] == "OK" {
+                return if v[2] == true { Ok(()) } else { Err(format!("rejected: {}", v[3])) };
+            }
+        }
+        Err("closed".to_string())
+    })
+    .await
+    .map_err(|_| "no OK".to_string())?;
+    ok?;
+    let d = proto::nostr::manifest_d_tag(&root);
+    ws.send(Message::Text(json!(["REQ", "m", {"kinds": [proto::nostr::KIND_MANIFEST], "#d": [d]}]).to_string().into())).await.map_err(|e| e.to_string())?;
+    timeout(t, async {
+        while let Some(Ok(Message::Text(m))) = ws.next().await {
+            let v: Value = serde_json::from_str(m.as_str()).unwrap_or(Value::Null);
+            if v[0] == "EVENT" && v[2]["id"] == ev.id {
+                return Ok(());
+            }
+            if v[0] == "EOSE" {
+                return Err("not stored".to_string());
+            }
+        }
+        Err("closed".to_string())
+    })
+    .await
+    .map_err(|_| "no answer".to_string())?
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -65,11 +103,16 @@ async fn main() {
         eprintln!("usage: nostr_probe <wss-url>...");
         std::process::exit(2);
     }
-    let results = futures_util::future::join_all(urls.iter().map(|u| async move { (u, probe(u).await) })).await;
-    for (u, r) in results {
-        match r {
-            Ok(d) => println!("OK    {u}  {} ms", d.as_millis()),
-            Err(e) => println!("FAIL  {u}  {e}"),
-        }
+    let results = futures_util::future::join_all(urls.iter().map(|u| async move { (u, probe(u).await, probe_stored(u).await) })).await;
+    for (u, signal, stored) in results {
+        let signal = match signal {
+            Ok(d) => format!("signal ok {} ms", d.as_millis()),
+            Err(e) => format!("signal FAIL ({e})"),
+        };
+        let stored = match stored {
+            Ok(()) => "manifest ok".to_string(),
+            Err(e) => format!("manifest FAIL ({e})"),
+        };
+        println!("{u}: {signal}; {stored}");
     }
 }

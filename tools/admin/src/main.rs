@@ -90,6 +90,8 @@ enum ManifestCmd {
     Nostr { urls: Vec<String> },
     /// Sign the next manifest version into manifest.bin.
     Sign,
+    /// Publish the signed manifest.bin on the manifest's Nostr relays (clients find a new server there).
+    PublishNostr,
 }
 
 fn main() {
@@ -295,6 +297,12 @@ fn manifest(dir: &std::path::Path, cmd: ManifestCmd) -> Result<()> {
             let root = unlock(&a)?;
             let (v, path) = a.sign_manifest(&root, now())?;
             println!("manifest version {v} written to {}", path.display());
+        }
+        ManifestCmd::PublishNostr => {
+            let job = a.nostr_job(now())?;
+            for line in job.run() {
+                println!("{line}");
+            }
         }
     }
     Ok(())

@@ -114,7 +114,8 @@ impl ReleasePanel {
     }
 
     /// Runs `deploy.yml --tags <tags>` in WSL on a background thread.
-    pub fn publish(&self, ctx: &egui::Context, tags: &str) {
+    /// Runs Ansible with `tags`; `nostr`: then also publishes the manifest on Nostr.
+    pub fn publish(&self, ctx: &egui::Context, tags: &str, nostr: Option<admin::NostrJob>) {
         let mut d = self.deploy.lock().unwrap();
         if d.running {
             return;
@@ -146,6 +147,14 @@ impl ReleasePanel {
                     d.log.push_str(if o.status.success() { "\nГотово." } else { "\nОШИБКА, см. вывод выше." });
                 }
                 Err(e) => d.log.push_str(&format!("не запустился wsl.exe: {e}")),
+            }
+            // The manifest on Nostr too: clients whose server is gone look for it there.
+            if let Some(job) = nostr {
+                d.log.push_str("\n\nNostr:\n");
+                drop(d);
+                let lines = job.run().join("\n");
+                d = state.lock().unwrap();
+                d.log.push_str(&lines);
             }
             d.running = false;
             ctx.request_repaint();
@@ -193,7 +202,7 @@ impl ReleasePanel {
                 .on_hover_text("После удаления устройства или смены сервера")
                 .clicked()
             {
-                self.publish(&ctx, "manifest");
+                self.publish(&ctx, "manifest", admin.nostr_job(now_secs()).ok());
             }
             if running {
                 ui.spinner();
@@ -238,7 +247,7 @@ impl ReleasePanel {
         match result {
             Ok(()) => {
                 self.status = Some((true, format!("Релиз {} подписан, выкатываю…", a.version)));
-                self.publish(ctx, "manifest,release");
+                self.publish(ctx, "manifest,release", admin.nostr_job(now_secs()).ok());
             }
             Err(e) => self.status = Some((false, e)),
         }
@@ -263,4 +272,8 @@ fn wsl_path(p: &Path) -> String {
         Some((drive, rest)) => format!("/mnt/{}/{rest}", drive.to_lowercase()),
         None => s,
     }
+}
+
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
 }

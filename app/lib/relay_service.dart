@@ -156,6 +156,26 @@ class RelayService extends ChangeNotifier {
   }
 
   ConnState state = ConnState.connecting;
+
+  /// Since when our server has been unreachable (null while connected).
+  DateTime? _offlineSince = DateTime.now();
+  Timer? _downTimer;
+
+  /// No server for a minute: calls go over the Nostr fallback, messages wait in the outbox.
+  bool get serverDown => _offlineSince != null && DateTime.now().difference(_offlineSince!) >= _downAfter;
+  static const _downAfter = Duration(minutes: 1);
+
+  void _trackOnline(bool online) {
+    if (online) {
+      _offlineSince = null;
+      _downTimer?.cancel();
+    } else if (_offlineSince == null) {
+      _offlineSince = DateTime.now();
+      _downTimer?.cancel();
+      _downTimer = Timer(_downAfter, notifyListeners); // the banner appears
+    }
+  }
+
   String detail = '';
   List<core.ContactInfo> contacts = [];
 
@@ -243,12 +263,14 @@ class RelayService extends ChangeNotifier {
   void _onEvent(core.ClientEvent e) {
     switch (e) {
       case core.ClientEvent_Connecting(:final server):
+        _trackOnline(false);
         state = ConnState.connecting;
         detail = server;
       case core.ClientEvent_Online(:final server):
         if (state != ConnState.online) debugPrint('[relay] online');
         _refreshManifest();
         state = ConnState.online;
+        _trackOnline(true);
         detail = server;
         contacts = _loadContacts();
         _loadConversations();
@@ -256,6 +278,7 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_Offline(:final reason):
         debugPrint('[relay] offline: $reason');
         state = ConnState.offline;
+        _trackOnline(false);
         detail = reason;
         _onlineDevices = {};
       case core.ClientEvent_ContactsChanged():

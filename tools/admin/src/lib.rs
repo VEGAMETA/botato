@@ -477,3 +477,66 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
         format!("replace {}", path.display())
     )
 }
+
+/// Publishing the signed manifest on the Nostr relays of the manifest (protocol/README.md
+/// §7.3), so clients whose server is gone can find the new one. Prepared with the admin data,
+/// run anywhere (it blocks: a background thread in the GUI).
+pub struct NostrJob {
+    relays: Vec<String>,
+    event: String,
+    pub event_id: String,
+}
+
+impl Admin {
+    /// The admin's Nostr key: random, created once, kept in the admin folder. It only makes
+    /// relays accept the event; clients trust the manifest by the root signature.
+    fn nostr_key(&self) -> Result<[u8; 32]> {
+        let path = self.dir.join("nostr.key");
+        if let Ok(hex_key) = std::fs::read_to_string(&path) {
+            return hex32(hex_key.trim());
+        }
+        let key = proto::nostr::random_secp_key();
+        write_atomic(&path, hex::encode(key).as_bytes())?;
+        Ok(key)
+    }
+
+    /// The last signed `manifest.bin` as a Nostr event for the manifest's relays.
+    pub fn nostr_job(&self, now: u64) -> Result<NostrJob> {
+        let relays = self.state.manifest.nostr_relays.clone();
+        if relays.is_empty() {
+            return Err(Error("no Nostr relays in the manifest".into()));
+        }
+        let signed = ctx!(std::fs::read(self.dir.join("manifest.bin")), "read manifest.bin")?;
+        let root_pub = hex32(&self.state.root_pub)?;
+        let ev = proto::nostr::manifest_event(&self.nostr_key()?, &signed, &root_pub, now).map_err(|e| Error(e.to_string()))?;
+        Ok(NostrJob { relays, event: serde_json::json!(["EVENT", ev.to_json()]).to_string(), event_id: ev.id })
+    }
+}
+
+impl NostrJob {
+    /// Publishes to every relay; one line per relay (accepted, or why not).
+    pub fn run(&self) -> Vec<String> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        self.relays.iter().map(|url| format!("{url}: {}", match self.publish(url) { Ok(()) => "ok".into(), Err(e) => e })).collect()
+    }
+
+    fn publish(&self, url: &str) -> std::result::Result<(), String> {
+        use tungstenite::Message;
+        let (mut ws, _) = tungstenite::connect(url).map_err(|e| e.to_string())?;
+        if let tungstenite::stream::MaybeTlsStream::Rustls(s) = ws.get_mut() {
+            let _ = s.get_mut().set_read_timeout(Some(std::time::Duration::from_secs(10)));
+        } else if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_mut() {
+            let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+        }
+        ws.send(Message::Text(self.event.clone().into())).map_err(|e| e.to_string())?;
+        loop {
+            let msg = ws.read().map_err(|e| e.to_string())?;
+            let Message::Text(t) = msg else { continue };
+            let v: serde_json::Value = serde_json::from_str(t.as_str()).unwrap_or_default();
+            if v[0] == "OK" && v[1] == self.event_id.as_str() {
+                let _ = ws.close(None);
+                return if v[2] == true { Ok(()) } else { Err(format!("rejected: {}", v[3])) };
+            }
+        }
+    }
+}

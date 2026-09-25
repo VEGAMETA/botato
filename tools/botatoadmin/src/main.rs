@@ -178,7 +178,7 @@ impl App {
                     ),
                 ));
                 // The relay drops a revoked device only once it has the new manifest.
-                self.release.publish(ctx, "manifest");
+                self.release.publish(ctx, "manifest", admin.nostr_job(release::now_secs()).ok());
                 match cert {
                     Some(text) => self.show_cert(ctx, "Перевыпущенный сертификат".into(), text),
                     None => {
