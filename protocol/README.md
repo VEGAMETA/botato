@@ -221,7 +221,9 @@ parameters without renegotiation; `media` tells the peer what to render. Opus fm
 caller sends `reoffer` (repeated every 5 s until media flows), the callee sends `check`; both sides give
 up after 40 s. A device that has already ended call `call` answers any later `reoffer`, `reanswer`,
 `ice`, `media` or `check` for it with `hangup` (at most every 2 s): a `hangup` lost while the peer's
-relay connection was being replaced must not leave it reconnecting for 40 s.
+relay connection was being replaced must not leave it reconnecting for 40 s. This holds for the last few
+ended calls, not just the latest one. A new `offer` from the device a call is reconnecting with ends that
+call and rings as usual (no `busy`); so does any offer within the short "ended" phase.
 
 `call` is a random 128-bit id (hex). SDP needs no separate signature: the envelope signature authenticates
 it, and WebRTC checks the peer's DTLS certificate against the fingerprint in that SDP.

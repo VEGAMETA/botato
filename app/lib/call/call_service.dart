@@ -63,6 +63,7 @@ class CallService extends ChangeNotifier {
   DateTime _lastMediaAt = DateTime(0);
   bool reconnecting = false;
   Timer? _checkTimer;
+  Timer? _relayKick;
   String? endReason;
   DateTime? connectedAt;
   CallStats? stats;
@@ -84,6 +85,10 @@ class CallService extends ChangeNotifier {
 
   String? _callId;
   DateTime _lastHangupEcho = DateTime(0);
+
+  /// Recently ended calls: the peer may still send signals for them (a lost hangup) even
+  /// after we started another call.
+  final _endedCalls = <String>[];
   bool _isCaller = false;
   String? _peerDevice; // the device we are actually talking to
   final _ringing = <String>{}; // outgoing: devices the offer went to
@@ -421,7 +426,14 @@ class CallService extends ChangeNotifier {
     if (call is! String) return;
 
     if (type == 'offer') {
-      if (call == _callId) return; // duplicate
+      if (call == _callId || _endedCalls.contains(call)) return; // duplicate
+      if (busy && reconnecting && s.fromDevice == _peerDevice) {
+        // The device we are "reconnecting" with calls anew: for it the old call is over (its
+        // hangup got lost). Close ours and take the new one instead of answering busy.
+        _log('new offer from the peer while reconnecting: the old call is over');
+        _end('завершён');
+      }
+      if (phase == CallPhase.ended) phase = CallPhase.idle; // a quick redial is not busy
       if (busy) {
         relay.signal(s.fromDevice, {'type': 'hangup', 'call': call, 'reason': 'busy'});
         return;
@@ -443,9 +455,12 @@ class CallService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (call != _callId) return;
-    if (_peerDevice != null && s.fromDevice != _peerDevice && type != 'answer' && type != 'hangup') return;
-    if (phase == CallPhase.ended || phase == CallPhase.idle) {
+    final endedCall =
+        _endedCalls.contains(call) && (call != _callId || phase == CallPhase.ended || phase == CallPhase.idle);
+    if (!endedCall && call != _callId) return;
+    if (!endedCall && _peerDevice != null && s.fromDevice != _peerDevice && type != 'answer' && type != 'hangup')
+      return;
+    if (endedCall || phase == CallPhase.ended || phase == CallPhase.idle) {
       // The peer still talks about a call we ended: our hangup was lost (typically while its
       // relay connection was being replaced). Tell it again instead of letting it reconnect.
       const echoes = {'reoffer', 'reanswer', 'ice', 'media', 'check'};
@@ -979,8 +994,13 @@ class CallService extends ChangeNotifier {
     if (!reconnecting) {
       _lostAt = DateTime.now();
       reconnecting = true;
-      // The relay socket probably died with the old network too; don't wait to notice.
-      relay.reconnect();
+      // The relay socket probably died with the old network too; don't wait to notice. But
+      // not at once on a mere "disconnected": the peer may just have hung up, and its hangup,
+      // arriving right now, would be lost with the replaced connection.
+      _relayKick?.cancel();
+      _relayKick = Timer(soft ? const Duration(milliseconds: 1500) : Duration.zero, () {
+        if (reconnecting) relay.reconnect();
+      });
       _updateNotification();
       notifyListeners();
     }
@@ -1065,9 +1085,14 @@ class CallService extends ChangeNotifier {
     _restartTimer?.cancel();
     _checkTimer?.cancel();
     _checkTimer = null;
+    _relayKick?.cancel();
     _deadline?.cancel();
     _deadline = null;
     endReason = reason;
+    if (_callId case final id?) {
+      _endedCalls.add(id);
+      if (_endedCalls.length > 8) _endedCalls.removeAt(0);
+    }
     phase = CallPhase.ended;
     notifier.hide();
     notifyListeners();
