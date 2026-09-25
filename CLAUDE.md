@@ -83,14 +83,26 @@ cargo run --release -p botatoadmin   # GUI админа
 cd app && flutter run -d windows     # ПК; для логов: > target/pc-log.txt
 cd app && flutter build apk --debug --target-platform android-arm64   # + adb install -r (телефон по Wi-Fi-отладке)
 cd app && flutter test
-cd app && flutter build windows --release && "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" windows\installer\botato.iss   # → build\installer\botato-setup-<ver>.exe
+powershell -ExecutionPolicy Bypass -File tools\build-release.ps1   # релиз: свежий манифест в сборку, APK arm64 + установщик Windows (версия из pubspec)
+# дальше botatoadmin → «Релиз и выкатка»: подписать релиз корневым ключом и выкатить (Ansible --tags manifest,release)
 cd app && flutter_rust_bridge_codegen generate   # после изменений в app/rust/src/api
 
 # только из WSL (из /mnt/h ansible.cfg игнорируется, поэтому ANSIBLE_INVENTORY_ENABLED=ini в окружении):
 ansible-playbook -i infra/ansible/inventory.ini infra/ansible/bootstrap.yml   # свежий VPS, под root
 ansible-playbook -i infra/ansible/inventory.ini infra/ansible/deploy.yml                    # всё; на свежем сервере сначала --skip-tags firewall, потом --tags firewall
 ansible all -i infra/ansible/inventory.ini -m ping
+ansible-playbook -i infra/ansible/inventory.ini infra/ansible/deploy.yml --tags manifest          # только манифест (relay перечитает за 30 с)
+ansible-playbook -i infra/ansible/inventory.ini infra/ansible/deploy.yml --tags release           # только файлы релиза
 ```
+
+### Релиз приложения
+
+1. Поднять `version: x.y.z+build` в `app/pubspec.yaml` (build только растёт — по нему клиент решает, что версия новее).
+2. `tools\build-release.ps1` — кладёт в сборку последний подписанный `manifest.bin` из папки админа, собирает APK и установщик.
+3. botatoadmin → «Релиз и выкатка» → пароль → «Подписать релиз и выкатить»: `releases/release.bin` (подписан корневым ключом, `protocol/README.md` §3b) + файлы в папке админа, затем Ansible выкладывает их в `/opt/botato/releases`, Caddy раздаёт как `/releases/*`.
+4. Клиенты (Android, Windows) раз в 6 ч и при старте берут `release.bin`, проверяют подпись и build, предлагают обновиться; скачанный файл ставится только при совпадении размера и SHA-256. Сервер может задержать обновление, но не подменить.
+
+После удаления устройства botatoadmin сам подписывает манифест с отзывом и выкатывает его (`--tags manifest`).
 
 ## 6. Протокол
 
