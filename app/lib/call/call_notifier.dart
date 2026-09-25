@@ -16,6 +16,10 @@ class CallNotifier {
         if (call.method == 'openChat') onOpenChat?.call(call.arguments as String);
         if (call.method == 'pushToken') onPushToken?.call(call.arguments as String);
         if (call.method == 'wake') onWake?.call();
+        if (call.method == 'share') {
+          await pendingShare(); // taken now: a later cold-start query must not repeat it
+          onShare?.call(SharedContent.fromMap(call.arguments as Map));
+        }
       });
     }
     if (isDesktop) {
@@ -42,6 +46,29 @@ class CallNotifier {
       return await _channel.invokeMethod<String>('pushToken');
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Content another app shared to botato (Android).
+  void Function(SharedContent shared)? onShare;
+
+  /// Content shared while the app was not running yet, if any.
+  Future<SharedContent?> pendingShare() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final m = await _channel.invokeMethod<Map>('pendingShare');
+      return m == null ? null : SharedContent.fromMap(m);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// Android: the system share sheet for a file in the app's cache `share/` folder.
+  static Future<void> shareFile(String path, String mime) async {
+    try {
+      await _channel.invokeMethod('shareFile', {'path': path, 'mime': mime});
+    } on PlatformException catch (e) {
+      throw e.message ?? e.code;
     }
   }
 
@@ -126,4 +153,17 @@ class CallNotifier {
       // Service not built into this binary.
     }
   }
+}
+
+/// What another app shared: text and/or image files copied into the app's cache.
+class SharedContent {
+  SharedContent(this.text, this.files);
+
+  factory SharedContent.fromMap(Map m) =>
+      SharedContent(m['text'] as String?, [for (final f in (m['files'] as List? ?? const [])) f as String]);
+
+  final String? text;
+  final List<String> files;
+
+  bool get isEmpty => (text == null || text!.trim().isEmpty) && files.isEmpty;
 }

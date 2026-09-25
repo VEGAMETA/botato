@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../call/call_notifier.dart';
 import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
@@ -19,11 +20,14 @@ abstract final class MsgStatus {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.contact, required this.relay, required this.calls});
+  const ChatScreen({super.key, required this.contact, required this.relay, required this.calls, this.shared});
 
   final core.ContactInfo contact;
   final RelayService relay;
   final CallService calls;
+
+  /// Shared from another app: text goes into the input, images are sent after a confirmation.
+  final SharedContent? shared;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -57,7 +61,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _messages = widget.relay.messages(_peer);
     // markRead notifies listeners; not allowed while the route is being built.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _reload();
+      if (!mounted) return;
+      _reload();
+      if (widget.shared case final s?) _takeShared(s);
     });
     _sub = widget.relay.messageUpdates.where((p) => p == _peer).listen((_) => _reload());
   }
@@ -319,8 +325,38 @@ class _ChatScreenState extends State<ChatScreen> {
     await _sendPhoto(await file.readAsBytes());
   }
 
-  Future<void> _sendPhoto(Uint8List bytes) async {
-    final caption = _input.text.trim();
+  Future<void> _takeShared(SharedContent s) async {
+    final text = s.text?.trim() ?? '';
+    if (s.files.isEmpty) {
+      _input.text = text;
+      _focus.requestFocus();
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.files.length == 1 ? 'Отправить фото?' : 'Отправить фото: ${s.files.length}?'),
+        content: text.isEmpty ? null : Text('Подпись: $text', maxLines: 4, overflow: TextOverflow.ellipsis),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отправить')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    for (final (i, path) in s.files.indexed) {
+      try {
+        await _sendPhoto(await File(path).readAsBytes(), caption: i == 0 ? text : '');
+      } catch (e) {
+        _toast('$e');
+      }
+      if (!mounted) return;
+    }
+  }
+
+  Future<void> _sendPhoto(Uint8List bytes, {String? caption}) async {
+    final fromInput = caption == null;
+    caption ??= _input.text.trim();
     setState(() => _sendingPhoto = true);
     try {
       // PNG (screenshots) goes as is and may stay PNG. On phones any other image is first
@@ -338,7 +374,7 @@ class _ChatScreenState extends State<ChatScreen> {
         replyTo: _replyTo?.msgId,
         keepPng: keepPng,
       );
-      if (caption.isNotEmpty && _input.text.trim() == caption) _input.clear();
+      if (fromInput && caption.isNotEmpty && _input.text.trim() == caption) _input.clear();
       if (mounted) setState(() => _replyTo = null);
       _reload();
     } catch (e) {

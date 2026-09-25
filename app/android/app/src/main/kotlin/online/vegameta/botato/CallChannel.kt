@@ -22,6 +22,9 @@ object CallChannel {
     /** Chat to open when Dart asks (cold start from a notification tap). */
     var pendingChat: String? = null
 
+    /** Content shared from another app, until Dart takes it: `{text, files}`. */
+    @Volatile var pendingShare: Map<String, Any?>? = null
+
     fun invoke(method: String, arg: Any?) {
         main.post { channel?.invokeMethod(method, arg) }
     }
@@ -108,6 +111,17 @@ object CallChannel {
                             if (err == null) result.success(null) else result.error("save", err.message, null)
                         }
                     }.start()
+                }
+                "pendingShare" -> {
+                    result.success(pendingShare)
+                    pendingShare = null
+                }
+                "shareFile" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    val mime = call.argument<String>("mime") ?: "image/jpeg"
+                    runCatching { Share.sendFile(ctx, path, mime) }
+                        .onSuccess { result.success(null) }
+                        .onFailure { result.error("share", it.message, null) }
                 }
                 "pendingChat" -> {
                     result.success(pendingChat)

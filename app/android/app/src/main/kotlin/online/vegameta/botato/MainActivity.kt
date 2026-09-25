@@ -32,6 +32,17 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun handleCallIntent(intent: Intent?) {
+        if (intent != null && Share.isShare(intent)) {
+            // Copy the shared content off the main thread, then hand it to Dart (it may not be
+            // running yet: it asks for `pendingShare` at start).
+            val app = applicationContext
+            Thread {
+                val shared = runCatching { Share.read(app, intent) }.getOrNull() ?: return@Thread
+                CallChannel.pendingShare = shared
+                CallChannel.invoke("share", shared)
+            }.start()
+            return
+        }
         when (intent?.action) {
             IncomingCallNotification.ACTION_SHOW -> showOverLockScreen(true)
             MessageNotification.ACTION_OPEN_CHAT -> {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../call/call_notifier.dart';
 import '../image_prep.dart';
@@ -184,6 +185,25 @@ class _PhotoViewerState extends State<PhotoViewer> {
     _pages.animateToPage(next, duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
   }
 
+  /// Android: hands the photo to another app through the system share sheet.
+  Future<void> _share() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final id = widget.ids[_index];
+    final data = await loadPhoto(id);
+    if (data == null) return;
+    final (ext, mime) = imageType(data);
+    try {
+      final dir = Directory('${(await getTemporaryDirectory()).path}/share');
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+      dir.createSync(recursive: true);
+      final file = File('${dir.path}/botato-${id.substring(0, 8)}.$ext');
+      await file.writeAsBytes(data);
+      await CallNotifier.shareFile(file.path, mime);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не получилось поделиться: $e')));
+    }
+  }
+
   Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
     final id = widget.ids[_index];
@@ -241,6 +261,8 @@ class _PhotoViewerState extends State<PhotoViewer> {
                   _turns[id] = ((_turns[id] ?? 0) + 1) % 4;
                 }),
               ),
+              if (Platform.isAndroid)
+                IconButton(tooltip: 'Поделиться', icon: const Icon(Icons.share), onPressed: _share),
               if (_desktop || Platform.isAndroid)
                 IconButton(
                   tooltip: _desktop ? 'Сохранить как…' : 'Сохранить в галерею',

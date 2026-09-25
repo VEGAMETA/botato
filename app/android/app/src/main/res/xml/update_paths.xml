@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Downloaded updates (UpdateService writes them to <cache>/updates/). -->
+<!-- Downloaded updates (UpdateService, <cache>/updates/) and photos shared to other apps
+     (<cache>/share/). -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <cache-path name="share" path="share/" />
 </paths>

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../call/call_screen.dart';
+import '../call/call_notifier.dart';
 import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../update_service.dart';
@@ -37,9 +38,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final c = widget.relay.contacts.where((c) => c.userId == peerUser).firstOrNull;
       if (c != null && mounted) openChat(context, c);
     };
+    widget.calls.notifier.onShare = _handleShare;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final peer = await widget.calls.notifier.pendingChat();
       if (peer != null) widget.calls.notifier.onOpenChat?.call(peer);
+      final shared = await widget.calls.notifier.pendingShare();
+      if (shared != null) _handleShare(shared);
     });
   }
 
@@ -67,13 +71,44 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  void openChat(BuildContext context, core.ContactInfo c) {
+  void openChat(BuildContext context, core.ContactInfo c, {SharedContent? shared}) {
     Navigator.of(context).popUntil((r) => r.isFirst);
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ChatScreen(contact: c, relay: widget.relay, calls: widget.calls),
+        builder: (_) => ChatScreen(contact: c, relay: widget.relay, calls: widget.calls, shared: shared),
       ),
     );
+  }
+
+  /// "Share → botato" from another app: pick who gets it, then the chat takes over.
+  Future<void> _handleShare(SharedContent shared) async {
+    if (shared.isEmpty || !mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    final contacts = widget.relay.visibleContacts;
+    if (contacts.isEmpty) {
+      _toast('Некому отправить: сначала добавьте контакт');
+      return;
+    }
+    final to = await showDialog<core.ContactInfo>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(shared.files.isEmpty ? 'Отправить текст' : 'Отправить фото: ${shared.files.length}'),
+        children: [
+          for (final c in contacts)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, c),
+              child: Row(
+                children: [
+                  Avatar(c.name, size: 32),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(c.name)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (to != null && mounted) openChat(context, to, shared: shared);
   }
 
   Future<void> _forget(BuildContext context, core.ContactInfo c) async {
