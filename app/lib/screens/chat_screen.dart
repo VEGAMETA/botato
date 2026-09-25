@@ -873,7 +873,7 @@ class _DayLabel extends StatelessWidget {
 }
 
 /// Quick reactions offered in the message menu.
-const _quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
+const _quickReactions = ['❤️', '🔥', '👍', '👎', '😂', '💯'];
 
 class _Bubble extends StatelessWidget {
   const _Bubble(
