@@ -862,7 +862,12 @@ class CallService extends ChangeNotifier {
     if (pc == null || _peerDevice == null) return;
     try {
       _lastRestart = DateTime.now();
-      final offer = await pc.createOffer({'iceRestart': true});
+      // flutter_webrtc (Android, Windows) reads offer options only from `mandatory`/`optional`:
+      // a top-level `iceRestart` was silently ignored, so no new credentials or candidates.
+      await pc.restartIce();
+      final offer = await pc.createOffer({
+        'mandatory': {'IceRestart': true},
+      });
       final sdp = tuneSdp(offer.sdp!);
       _holdLocalIce = true;
       _restartCandidates.clear();
