@@ -291,10 +291,14 @@ async fn replies_forwards_edits_deletes_reactions() {
     let m = msg(&c, &bob, &fwd).unwrap();
     assert_eq!((m.text.as_str(), m.extra.fwd.as_deref()), ("первое (исправлено)", Some("alice")));
 
-    // Alice deletes her message for everyone.
+    // Alice deletes her message for everyone: it disappears on Bob's side too.
     messaging::update(&a.shared, &bob, &first, Update::Delete).unwrap();
     a.tx.send(Cmd::Flush).unwrap();
-    until(|| msg(&b, &alice, &first).is_some_and(|m| m.deleted && m.text.is_empty())).await;
+    until(|| msg(&b, &alice, &first).is_none()).await;
+    // Either side may delete for everyone: Alice removes Bob's reply.
+    messaging::update(&a.shared, &bob, &reply, Update::Delete).unwrap();
+    a.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&b, &alice, &reply).is_none()).await;
     // Updates are receipted and leave the outbox like messages.
     until(|| a.shared.store.lock().unwrap().outbox().unwrap().is_empty()).await;
 }

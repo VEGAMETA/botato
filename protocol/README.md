@@ -236,8 +236,9 @@ kind 3: {"msg": hex id}
 - `reply` carries a snapshot of the quoted message, so it renders even where the original is gone.
 - kind 4 (`id` = its own logical id) travels exactly like kind 2: one copy per device of the partner and
   per own other device, kept in the outbox until receipted (receipt `msg` = the update's `id`).
-  `edit` and `delete` are applied only when the sender's user wrote `msg`; `react` sets the sender user's
-  single reaction on `msg`. An update for a message this device doesn't have is receipted and dropped.
+  `edit` is applied only when the sender's user wrote `msg`; `delete` may come from either side of the
+  conversation and removes the message without a trace; `react` sets the sender user's single reaction
+  on `msg`. An update for a message this device doesn't have is receipted and dropped.
   Edits apply in `sent_at` order (an older edit never overwrites a newer one); a delete is final.
 
 ### 6.3 Attachments

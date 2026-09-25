@@ -159,6 +159,8 @@ fn migrate(db: &Connection) -> anyhow::Result<()> {
             db.execute(&format!("ALTER TABLE messages ADD COLUMN {name} {ddl}"), [])?;
         }
     }
+    // 0.1.3 kept "deleted" placeholders; deletions now leave nothing.
+    db.execute("DELETE FROM messages WHERE deleted = 1", [])?;
     Ok(())
 }
 
@@ -449,21 +451,14 @@ impl Store {
 
     /// Deletes a message for everyone, if `editor` wrote it: the text and photo are wiped,
     /// a "deleted" placeholder stays.
+    /// Deletes a message for everyone: either side of the conversation may do it, and the
+    /// message is gone without a trace (no placeholder).
     pub fn apply_delete(&self, msg_id: &Id, editor: &Id, my_user: &Id) -> anyhow::Result<Option<Id>> {
-        let Some((author, peer, deleted)) = self.author(msg_id, my_user)? else { return Ok(None) };
-        if author != *editor || deleted {
+        let Some((_, peer, _)) = self.author(msg_id, my_user)? else { return Ok(None) };
+        if *editor != peer && *editor != *my_user {
             return Ok(None);
         }
-        let tx = self.db.unchecked_transaction()?;
-        tx.execute(
-            "UPDATE messages SET body = ?1, deleted = 1, extra = NULL WHERE msg_id = ?2",
-            params![self.seal(msg_id, ""), &msg_id.0[..]],
-        )?;
-        for table in ["photos", "uploads", "reactions"] {
-            tx.execute(&format!("DELETE FROM {table} WHERE msg_id = ?1"), [&msg_id.0[..]])?;
-        }
-        tx.commit()?;
-        Ok(Some(peer))
+        self.delete_local(msg_id)
     }
 
     /// Sets `user`'s reaction (empty = none); newer wins.

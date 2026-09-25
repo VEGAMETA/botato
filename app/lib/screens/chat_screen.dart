@@ -142,6 +142,11 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: Text(e, style: const TextStyle(fontSize: 26)),
                         ),
                       ),
+                    IconButton(
+                      tooltip: 'Своё эмодзи',
+                      icon: const Icon(Icons.add_reaction_outlined),
+                      onPressed: () => Navigator.pop(ctx, 'custom'),
+                    ),
                   ],
                 ),
               ),
@@ -180,6 +185,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (action == null || !mounted) return;
     switch (action) {
+      case 'custom':
+        final e = await showDialog<String>(context: context, builder: (_) => const _EmojiDialog());
+        if (e != null && e.isNotEmpty) _react(m, e);
       case final a when a.startsWith('react:'):
         final e = a.substring(6);
         _react(m, e == mine ? '' : e);
@@ -207,12 +215,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _delete(core.MessageInfo m) async {
-    final canForAll = m.fromMe && !m.deleted;
+    final canForAll = !m.deleted;
     final choice = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Удалить сообщение?'),
-        content: Text(canForAll ? 'Удалить у всех или только на этом устройстве?' : 'Сообщение удалится только здесь.'),
+        content: const Text('Удалить у всех или только на этом устройстве?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Только у меня')),
@@ -254,8 +262,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final from = m.forwardedFrom ?? (m.fromMe ? _myName : widget.contact.name);
     try {
       await core.clientForward(msgId: m.msgId, toPeer: to.userId, fromName: from);
-      _toast('Переслано: ${to.name}');
-      if (to.userId == _peer) _reload();
+      if (!mounted) return;
+      if (to.userId == _peer) {
+        _reload();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(contact: to, relay: widget.relay, calls: widget.calls),
+          ),
+        );
+      }
     } catch (e) {
       _toast('$e');
     }
@@ -454,7 +470,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         maxLines: 6,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
-                          hintText: 'Сообщение или подпись к фото',
+                          hintText: 'Сообщение',
                           filled: true,
                           fillColor: Theme.of(context).colorScheme.surfaceContainer,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -716,6 +732,50 @@ class _Quote extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Any emoji as a reaction: type or pick it from the system emoji keyboard.
+class _EmojiDialog extends StatefulWidget {
+  const _EmojiDialog();
+
+  @override
+  State<_EmojiDialog> createState() => _EmojiDialogState();
+}
+
+class _EmojiDialogState extends State<_EmojiDialog> {
+  final _field = TextEditingController();
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  /// One user-perceived character (flags, skin tones and ZWJ sequences stay whole).
+  String get _emoji => _field.text.trim().characters.take(1).toString();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Своя реакция'),
+      content: TextField(
+        controller: _field,
+        autofocus: true,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 32),
+        decoration: const InputDecoration(hintText: '🙂', helperText: 'Одно эмодзи; на ПК: Win + .'),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => Navigator.pop(context, _emoji),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        FilledButton(
+          onPressed: _emoji.isEmpty ? null : () => Navigator.pop(context, _emoji),
+          child: const Text('Поставить'),
+        ),
+      ],
     );
   }
 }
