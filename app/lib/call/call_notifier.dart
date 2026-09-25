@@ -169,6 +169,16 @@ class CallNotifier {
   /// Android: applies the call's audio mode right away (communication, or media for clean audio).
   Future<void> audioMode({required bool communication}) => _invoke('audioMode', communication);
 
+  /// Android: the audio system's state in one line, for the call log.
+  Future<String?> audioDiag() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('audioDiag');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Screen off at the ear (Android): wanted during a call when the loudspeaker is off;
   /// the native side also requires the earpiece to be the active route.
   Future<void> proximity(bool on) async {

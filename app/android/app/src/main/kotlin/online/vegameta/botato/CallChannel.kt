@@ -116,6 +116,7 @@ object CallChannel {
                     Lang.set(ctx, call.arguments as Boolean)
                     result.success(null)
                 }
+                "audioDiag" -> result.success(runCatching { AudioDiag.describe(ctx) }.getOrElse { "audio diag failed: ${it.message}" })
                 "audioMode" -> {
                     // flutter_webrtc stores a new audio mode but applies it only when the next call
                     // activates the session; a switch during a call is applied here.

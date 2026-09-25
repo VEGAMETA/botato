@@ -27,6 +27,9 @@ class CallStats {
   num videoOutKeyFrames = 0, videoOutPliReceived = 0, videoOutNackReceived = 0;
   bool videoOutActive = false; // a track is attached to the video sender
 
+  /// Loudness 0..1 of our microphone as sent, and of what we receive (quiet-voice diagnostics).
+  double? audioOutLevel, audioInLevel;
+
   /// One line for the call log: what each direction of video is doing (no addresses).
   String diag() {
     String f(double v) => v.toStringAsFixed(0);
@@ -94,6 +97,8 @@ class CallStatsSampler {
           s.route = '${relayed ? tr('через TURN', 'via TURN') : tr('напрямую', 'direct')} ($local↔$remote)';
           final rtt = v['currentRoundTripTime'];
           if (rtt is num) s.rttMs = rtt * 1000;
+        case 'media-source':
+          if (kind == 'audio' && v['audioLevel'] is num) s.audioOutLevel = (v['audioLevel'] as num).toDouble();
         case 'outbound-rtp':
           final kbps = rate(r.id, v, 'bytesSent') * 8 / 1000;
           if (kind == 'audio') {
@@ -120,6 +125,7 @@ class CallStatsSampler {
           if (kind == 'audio') {
             s.audioInKbps = kbps;
             s.audioLossPct = loss;
+            if (v['audioLevel'] is num) s.audioInLevel = (v['audioLevel'] as num).toDouble();
           } else if (kind == 'video') {
             s.videoInKbps = kbps;
             s.videoLossPct = loss;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:window_manager/window_manager.dart';
@@ -282,6 +283,8 @@ class CallService extends ChangeNotifier {
     // built-in output), so a later plug/unplug lands somewhere sensible.
     await Helper.setSpeakerphoneOn(speaker);
     if (!speaker) await Helper.selectAudioOutput(id);
+    _log('audio route -> $id');
+    _logAudioStateSoon('route $id');
     notifyListeners();
   }
 
@@ -294,10 +297,12 @@ class CallService extends ChangeNotifier {
     if (!Platform.isAndroid) return;
     final before = audioOutputs;
     audioOutputs = await _outputs();
+    if (!listEquals(before, audioOutputs)) _log('audio outputs: ${audioOutputs.join(', ')}');
     final headset = audioOutputs.where((o) => o == 'bluetooth' || o == 'wired-headset').firstOrNull;
     if (!routable) {
       audioRoute = headset ?? 'speaker';
       speaker = headset == null;
+      _logAudioStateSoon('clean audio, OS routes');
       notifyListeners();
       return;
     }
@@ -382,6 +387,7 @@ class CallService extends ChangeNotifier {
 
   Future<void> setAudioMode(AudioMode mode) async {
     settings.audioMode = mode;
+    _log('audio mode -> ${mode.name}');
     await _reopenMicrophone();
     if (Platform.isAndroid && _pc != null) {
       await notifier.audioMode(communication: mode == AudioMode.voice);
@@ -608,6 +614,33 @@ class CallService extends ChangeNotifier {
 
   int _diagTick = 0;
   String _videoTrouble = '';
+  int _audioTick = 0;
+
+  /// Call log: our microphone level as sent and the level we receive, every 10 s; the Android
+  /// audio state every 30 s. "The other side hears me quietly" shows up as a low `out`.
+  void _audioLevels(CallStats s) {
+    if (++_audioTick % 5 != 0) return;
+    String f(double? v) => v == null ? '?' : v.toStringAsFixed(3);
+    _log(
+      'audio: mic out=${f(s.audioOutLevel)} in=${f(s.audioInLevel)} '
+      '↑${s.audioOutKbps.toStringAsFixed(0)} ↓${s.audioInKbps.toStringAsFixed(0)} kbps '
+      'mode=${settings.audioMode.name} route=$audioRoute',
+    );
+    if (_audioTick % 15 == 0) _logAudioState('periodic');
+  }
+
+  /// After Android had a moment to apply a change (AudioSwitch works asynchronously).
+  void _logAudioStateSoon(String why) {
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (_pc != null) _logAudioState(why);
+    });
+  }
+
+  /// The Android audio system's state (mode, device, volumes, how the mic is recorded).
+  Future<void> _logAudioState(String why) async {
+    final d = await notifier.audioDiag();
+    if (d != null) _log('audio state ($why): $d');
+  }
 
   /// Call log: video state every 10 s while any video flows, and at once when incoming video
   /// stalls (data arrives but no frames get decoded, or frames stop while the peer sends).
@@ -906,6 +939,7 @@ class CallService extends ChangeNotifier {
     _startStats();
     navigator.mediaDevices.ondevicechange = (_) => _refreshAudioRoute(video: cameraOn);
     await _refreshAudioRoute(video: camera, initial: true);
+    _log('audio at start: mode=${settings.audioMode.name} hwProcessing=${settings.hwAudioProcessing}');
   }
 
   void _startStats() {
@@ -918,6 +952,7 @@ class CallService extends ChangeNotifier {
         stats = await _sampler!.sample(pc);
         _videoFromStats(stats!);
         _videoDiag(stats!);
+        _audioLevels(stats!);
         notifyListeners();
       } catch (_) {}
     });
