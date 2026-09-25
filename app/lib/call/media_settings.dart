@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -79,9 +80,11 @@ class MediaSettings {
   bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? true;
 
   /// Android: record the plain microphone (no system voice processing, stereo) instead of the
-  /// call source. Cleaner and louder on some phones; a Bluetooth headset's mic may not be used.
-  /// Chosen when WebRTC starts: applies after an app restart.
-  bool get rawMic => _prefs.getBool('raw_mic') ?? false;
+  /// call source. On by default: with the call source a Samsung S21 Ultra sent -50..-100 dBFS
+  /// (clean audio, earpiece) and heavily processed voice otherwise, the plain mic a steady
+  /// -12..-15 dBFS. A Bluetooth headset's mic may not be used. Chosen when WebRTC starts:
+  /// applies after an app restart.
+  bool get rawMic => _prefs.getBool('raw_mic') ?? true;
   set rawMic(bool v) => _prefs.setBool('raw_mic', v);
   set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);
 
@@ -91,18 +94,22 @@ class MediaSettings {
 /// Audio capture and send settings per mode (CLAUDE.md §8).
 class AudioProfile {
   static Map<String, dynamic> constraints(AudioMode mode, String? deviceId) {
-    final processing = mode == AudioMode.voice;
+    final voice = mode == AudioMode.voice;
+    // Voice on Android: echo cancellation only. WebRTC's noise suppression and AGC on top of the
+    // plain phone mic made the voice choppy and pumping (-19 / -76 / -30 dBFS on the speaker);
+    // that mic is already at a good level. Desktop mics vary a lot: they keep the full chain.
+    final shaping = voice && !Platform.isAndroid;
     return {
-      'echoCancellation': processing,
-      'noiseSuppression': processing,
-      'autoGainControl': processing,
-      'channelCount': processing ? 1 : 2,
+      'echoCancellation': voice,
+      'noiseSuppression': shaping,
+      'autoGainControl': shaping,
+      'channelCount': voice ? 1 : 2,
       // Older libwebrtc builds (Android) read the goog* names.
       'optional': [
-        {'googEchoCancellation': processing},
-        {'googNoiseSuppression': processing},
-        {'googAutoGainControl': processing},
-        {'googHighpassFilter': processing},
+        {'googEchoCancellation': voice},
+        {'googNoiseSuppression': shaping},
+        {'googAutoGainControl': shaping},
+        {'googHighpassFilter': voice},
         // Input device (desktop). In audio constraints flutter_webrtc treats `deviceId` as the output.
         if (deviceId != null) {'sourceId': deviceId},
       ],

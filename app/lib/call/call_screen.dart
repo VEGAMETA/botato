@@ -606,12 +606,13 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 title: Text(tr('Микрофон без обработки системы', 'Microphone without system processing')),
                 subtitle: Text(
                   tr(
-                    'Обычный микрофон вместо «звонкового»: громче и чище на некоторых телефонах, но микрофон Bluetooth-гарнитуры может не использоваться. Применится после перезапуска приложения.',
-                    'The plain microphone instead of the call one: louder and cleaner on some phones, but a Bluetooth headset\'s mic may not be used. Applies after restarting the app.',
+                    'Обычный микрофон вместо «звонкового» (по умолчанию): громче и чище. Если собеседник не слышит вас через Bluetooth-гарнитуру — выключите. Применится после перезапуска приложения.',
+                    'The plain microphone instead of the call one (default): louder and cleaner. If the other side can\'t hear you through a Bluetooth headset, turn it off. Applies after restarting the app.',
                   ),
                 ),
               ),
-            if (Platform.isAndroid)
+            // The phone's own AEC/NS only exist with the call microphone source.
+            if (Platform.isAndroid && !s.rawMic)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: s.hwAudioProcessing,
