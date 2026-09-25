@@ -363,3 +363,52 @@ fn release_vector() {
         }),
     );
 }
+
+#[test]
+fn nostr_vectors() {
+    use proto::nostr;
+    use x25519_dalek::{PublicKey, StaticSecret};
+
+    let a = StaticSecret::from([0x21; 32]);
+    let b = StaticSecret::from([0x22; 32]);
+    let a_pub = PublicKey::from(&a).to_bytes();
+    let b_pub = PublicKey::from(&b).to_bytes();
+    let to_b = id(0xbb);
+    let day = nostr::day(1_750_000_000);
+    let tag = nostr::pair_key(&a, &b_pub).unwrap().tag(&to_b, day);
+    assert_eq!(tag, nostr::pair_key(&b, &a_pub).unwrap().tag(&to_b, day));
+
+    let root_pub = key(0x01).verifying_key().to_bytes();
+    let ev = nostr::Event::sign(
+        &[0x03; 32],
+        &[0u8; 32],
+        1_750_000_000,
+        nostr::KIND_SIGNAL,
+        vec![vec!["t".into(), tag.clone()]],
+        "ZW52ZWxvcGU=".into(),
+    )
+    .unwrap();
+    ev.verify().unwrap();
+
+    check(
+        "nostr.json",
+        json!({
+            "pair": {
+                "a_enc_secret": hex::encode([0x21u8; 32]),
+                "b_enc_secret": hex::encode([0x22u8; 32]),
+                "a_enc_pub": hex::encode(a_pub),
+                "b_enc_pub": hex::encode(b_pub),
+                "recipient_device": to_b.to_hex(),
+                "unix_time": 1_750_000_000u64,
+                "day": day,
+                "tag": tag,
+            },
+            "manifest_d_tag": { "root_pub": hex::encode(root_pub), "d": nostr::manifest_d_tag(&root_pub) },
+            "signal_event": {
+                "secp256k1_secret": hex::encode([0x03u8; 32]),
+                "aux_rand": hex::encode([0u8; 32]),
+                "event": ev.to_json(),
+            },
+        }),
+    );
+}

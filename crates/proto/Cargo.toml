@@ -10,6 +10,8 @@ ed25519-dalek = { version = "3", features = ["rand_core", "zeroize"] }
 getrandom = "0.4"
 hex = "0.4.3"
 hkdf = "0.13"
+hmac = "0.13"
+k256 = { version = "0.14.0", default-features = false, features = ["schnorr", "alloc"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11"

@@ -1,0 +1,34 @@
+{
+  "manifest_d_tag": {
+    "d": "1dec354b49eebc1c463e189f8f269338",
+    "root_pub": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+  },
+  "pair": {
+    "a_enc_pub": "7d34a4815fa6b982535e60af3bd9b49556816080f1641ff81d2b7c8ae8268a44",
+    "a_enc_secret": "2121212121212121212121212121212121212121212121212121212121212121",
+    "b_enc_pub": "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20",
+    "b_enc_secret": "2222222222222222222222222222222222222222222222222222222222222222",
+    "day": 20254,
+    "recipient_device": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tag": "328786f2feaa2e50e5bcd640ba83f270",
+    "unix_time": 1750000000
+  },
+  "signal_event": {
+    "aux_rand": "0000000000000000000000000000000000000000000000000000000000000000",
+    "event": {
+      "content": "ZW52ZWxvcGU=",
+      "created_at": 1750000000,
+      "id": "335b84cb59e3516db47a6879bd64a2c450a4bf1c73df215b6bfd001b38468871",
+      "kind": 25580,
+      "pubkey": "531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
+      "sig": "1e6fe6c3d5fecc072aed0abe20bb90034530415eae138042148220d896091e8919db57a50186a5946e27c24632ec8a9c3c0e992287a6481f44fffc1782bf61d4",
+      "tags": [
+        [
+          "t",
+          "328786f2feaa2e50e5bcd640ba83f270"
+        ]
+      ]
+    },
+    "secp256k1_secret": "0303030303030303030303030303030303030303030303030303030303030303"
+  }
+}

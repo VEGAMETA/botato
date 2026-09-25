@@ -287,6 +287,67 @@ blob = u8 version(1) | [24] nonce | XChaCha20-Poly1305(key, nonce, plaintext, AA
   24 h after `sent_at` means the photo is gone. `size` is the blob length; a different length, or a
   blob that does not open with `key`, is rejected.
 
-## 7. Not yet specified
+## 7. Nostr fallback transport
+
+Public Nostr relays (NIP-01) carry the **same E2E envelopes** (§6) when our relay can't: nothing about
+security depends on Nostr. The relay list is `nostr_relays` of the manifest (§3). Clients that don't
+know this section are unaffected: envelopes, frames and the relay are unchanged. Vectors:
+`vectors/nostr.json`.
+
+### 7.1 Routing tags
+
+Relays must not see who talks to whom, so an event is addressed by an opaque tag that changes daily and
+that only the two devices can compute:
+
+```
+shared   = X25519(own enc secret, peer enc_pub)             all-zero → no tag (skip that peer)
+k_pair   = HKDF-SHA256(salt = min(enc_a, enc_b) || max(enc_a, enc_b), ikm = shared,
+                       info = "botato/v1/nostr-pair", L = 32)       (enc_* = the two enc_pub, bytewise order)
+day      = floor(unix_time / 86400)                          u32
+tag      = hex(HMAC-SHA256(k_pair, "botato/v1/nostr-tag\0" || recipient_device || u32 day)[0..16])
+```
+
+`tag` depends on the **recipient** device: a device subscribes to the tags every known peer device
+(certificates in its directory, own other devices included) would address to it, for `day-1`, `day`,
+`day+1` (clock skew), and renews the subscription when the UTC day changes.
+
+### 7.2 Signal events
+
+```
+kind       25580 (ephemeral range: relays forward, don't store)
+tags       [["t", tag]]
+content    base64 (standard, padded) of the envelope blob (kind 1, §6.1)
+created_at now
+pubkey     a fresh random secp256k1 key for every event (BIP-340 Schnorr, NIP-01 id and sig)
+```
+
+- Sender: publishes to every relay of the list. When our relay is connected and reports the target
+  online (`signaled {online: true}`), Nostr is not used. It is used when our relay isn't connected, or
+  answers `signaled {online: false}` (the relay still keeps the signal and pushes, §4.2).
+- Receiver: subscribes `{"kinds": [25580], "#t": [its tags], "since": now - 60}` on every relay while
+  the app is active (desktop: always; phone: in front or during a call). The event's own `sig` is not
+  trusted for anything; the envelope is opened and verified exactly as from our relay (§6), duplicates
+  (the same envelope via several relays or both paths) are dropped by the SHA-256 of the blob, kept for
+  10 min.
+- Fresh keys per event: relays can't link a device's events by pubkey (they still see IPs and timing).
+
+### 7.3 Manifest event
+
+The admin also publishes the signed manifest (§3) on the manifest's relays, so clients find a new
+server when the old one is gone:
+
+```
+kind       30078 (NIP-78, parameterized replaceable)
+tags       [["d", d_tag]]
+d_tag      hex(SHA-256("botato/v1/nostr-manifest\0" || root_pub)[0..16])
+content    base64 of the signed manifest
+pubkey     the admin's Nostr key (random, kept in the admin folder)
+```
+
+A client that can't reach its server for a minute queries `{"kinds": [30078], "#d": [d_tag], "limit":
+20}` every few minutes, and accepts a content only by the manifest rules (root signature, version above
+its own). Anyone can publish under this `d_tag`: forgeries fail the signature, they only cost a query.
+
+## 8. Not yet specified
 
 History sync to a newly added device (not planned for v1), attachments other than photos.

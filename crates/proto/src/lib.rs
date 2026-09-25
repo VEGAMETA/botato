@@ -13,6 +13,7 @@ pub mod file;
 pub mod frames;
 pub mod id;
 pub mod manifest;
+pub mod nostr;
 pub mod release;
 
 pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
