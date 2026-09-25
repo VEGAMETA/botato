@@ -1,6 +1,6 @@
 # Builds a release of the app: Android APK (arm64) and the Windows installer.
 # Version comes from app/pubspec.yaml (bump `version: x.y.z+build` first; build must grow).
-# Then sign and publish it from botatoadmin ("Релиз").
+# Then sign and publish it from botatoadmin (release section).
 #
 #   powershell -ExecutionPolicy Bypass -File tools\build-release.ps1
 
@@ -12,7 +12,7 @@ $flutter = if ($env:FLUTTER) { $env:FLUTTER } else { 'D:\Utils\flutter\bin\flutt
 $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
 
 $running = Get-Process botato -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$app\build\*" }
-if ($running) { throw "botato is running from the build folder ($($running[0].Path)); quit it (tray -> Выход) and retry" }
+if ($running) { throw "botato is running from the build folder ($($running[0].Path)); quit it (tray menu, last item) and retry" }
 
 $line = Select-String -Path (Join-Path $app 'pubspec.yaml') -Pattern '^version:\s*(\S+)\+(\d+)' | Select-Object -First 1
 if (-not $line) { throw 'pubspec.yaml: version must be x.y.z+build' }
@@ -38,4 +38,4 @@ try {
 $apk = Join-Path $app 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
 $exe = Join-Path $app "build\installer\botato-setup-$version.exe"
 Get-Item $apk, $exe | ForEach-Object { '{0,-40} {1,8:N1} MB' -f $_.Name, ($_.Length / 1MB) }
-Write-Host 'Next: botatoadmin -> "Релиз" -> sign and publish.'
+Write-Host 'Next: botatoadmin -> release section -> sign and publish.'
