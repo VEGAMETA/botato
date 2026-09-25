@@ -93,7 +93,7 @@ cd app && flutter run -d windows     # ПК; для логов: > target/pc-log.
 cd app && flutter build apk --debug --target-platform android-arm64   # + adb install -r (телефон по Wi-Fi-отладке)
 cd app && flutter test
 powershell -ExecutionPolicy Bypass -File tools\build-release.ps1   # релиз: свежий манифест в сборку, APK arm64 + установщик Windows (версия из pubspec)
-# дальше botatoadmin → «Релиз и выкатка»: подписать релиз корневым ключом и выкатить (Ansible --tags manifest,release)
+# дальше botatoadmin: пароль корневого ключа один раз вверху окна (ключ только в памяти, автоблокировка 30 мин) → «Релиз и выкатка»: подписать релиз и выкатить (Ansible --tags manifest,release + манифест в Nostr)
 cd app && flutter_rust_bridge_codegen generate   # после изменений в app/rust/src/api (flutter и dart должны быть в PATH)
 cargo run --release -p relay --example load -- --devices 500 --secs 30   # нагрузка на relay в процессе; --help — на отдельный
 
