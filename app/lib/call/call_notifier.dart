@@ -17,8 +17,11 @@ class CallNotifier {
         if (call.method == 'pushToken') onPushToken?.call(call.arguments as String);
         if (call.method == 'wake') onWake?.call();
         if (call.method == 'share') {
-          await pendingShare(); // taken now: a later cold-start query must not repeat it
-          onShare?.call(SharedContent.fromMap(call.arguments as Map));
+          await _takeNativeShare(); // taken now: a later cold-start query must not repeat it
+          final shared = SharedContent.fromMap(call.arguments as Map);
+          // On a cold start the home screen may not be up yet: keep it until it asks.
+          final handler = onShare;
+          handler == null ? _queuedShare = shared : handler(shared);
         }
       });
     }
@@ -55,6 +58,14 @@ class CallNotifier {
   /// Content shared while the app was not running yet, if any.
   Future<SharedContent?> pendingShare() async {
     if (!Platform.isAndroid) return null;
+    final queued = _queuedShare;
+    _queuedShare = null;
+    return queued ?? await _takeNativeShare();
+  }
+
+  SharedContent? _queuedShare;
+
+  Future<SharedContent?> _takeNativeShare() async {
     try {
       final m = await _channel.invokeMethod<Map>('pendingShare');
       return m == null ? null : SharedContent.fromMap(m);

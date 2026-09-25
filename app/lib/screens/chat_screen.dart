@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pasteboard/pasteboard.dart';
 
 import '../call/call_notifier.dart';
 import '../call/call_service.dart';
@@ -414,31 +415,83 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Ctrl+V: an image on the clipboard is offered for sending; text is pasted as usual.
+  Future<void> _paste() async {
+    final image = await _clipboardImage();
+    if (image != null) return _confirmImage(image);
+    final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    if (text == null || text.isEmpty) return;
+    final v = _input.value;
+    final sel = v.selection.isValid ? v.selection : TextSelection.collapsed(offset: v.text.length);
+    _input.value = v.copyWith(
+      text: v.text.replaceRange(sel.start, sel.end, text),
+      selection: TextSelection.collapsed(offset: sel.start + text.length),
+    );
+  }
+
+  static Future<Uint8List?> _clipboardImage() async {
+    try {
+      final b = await Pasteboard.image;
+      return b == null || b.isEmpty ? null : b;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A pasted or keyboard-inserted image: preview, then send (the input text is the caption).
+  Future<void> _confirmImage(Uint8List bytes) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Отправить картинку?'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 360, maxWidth: 420),
+          child: Image.memory(bytes, fit: BoxFit.contain),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отправить')),
+        ],
+      ),
+    );
+    if (ok == true) await _sendPhoto(bytes);
+  }
+
   Future<void> _pickPhoto() async {
     var source = ImageSource.gallery;
-    if (Platform.isAndroid || Platform.isIOS) {
-      final picked = await showModalBottomSheet<ImageSource>(
+    final clipboard = await _clipboardImage();
+    if (!mounted) return;
+    if (Platform.isAndroid || Platform.isIOS || clipboard != null) {
+      final picked = await showModalBottomSheet<Object>(
         context: context,
         builder: (ctx) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (clipboard != null)
+                ListTile(
+                  leading: const Icon(Icons.content_paste),
+                  title: const Text('Из буфера обмена'),
+                  onTap: () => Navigator.pop(ctx, 'clipboard'),
+                ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Галерея'),
+                title: Text(Platform.isAndroid || Platform.isIOS ? 'Галерея' : 'Файл'),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
               ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Камера'),
-                onTap: () => Navigator.pop(ctx, ImageSource.camera),
-              ),
+              if (Platform.isAndroid || Platform.isIOS)
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: const Text('Камера'),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
             ],
           ),
         ),
       );
       if (picked == null) return;
-      source = picked;
+      if (picked == 'clipboard') return _confirmImage(clipboard!);
+      source = picked as ImageSource;
     }
     final XFile? file;
     try {
@@ -704,6 +757,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               bindings: {
                                 const SingleActivator(LogicalKeyboardKey.enter): _send,
                                 const SingleActivator(LogicalKeyboardKey.escape): _cancelCompose,
+                                const SingleActivator(LogicalKeyboardKey.keyV, control: true): _paste,
                               },
                               child: TextField(
                                 controller: _input,
@@ -712,6 +766,13 @@ class _ChatScreenState extends State<ChatScreen> {
                                 minLines: 1,
                                 maxLines: 6,
                                 textCapitalization: TextCapitalization.sentences,
+                                // Android keyboards (Gboard, Samsung) can insert images from their clipboard.
+                                contentInsertionConfiguration: ContentInsertionConfiguration(
+                                  allowedMimeTypes: const ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
+                                  onContentInserted: (c) {
+                                    if (c.hasData) _confirmImage(c.data!);
+                                  },
+                                ),
                                 decoration: InputDecoration(
                                   hintText: 'Сообщение',
                                   filled: true,
@@ -825,6 +886,9 @@ class _Bubble extends StatelessWidget {
             _ => (Icons.error_outline, BotatoColors.danger),
           };
     final bigEmoji = m.deleted || m.photo != null || m.reply != null || m.forwardedFrom != null ? 0 : emojiOnly(m.text);
+    // A photo without caption, like big emoji, goes without a bubble.
+    final bare =
+        bigEmoji > 0 || (m.photo != null && m.text.isEmpty && m.reply == null && m.forwardedFrom == null && !m.deleted);
     // emoji -> (count, includes ours), in first-seen order.
     final counts = <String, (int, bool)>{};
     for (final r in m.reactions) {
@@ -840,9 +904,9 @@ class _Bubble extends StatelessWidget {
           onSecondaryTap: () => onMenu(m),
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: bigEmoji > 0 ? const EdgeInsets.fromLTRB(4, 0, 4, 2) : const EdgeInsets.fromLTRB(12, 8, 10, 6),
+            padding: bare ? const EdgeInsets.fromLTRB(4, 0, 4, 2) : const EdgeInsets.fromLTRB(12, 8, 10, 6),
             decoration: BoxDecoration(
-              color: bigEmoji > 0
+              color: bare
                   ? Colors.transparent
                   : mine
                   ? BotatoColors.potatoShade.withValues(alpha: 0.55)
