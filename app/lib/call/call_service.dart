@@ -562,13 +562,14 @@ class CallService extends ChangeNotifier {
   /// The `media` signal is the fast path, but it can be lost with a relay reconnect: frames
   /// actually arriving show the video anyway, and a long silence hides a stale last frame.
   void _videoFromStats(CallStats s) {
-    // A still shared screen may send few frames: count the bitrate too.
-    final receiving = s.videoInFps >= 1 || s.videoInKbps >= 5;
+    // Decoded frames only: bandwidth probing sends padding on the video stream even when the
+    // peer has no track, so the bitrate alone would show an empty window.
+    final receiving = s.videoInFps >= 1;
     if (receiving && !peerVideo) {
       _log('video frames arrive without a media signal, showing');
       _setPeerVideo(true);
     } else if (!receiving && peerVideo && phase == CallPhase.active && !reconnecting) {
-      if (++_idleVideoSamples >= 4) {
+      if (++_idleVideoSamples >= 5) {
         _log('no video frames for a while, hiding');
         peerVideo = false;
         peerScreen = false;
@@ -576,6 +577,32 @@ class CallService extends ChangeNotifier {
       }
     } else {
       _idleVideoSamples = 0;
+    }
+  }
+
+  int _diagTick = 0;
+  String _videoTrouble = '';
+
+  /// Call log: video state every 10 s while any video flows, and at once when incoming video
+  /// stalls (data arrives but no frames get decoded, or frames stop while the peer sends).
+  void _videoDiag(CallStats s) {
+    final involved = cameraOn || screenOn || peerVideo || s.videoInFps > 0 || s.videoOutFps > 0;
+    if (!involved) return;
+    String trouble = '';
+    if (peerVideo && s.videoInKbps > 50 && s.videoInFramesReceived < 1) {
+      trouble = 'incoming video: data but no complete frames';
+    } else if (peerVideo && s.videoInFramesReceived >= 1 && s.videoInFps < 1) {
+      trouble = 'incoming video: frames received but not decoded (decoder stalled)';
+    } else if (peerVideo && s.videoInKbps < 5) {
+      trouble = 'incoming video: peer should send, nothing arrives';
+    } else if ((cameraOn || screenOn) && s.videoOutFps < 1) {
+      trouble = 'outgoing video: track attached, encoder produces nothing';
+    }
+    if (trouble != _videoTrouble) {
+      _log(trouble.isEmpty ? 'video ok again: ${s.diag()}' : '$trouble: ${s.diag()}');
+      _videoTrouble = trouble;
+    } else if (++_diagTick % 5 == 0) {
+      _log(s.diag());
     }
   }
 
@@ -863,6 +890,7 @@ class CallService extends ChangeNotifier {
       try {
         stats = await _sampler!.sample(pc);
         _videoFromStats(stats!);
+        _videoDiag(stats!);
         notifyListeners();
       } catch (_) {}
     });
@@ -1084,6 +1112,8 @@ class CallService extends ChangeNotifier {
     peerVideo = false;
     peerScreen = false;
     _idleVideoSamples = 0;
+    _videoTrouble = '';
+    _diagTick = 0;
     reconnecting = false;
     endReason = null;
     connectedAt = null;

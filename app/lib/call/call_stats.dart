@@ -17,6 +17,25 @@ class CallStats {
   /// Why the sender lowered quality now: cpu, bandwidth or none.
   String videoLimit = '';
 
+  // Diagnostics for the call log (frozen or empty video).
+  String videoOutCodec = '', videoInCodec = '';
+  double videoInFramesReceived = 0; // per second, before decoding
+  num videoInDropped = 0, videoInFreezes = 0, videoInKeyFrames = 0;
+  num videoInPliSent = 0, videoInNackSent = 0;
+  num videoOutKeyFrames = 0, videoOutPliReceived = 0, videoOutNackReceived = 0;
+  bool videoOutActive = false; // a track is attached to the video sender
+
+  /// One line for the call log: what each direction of video is doing (no addresses).
+  String diag() {
+    String f(double v) => v.toStringAsFixed(0);
+    return 'video out: ${videoOutActive ? '$videoOutCodec/$videoEncoder ${f(videoOutFps)}fps ${f(videoOutKbps)}kbps '
+                  '$videoOutSize limit=$videoLimit key=$videoOutKeyFrames pli<-$videoOutPliReceived nack<-$videoOutNackReceived' : 'none'}'
+        ' | in: $videoInCodec/$videoDecoder ${f(videoInKbps)}kbps recv=${f(videoInFramesReceived)}fps '
+        'dec=${f(videoInFps)}fps $videoInSize loss=${videoLossPct.toStringAsFixed(1)}% '
+        'drop=$videoInDropped freeze=$videoInFreezes key=$videoInKeyFrames pli->$videoInPliSent nack->$videoInNackSent'
+        ' | $route rtt=${rttMs?.toStringAsFixed(0) ?? '?'}';
+  }
+
   @override
   String toString() {
     String f(double v) => v.toStringAsFixed(0);
@@ -83,6 +102,11 @@ class CallStatsSampler {
             if (s.videoCodec.isEmpty) s.videoCodec = codec(v);
             s.videoEncoder = v['encoderImplementation']?.toString() ?? '';
             s.videoLimit = v['qualityLimitationReason']?.toString() ?? '';
+            s.videoOutCodec = codec(v);
+            s.videoOutActive = s.videoOutActive || v['framesEncoded'] is num && s.videoOutFps > 0;
+            s.videoOutKeyFrames = v['keyFramesEncoded'] as num? ?? 0;
+            s.videoOutPliReceived = v['pliCount'] as num? ?? 0;
+            s.videoOutNackReceived = v['nackCount'] as num? ?? 0;
           }
         case 'inbound-rtp':
           final kbps = rate(r.id, v, 'bytesReceived') * 8 / 1000;
@@ -100,6 +124,13 @@ class CallStatsSampler {
             final c = codec(v);
             if (c.isNotEmpty) s.videoCodec = c;
             s.videoDecoder = v['decoderImplementation']?.toString() ?? '';
+            s.videoInCodec = c;
+            s.videoInFramesReceived = rate(r.id, v, 'framesReceived');
+            s.videoInDropped = v['framesDropped'] as num? ?? 0;
+            s.videoInFreezes = v['freezeCount'] as num? ?? 0;
+            s.videoInKeyFrames = v['keyFramesDecoded'] as num? ?? 0;
+            s.videoInPliSent = v['pliCount'] as num? ?? 0;
+            s.videoInNackSent = v['nackCount'] as num? ?? 0;
           }
       }
       _prev[r.id] = v;
