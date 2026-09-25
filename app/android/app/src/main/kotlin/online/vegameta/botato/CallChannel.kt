@@ -140,7 +140,7 @@ object CallChannel {
                     if (Updates.install(ctx, path)) {
                         result.success(null)
                     } else {
-                        result.error("permission", Lang.tr(ctx, "разрешите botato устанавливать приложения и нажмите «Обновить» ещё раз", "allow botato to install apps and tap “Update” again"), null)
+                        result.error("permission", Lang.tr(ctx, "разрешите botato устанавливать приложения — установка продолжится сама", "allow botato to install apps — the installation continues by itself"), null)
                     }
                 }
                 "saveImage" -> {

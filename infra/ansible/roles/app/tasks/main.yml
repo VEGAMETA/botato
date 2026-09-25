@@ -176,7 +176,7 @@
         label: "{{ item.path | basename }}"
       when: (item.path | basename) not in release_names
 
-    # Stable download links for people: /releases/botato-latest.apk and .exe.
+    # Stable download links for people: /releases/botato-latest.apk (64-bit), -arm32.apk, .exe.
     - name: Stable "latest" links to the current files
       ansible.builtin.file:
         src: "{{ item.target }}"
@@ -184,7 +184,8 @@
         state: link
         force: true
       loop:
-        - { link: botato-latest.apk, target: "{{ release_names | select('match', '^botato-.*\\.apk$') | first | default('') }}" }
+        - { link: botato-latest.apk, target: "{{ release_names | select('match', '^botato-[0-9.]+\\.apk$') | first | default('') }}" }
+        - { link: botato-latest-arm32.apk, target: "{{ release_names | select('match', '^botato-.*-arm32\\.apk$') | first | default('') }}" }
         - { link: botato-latest.exe, target: "{{ release_names | select('match', '^botato-setup-.*\\.exe$') | first | default('') }}" }
       loop_control:
         label: "{{ item.link }} -> {{ item.target }}"

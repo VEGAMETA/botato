@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -13,7 +13,7 @@ import 'l10n.dart';
 /// Offers app updates published on the relay host. The release list and the files come from
 /// an untrusted server; Rust checks the admin signature and the file's SHA-256 before anything
 /// is handed to the OS installer (protocol/README.md §3b).
-class UpdateService extends ChangeNotifier {
+class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
   static const _channel = MethodChannel('botato/call');
   static const _every = Duration(hours: 6);
 
@@ -28,9 +28,17 @@ class UpdateService extends ChangeNotifier {
   bool checking = false;
   Timer? _timer;
 
+  /// The downloaded and verified file of [available] (kept: no second download when the
+  /// user first had to allow installs, or taps "Update" again).
+  String? _ready;
+
+  /// Android sent the user to allow installs from botato: continue when they come back.
+  bool _awaitingPermission = false;
+
   String get current => '${version.version} (${version.build})';
 
   void start() {
+    WidgetsBinding.instance.addObserver(this);
     check();
     _timer ??= Timer.periodic(_every, (_) => check());
   }
@@ -73,7 +81,23 @@ class UpdateService extends ChangeNotifier {
     }
   }
 
-  /// Downloads, verifies and starts the installer. Throws with a readable message.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back from the "install unknown apps" settings: carry on with the file we have.
+    if (state == AppLifecycleState.resumed && _awaitingPermission && _ready != null) {
+      _awaitingPermission = false;
+      install().catchError((_) {});
+    }
+  }
+
+  /// The system installer refused the update (Android).
+  void installFailed(String message) {
+    error = message;
+    notifyListeners();
+  }
+
+  /// Downloads (unless already done), verifies and starts the installer. Throws with a
+  /// readable message.
   Future<void> install() async {
     final info = available;
     if (info == null || progress != null) return;
@@ -82,19 +106,33 @@ class UpdateService extends ChangeNotifier {
     notifyListeners();
     try {
       final dir = Directory('${(await getTemporaryDirectory()).path}${Platform.pathSeparator}updates');
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
-      dir.createSync(recursive: true);
       final path = '${dir.path}${Platform.pathSeparator}${info.file}';
-      await _download(Uri.parse(info.url), File(path), info.size.toInt());
-      if (!await upd.updateVerify(path: path, size: info.size, sha256: info.sha256)) {
-        File(path).deleteSync();
-        throw tr(
-          'файл не совпал с подписанным релизом — установка отменена',
-          'the file doesn\'t match the signed release — installation cancelled',
-        );
+      // A file kept from before is checked again: it sat on disk meanwhile.
+      final kept =
+          _ready == path &&
+          File(path).existsSync() &&
+          await upd.updateVerify(path: path, size: info.size, sha256: info.sha256);
+      if (!kept) {
+        _ready = null;
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+        dir.createSync(recursive: true);
+        await _download(Uri.parse(info.url), File(path), info.size.toInt());
+        if (!await upd.updateVerify(path: path, size: info.size, sha256: info.sha256)) {
+          File(path).deleteSync();
+          throw tr(
+            'файл не совпал с подписанным релизом — установка отменена',
+            'the file doesn\'t match the signed release — installation cancelled',
+          );
+        }
+        _ready = path;
       }
       if (Platform.isAndroid) {
-        await _channel.invokeMethod('installApk', {'path': path});
+        try {
+          await _channel.invokeMethod('installApk', {'path': path});
+        } on PlatformException catch (e) {
+          if (e.code == 'permission') _awaitingPermission = true;
+          rethrow;
+        }
       } else if (Platform.isWindows) {
         await Process.start(path, const [], mode: ProcessStartMode.detached);
         await Desktop.instance.quit(); // the installer replaces our files
@@ -130,6 +168,7 @@ class UpdateService extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }

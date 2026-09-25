@@ -56,6 +56,7 @@ class Services {
         : calls.notifier.showMessage(peer, 'botato', tr('Новое сообщение', 'New message'));
     calls.notifier.secureScreen(media.secureScreen);
     calls.notifier.onPushToken = (token) => client.clientSetPushToken(token: token);
+    calls.notifier.onUpdateFailed = (m) => s.updates.installFailed(m);
     calls.notifier.onWake = relay.reconnect;
     // Desktop: "in front" means the window has focus (it may sit hidden in the tray).
     if (isDesktop) Desktop.instance.onFocusChanged = (f) => relay.foreground = f;

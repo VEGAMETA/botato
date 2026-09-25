@@ -13,6 +13,8 @@ pub const MAX_FILES: usize = 8;
 
 /// Platform names used in releases.
 pub const ANDROID_ARM64: &str = "android-arm64";
+/// 32-bit ARM Android (armeabi-v7a): low-end phones ship a 32-bit OS on 64-bit CPUs.
+pub const ANDROID_ARM: &str = "android-arm";
 pub const WINDOWS_X64: &str = "windows-x64";
 
 #[derive(Clone, Debug, PartialEq, Eq)]

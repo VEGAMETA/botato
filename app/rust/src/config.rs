@@ -17,6 +17,8 @@ pub fn app_build() -> u64 {
 pub fn release_platform() -> Option<&'static str> {
     if cfg!(all(target_os = "android", target_arch = "aarch64")) {
         Some(proto::release::ANDROID_ARM64)
+    } else if cfg!(all(target_os = "android", target_arch = "arm")) {
+        Some(proto::release::ANDROID_ARM)
     } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
         Some(proto::release::WINDOWS_X64)
     } else {

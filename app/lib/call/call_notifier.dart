@@ -16,6 +16,7 @@ class CallNotifier {
         if (call.method == 'openChat') onOpenChat?.call(call.arguments as String);
         if (call.method == 'pushToken') onPushToken?.call(call.arguments as String);
         if (call.method == 'wake') onWake?.call();
+        if (call.method == 'updateStatus') onUpdateFailed?.call(call.arguments as String);
         if (call.method == 'share') {
           await _takeNativeShare(); // taken now: a later cold-start query must not repeat it
           final shared = SharedContent.fromMap(call.arguments as Map);
@@ -54,6 +55,9 @@ class CallNotifier {
 
   /// Content another app shared to botato (Android).
   void Function(SharedContent shared)? onShare;
+
+  /// Android: the system installer refused our self-update.
+  void Function(String message)? onUpdateFailed;
 
   /// Content shared while the app was not running yet, if any.
   Future<SharedContent?> pendingShare() async {

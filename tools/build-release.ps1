@@ -25,7 +25,8 @@ Copy-Item (Join-Path $adminDir 'manifest.bin') (Join-Path $app 'assets\manifest.
 
 Push-Location $app
 try {
-    & $flutter build apk --release --split-per-abi --target-platform android-arm64
+    # Two APKs: arm64, and 32-bit ARM for phones with a 32-bit OS (e.g. Galaxy A40).
+    & $flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
     if ($LASTEXITCODE -ne 0) { throw 'APK build failed' }
     & $flutter build windows --release
     if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
@@ -36,6 +37,7 @@ try {
 }
 
 $apk = Join-Path $app 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
+$apk32 = Join-Path $app 'build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk'
 $exe = Join-Path $app "build\installer\botato-setup-$version.exe"
-Get-Item $apk, $exe | ForEach-Object { '{0,-40} {1,8:N1} MB' -f $_.Name, ($_.Length / 1MB) }
+Get-Item $apk, $apk32, $exe | ForEach-Object { '{0,-40} {1,8:N1} MB' -f $_.Name, ($_.Length / 1MB) }
 Write-Host 'Next: botatoadmin -> release section -> sign and publish.'

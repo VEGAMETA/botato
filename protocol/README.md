@@ -91,7 +91,7 @@ sig  = Ed25519(root, "botato/v1/release\0" || body)
 ```
 
 - `build` is monotonic; a client offers the update only if it is higher than its own build.
-- `platform`: `android-arm64`, `windows-x64`. `file` is a bare file name (no `/`, `\`, `..`), fetched from
+- `platform`: `android-arm64`, `android-arm` (32-bit armeabi-v7a), `windows-x64`. `file` is a bare file name (no `/`, `\`, `..`), fetched from
   `/releases/<file>`.
 - The client downloads the file, checks length and SHA-256 against the signed entry, and only then hands
   it to the OS installer. A server can withhold or delay updates, not substitute them.

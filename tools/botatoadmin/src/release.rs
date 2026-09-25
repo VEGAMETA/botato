@@ -30,6 +30,7 @@ struct Artifacts {
     version: String,
     build: u64,
     apk: PathBuf,
+    apk32: PathBuf,
     exe: PathBuf,
 }
 
@@ -55,6 +56,7 @@ impl ReleasePanel {
             version: version.to_string(),
             build,
             apk: app.join(r"build\app\outputs\flutter-apk\app-arm64-v8a-release.apk"),
+            apk32: app.join(r"build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk"),
             exe: app.join(format!(r"build\installer\botato-setup-{version}.exe")),
         })
     }
@@ -159,7 +161,7 @@ impl ReleasePanel {
             }
             Ok(a) => {
                 ui.label(format!("Версия из pubspec.yaml: {} (сборка {})", a.version, a.build));
-                for (name, p) in [("APK", &a.apk), ("Установщик", &a.exe)] {
+                for (name, p) in [("APK", &a.apk), ("APK 32-bit", &a.apk32), ("Установщик", &a.exe)] {
                     ui.label(match std::fs::metadata(p) {
                         Ok(m) => format!("{name}: {:.1} МБ, {}", m.len() as f64 / 1048576.0, age(&m)),
                         Err(_) => format!("{name}: нет — соберите: tools\\build-release.ps1"),
@@ -175,7 +177,7 @@ impl ReleasePanel {
         ui.horizontal(|ui| {
             let ready = !running
                 && !self.password.is_empty()
-                && arts.as_ref().is_ok_and(|a| a.apk.exists() && a.exe.exists());
+                && arts.as_ref().is_ok_and(|a| a.apk.exists() && a.apk32.exists() && a.exe.exists());
             if ui
                 .add_enabled(!running, egui::Button::new("Собрать релиз"))
                 .on_hover_text("tools\\build-release.ps1: APK + установщик, версия из pubspec.yaml")
@@ -225,6 +227,7 @@ impl ReleasePanel {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
             let files = [
                 (proto::release::ANDROID_ARM64, a.apk.as_path(), format!("botato-{}.apk", a.version)),
+                (proto::release::ANDROID_ARM, a.apk32.as_path(), format!("botato-{}-arm32.apk", a.version)),
                 (proto::release::WINDOWS_X64, a.exe.as_path(), format!("botato-setup-{}.exe", a.version)),
             ];
             admin.sign_release(&root, &a.version, a.build, &files, now).map_err(|e| e.to_string())?;

@@ -64,6 +64,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
         <receiver android:name=".CallActionReceiver" android:exported="false" />
+        <!-- Self-update: the installer's status, and "updated, tap to open" afterwards. -->
+        <receiver android:name=".InstallStatusReceiver" android:exported="false" />
+        <receiver android:name=".UpdatedReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <service android:name=".PushService" android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
