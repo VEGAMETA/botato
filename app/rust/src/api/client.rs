@@ -169,13 +169,16 @@ fn parse_id(s: &str) -> anyhow::Result<Id> {
 pub fn client_contacts() -> Vec<ContactInfo> {
     with(|r| {
         let me = r.shared.me.device_id;
+        let manifest = r.shared.manifest();
         let contacts = r.shared.contacts.lock().unwrap();
         let mut list: Vec<ContactInfo> = contacts
             .all()
             .map(|c| ContactInfo {
                 user_id: c.user_id.to_hex(),
                 name: c.name.clone(),
-                devices: c.devices.iter().map(|d| d.device_id.to_hex()).collect(),
+                // A device revoked in the manifest may still be in an older cert: calls,
+                // presence and pings must not go to it.
+                devices: c.devices.iter().filter(|d| !manifest.is_revoked(&d.device_id)).map(|d| d.device_id.to_hex()).collect(),
                 is_me: c.device(&me).is_some(),
             })
             .collect();
