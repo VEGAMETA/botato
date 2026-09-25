@@ -90,6 +90,7 @@ fn start_in(net: &Net, me: DeviceSecret, user: Id, cert: &[u8], dir: &std::path:
         store: Mutex::new(Store::open(&dir.join("botato.db"), [9; 32]).unwrap()),
         my_user: user,
         push_token: Mutex::new(None),
+        nostr: super::nostr::Link::new().0,
     });
     let (tx, rx) = mpsc::unbounded_channel();
     let (etx, events) = mpsc::unbounded_channel();

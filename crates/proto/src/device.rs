@@ -59,6 +59,11 @@ impl DeviceSecret {
         &self.enc
     }
 
+    /// The Nostr addressing key shared with a peer device (protocol/README.md §7.1).
+    pub fn nostr_pair(&self, peer_enc_pub: &[u8; KEY_LEN]) -> Option<crate::nostr::PairKey> {
+        crate::nostr::pair_key(&self.enc, peer_enc_pub)
+    }
+
     pub fn signing_key(&self) -> &SigningKey {
         &self.sign
     }

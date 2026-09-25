@@ -38,6 +38,11 @@ void clientSignal({required String toDevice, required String payload}) =>
       payload: payload,
     );
 
+/// The app is active (Android: in front or in a call; desktop always): keep the Nostr
+/// fallback subscribed so calls can reach us when our server can't.
+void clientNostrActive({required bool active}) =>
+    RustLib.instance.api.crateApiClientClientNostrActive(active: active);
+
 /// UI language for errors and message previews made in Rust.
 void clientSetEnglish({required bool english}) =>
     RustLib.instance.api.crateApiClientClientSetEnglish(english: english);

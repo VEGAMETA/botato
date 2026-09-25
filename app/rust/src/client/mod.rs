@@ -3,10 +3,13 @@
 
 pub mod contacts;
 pub mod messaging;
+pub mod nostr;
 pub mod photo;
 pub mod store;
 #[cfg(test)]
 mod e2e_tests;
+#[cfg(test)]
+mod nostr_tests;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,6 +39,8 @@ const LIVENESS: Duration = Duration::from_secs(25);
 const DIRECTORY_EVERY: Duration = Duration::from_secs(300);
 /// Outbox expiry check.
 const EXPIRE_EVERY: Duration = Duration::from_secs(600);
+/// How long a sent signal is kept for a possible Nostr copy (`signaled online:false` comes back fast).
+const RECENT_SIGNALS: Duration = Duration::from_secs(10);
 
 pub enum Event {
     Connecting { server: String },
@@ -86,6 +91,8 @@ pub struct Shared {
     pub my_user: Id,
     /// FCM token; sent to the relay on every connection (it keeps tokens in RAM only).
     pub push_token: Mutex<Option<String>>,
+    /// The Nostr fallback (call signals and the manifest when our relay can't help).
+    pub nostr: nostr::Link,
 }
 
 pub type Emit = Arc<dyn Fn(Event) + Send + Sync>;
@@ -122,7 +129,7 @@ impl Shared {
         self.offer_manifest_signed_by(raw, &config::root_pub())
     }
 
-    fn offer_manifest_signed_by(&self, raw: &[u8], root_pub: &[u8; 32]) -> anyhow::Result<bool> {
+    pub(crate) fn offer_manifest_signed_by(&self, raw: &[u8], root_pub: &[u8; 32]) -> anyhow::Result<bool> {
         let m = Manifest::verify(root_pub, raw).map_err(|e| anyhow::anyhow!("{}: {e}", tr("манифест", "manifest")))?;
         let mut cur = self.manifest.write().unwrap();
         if m.version <= cur.version {
@@ -146,7 +153,9 @@ pub async fn run(shared: Arc<Shared>, mut cmds: mpsc::UnboundedReceiver<Cmd>, em
     loop {
         for server in shared.manifest().servers.clone() {
             emit(Event::Connecting { server: server.url.clone() });
-            match session(&shared, &server, &mut cmds, &emit).await {
+            let result = session(&shared, &server, &mut cmds, &emit).await;
+            shared.nostr.set_online(false);
+            match result {
                 Ok(Exit::Stopped) => return, // command channel closed: the app stopped the client
                 Ok(Exit::Reconnect) => {
                     backoff = 0;
@@ -236,6 +245,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
         .await
         .map_err(|_| anyhow::anyhow!(tr("таймаут подключения", "connection timeout")))??;
     emit(Event::Online { server: server.url.clone() });
+    shared.nostr.set_online(true);
     send(&mut ws, &ClientFrame::Directory {}).await?;
 
     send_push_token(shared, &mut ws).await?;
@@ -267,7 +277,11 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                         ClientFrame::Presence { devices }
                     }
                     Cmd::Signal { to, payload } => match seal_signal(shared, &to, &payload) {
-                        Ok(blob) => ClientFrame::Signal { to, blob },
+                        Ok(blob) => {
+                            s.recent_signals.retain(|(_, _, t)| t.elapsed() < RECENT_SIGNALS);
+                            s.recent_signals.push((to, blob.clone(), std::time::Instant::now()));
+                            ClientFrame::Signal { to, blob }
+                        }
                         Err(e) => { emit(Event::Error { message: e.to_string() }); continue; }
                     },
                 };
@@ -296,6 +310,8 @@ struct SessionState {
     /// Attachments uploaded / requested on this connection.
     uploaded: std::collections::HashSet<Id>,
     downloading: std::collections::HashSet<Id>,
+    /// Signals sent lately, for a Nostr copy if the relay says the peer is offline.
+    recent_signals: Vec<(Id, Vec<u8>, std::time::Instant)>,
 }
 
 async fn send_push_token(shared: &Shared, ws: &mut Ws) -> anyhow::Result<()> {
@@ -366,7 +382,7 @@ async fn deliver(shared: &Shared, ws: &mut Ws, s: &mut SessionState, id: Id, blo
     Ok(())
 }
 
-fn seal_signal(shared: &Shared, to: &Id, payload: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn seal_signal(shared: &Shared, to: &Id, payload: &[u8]) -> anyhow::Result<Vec<u8>> {
     let contacts = shared.contacts.lock().unwrap();
     let (_, dev) = contacts.device(to, &shared.manifest()).ok_or_else(|| anyhow::anyhow!(tr("неизвестное устройство", "unknown device")))?;
     envelope::seal(&shared.me, to, &dev.enc_pub, KIND_SIGNAL, config::now(), payload).map_err(|e| anyhow::anyhow!("seal: {e}"))
@@ -389,6 +405,8 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
                 emit(Event::MessagesChanged { peer });
             }
         }
+        // The same envelope may also come over Nostr: take it once.
+        ServerFrame::Signal { from: _, blob } if !shared.nostr.first_seen(&blob) => {}
         ServerFrame::Signal { from: _, blob } => match open_signal(shared, &blob) {
             Ok(Some(ev)) => emit(ev),
             Ok(None) => {
@@ -397,7 +415,17 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
             }
             Err(_) => {} // forged, stale or garbled: drop silently
         },
-        ServerFrame::Signaled { to, online } => emit(Event::Signaled { to, online }),
+        ServerFrame::Signaled { to, online } => {
+            // Offline for our relay (it holds the signal and pushes): send it over Nostr too,
+            // the peer may be reachable there.
+            if !online {
+                for (_, blob, _) in s.recent_signals.iter().filter(|(t, _, _)| *t == to) {
+                    nostr::publish_signal(shared, to, blob.clone());
+                }
+                s.recent_signals.retain(|(t, _, _)| *t != to);
+            }
+            emit(Event::Signaled { to, online })
+        }
         ServerFrame::Turn { urls, username, credential, .. } => emit(Event::Turn { urls, username, credential }),
         ServerFrame::Uploaded { .. } => {}
         ServerFrame::Presence { online } => emit(Event::Presence { online }),

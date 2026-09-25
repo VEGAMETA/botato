@@ -43,6 +43,7 @@ struct Running {
     shared: Arc<Shared>,
     tx: mpsc::UnboundedSender<Cmd>,
     task: tokio::task::JoinHandle<()>,
+    nostr_task: tokio::task::JoinHandle<()>,
 }
 
 static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -120,6 +121,7 @@ pub fn client_start(
     contacts.merge(std::slice::from_ref(&cert), now, &manifest);
     let my_user = client::my_cert(&cert)?.user_id;
     let db_key: [u8; 32] = db_key.try_into().map_err(|_| anyhow::anyhow!("db key must be 32 bytes"))?;
+    let (nostr, nostr_rx) = client::nostr::Link::new();
     let store = client::store::Store::open(&std::path::Path::new(&data_dir).join("botato.db"), db_key)?;
     let shared = Arc::new(Shared {
         me,
@@ -131,6 +133,7 @@ pub fn client_start(
         store: Mutex::new(store),
         my_user,
         push_token: Mutex::new(None),
+        nostr,
     });
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -138,7 +141,8 @@ pub fn client_start(
         let _ = sink.add(convert(e));
     });
     let task = RT.spawn(client::run(shared.clone(), rx, emit.clone()));
-    *RUNNING.lock().unwrap() = Some(Running { shared, tx, task });
+    let nostr_task = RT.spawn(client::nostr::run(shared.clone(), nostr_rx, emit.clone()));
+    *RUNNING.lock().unwrap() = Some(Running { shared, tx, task, nostr_task });
     // Dart can read contacts only now that the client is registered.
     emit(Event::ContactsChanged);
     Ok(())
@@ -147,6 +151,7 @@ pub fn client_start(
 pub fn client_stop() {
     if let Some(r) = RUNNING.lock().unwrap().take() {
         r.task.abort();
+        r.nostr_task.abort();
     }
 }
 
@@ -184,7 +189,24 @@ pub fn client_contacts() -> Vec<ContactInfo> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_signal(to_device: String, payload: String) -> anyhow::Result<()> {
     let to = parse_id(&to_device)?;
-    with(|r| r.tx.send(Cmd::Signal { to, payload: payload.into_bytes() }))?.map_err(|_| anyhow::anyhow!(tr("клиент остановлен", "the client has stopped")))
+    with(|r| {
+        // Our relay not connected: the signal also goes over Nostr now (it stays queued for
+        // the relay too; the receiver takes whichever comes first).
+        if !r.shared.nostr.online() {
+            if let Ok(blob) = client::seal_signal(&r.shared, &to, payload.as_bytes()) {
+                client::nostr::publish_signal(&r.shared, to, blob);
+            }
+        }
+        r.tx.send(Cmd::Signal { to, payload: payload.into_bytes() })
+    })?
+    .map_err(|_| anyhow::anyhow!(tr("клиент остановлен", "the client has stopped")))
+}
+
+/// The app is active (Android: in front or in a call; desktop always): keep the Nostr
+/// fallback subscribed so calls can reach us when our server can't.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_nostr_active(active: bool) {
+    let _ = with(|r| r.shared.nostr.send(client::nostr::Cmd::Active(active)));
 }
 
 /// UI language for errors and message previews made in Rust.
