@@ -258,8 +258,12 @@ class CallService extends ChangeNotifier {
     }
   }
 
+  /// Android picks outputs only in the voice mode: clean audio runs in media mode, where the
+  /// OS routes by itself (Bluetooth or wired headset if connected, else the loudspeaker).
+  bool get routable => settings.audioMode == AudioMode.voice;
+
   Future<void> setAudioRoute(String id) async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid || !routable) return;
     audioRoute = id;
     speaker = id == 'speaker';
     // setSpeakerphoneOn also reorders the OS preference list (headsets first, then the chosen
@@ -279,6 +283,12 @@ class CallService extends ChangeNotifier {
     final before = audioOutputs;
     audioOutputs = await _outputs();
     final headset = audioOutputs.where((o) => o == 'bluetooth' || o == 'wired-headset').firstOrNull;
+    if (!routable) {
+      audioRoute = headset ?? 'speaker';
+      speaker = headset == null;
+      notifyListeners();
+      return;
+    }
     final appeared = headset != null && !before.contains(headset);
     if (initial || appeared) {
       await setAudioRoute(headset ?? (video ? 'speaker' : 'earpiece'));
@@ -361,6 +371,10 @@ class CallService extends ChangeNotifier {
   Future<void> setAudioMode(AudioMode mode) async {
     settings.audioMode = mode;
     await _reopenMicrophone();
+    if (Platform.isAndroid && _pc != null) {
+      await notifier.audioMode(communication: mode == AudioMode.voice);
+      await _refreshAudioRoute(video: cameraOn, initial: true);
+    }
     notifyListeners();
   }
 

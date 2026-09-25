@@ -162,6 +162,9 @@ class CallNotifier {
 
   bool _proximity = false;
 
+  /// Android: applies the call's audio mode right away (communication, or media for clean audio).
+  Future<void> audioMode({required bool communication}) => _invoke('audioMode', communication);
+
   /// Screen off at the ear (Android): wanted during a call when the loudspeaker is off;
   /// the native side also requires the earpiece to be the active route.
   Future<void> proximity(bool on) async {

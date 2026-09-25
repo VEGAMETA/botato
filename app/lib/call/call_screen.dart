@@ -345,6 +345,7 @@ class _CallScreenState extends State<CallScreen> {
 
   /// Only earpiece and loudspeaker: a toggle. With a headset around: pick from the list.
   Future<void> _pickRoute(CallService c) async {
+    if (!c.routable) return _cleanRouteInfo(c);
     final outs = c.audioOutputs;
     if (!outs.contains('bluetooth') && !outs.contains('wired-headset')) return c.toggleSpeaker();
     final id = await showModalBottomSheet<String>(
@@ -365,6 +366,39 @@ class _CallScreenState extends State<CallScreen> {
       ),
     );
     if (id != null) await c.setAudioRoute(id);
+  }
+
+  /// Clean audio plays as media: Android itself chooses the headset or the loudspeaker.
+  Future<void> _cleanRouteInfo(CallService c) async {
+    final toVoice = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Сейчас: ${_routeName(c.audioRoute)}', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              const Text(
+                'В режиме «Чистый звук» выход выбирает Android: наушники или Bluetooth, если подключены, '
+                'иначе громкий динамик. Разговорный динамик и ручной выбор — в режиме «Голос».',
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Переключить на «Голос»'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (toVoice == true) await c.setAudioMode(AudioMode.voice);
   }
 
   Widget _toggle(IconData icon, bool on, VoidCallback onTap, String label) =>
