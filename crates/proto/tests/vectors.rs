@@ -335,3 +335,31 @@ fn file_vector() {
         }),
     );
 }
+
+#[test]
+fn release_vector() {
+    use proto::release::{ANDROID_ARM64, Release, ReleaseFile, WINDOWS_X64};
+    let root = key(0x61);
+    let rel = Release {
+        version: "0.1.4".into(),
+        build: 4,
+        issued_at: 1_800_000_000,
+        files: vec![
+            ReleaseFile { platform: ANDROID_ARM64.into(), file: "botato-0.1.4.apk".into(), size: 38_000_000, sha256: [0x62; 32] },
+            ReleaseFile { platform: WINDOWS_X64.into(), file: "botato-setup-0.1.4.exe".into(), size: 19_500_000, sha256: [0x63; 32] },
+        ],
+    };
+    let signed = rel.sign(&root).unwrap();
+    assert_eq!(Release::verify(root.verifying_key().as_bytes(), &signed).unwrap(), rel);
+    check(
+        "release.json",
+        json!({
+            "root_pub": hex::encode(root.verifying_key().to_bytes()),
+            "ctx": hex::encode(proto::ctx::RELEASE),
+            "version": rel.version,
+            "build": rel.build,
+            "issued_at": rel.issued_at,
+            "signed": hex::encode(&signed),
+        }),
+    );
+}

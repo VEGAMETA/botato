@@ -13,6 +13,7 @@ pub mod file;
 pub mod frames;
 pub mod id;
 pub mod manifest;
+pub mod release;
 
 pub use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 pub use id::Id;
@@ -25,6 +26,7 @@ pub mod ctx {
     pub const AUTH_CLIENT: &[u8] = b"botato/v1/auth-client\0";
     pub const ENROLL: &[u8] = b"botato/v1/enroll\0";
     pub const ENVELOPE: &[u8] = b"botato/v1/envelope\0";
+    pub const RELEASE: &[u8] = b"botato/v1/release\0";
     /// AAD prefix of attachment encryption, not a signature context.
     pub const FILE: &[u8] = b"botato/v1/file\0";
     /// Hash prefix, not a signature context.

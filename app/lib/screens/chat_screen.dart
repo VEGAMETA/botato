@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
+import '../emoji.dart';
 import '../theme.dart';
 import 'photo_view.dart';
 
@@ -576,6 +577,7 @@ class _Bubble extends StatelessWidget {
             MsgStatus.delivered => (Icons.done_all, BotatoColors.potato),
             _ => (Icons.error_outline, BotatoColors.danger),
           };
+    final bigEmoji = m.deleted || m.photo != null || m.reply != null || m.forwardedFrom != null ? 0 : emojiOnly(m.text);
     // emoji -> (count, includes ours), in first-seen order.
     final counts = <String, (int, bool)>{};
     for (final r in m.reactions) {
@@ -591,9 +593,13 @@ class _Bubble extends StatelessWidget {
           onSecondaryTap: () => onMenu(m),
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: const EdgeInsets.fromLTRB(12, 8, 10, 6),
+            padding: bigEmoji > 0 ? const EdgeInsets.fromLTRB(4, 0, 4, 2) : const EdgeInsets.fromLTRB(12, 8, 10, 6),
             decoration: BoxDecoration(
-              color: mine ? BotatoColors.potatoShade.withValues(alpha: 0.55) : scheme.surfaceContainerHigh,
+              color: bigEmoji > 0
+                  ? Colors.transparent
+                  : mine
+                  ? BotatoColors.potatoShade.withValues(alpha: 0.55)
+                  : scheme.surfaceContainerHigh,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
@@ -641,7 +647,16 @@ class _Bubble extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerLeft,
                       widthFactor: 1,
-                      child: Text(m.text, style: const TextStyle(fontSize: 15)),
+                      child: Text(
+                        bigEmoji > 0 ? m.text.trim() : m.text,
+                        style: TextStyle(
+                          fontSize: switch (bigEmoji) {
+                            0 => 15,
+                            1 => 56,
+                            _ => 40,
+                          },
+                        ),
+                      ),
                     ),
                 ],
                 if (counts.isNotEmpty && !m.deleted)
