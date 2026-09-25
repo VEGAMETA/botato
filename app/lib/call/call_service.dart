@@ -838,7 +838,7 @@ class CallService extends ChangeNotifier {
     });
     if (!_isCaller || _restartTimer?.isActive == true) return;
     // "disconnected" often heals by itself; "failed" never does.
-    _restartTimer = Timer(soft ? const Duration(seconds: 2) : Duration.zero, () {
+    _restartTimer = Timer(soft ? const Duration(seconds: 1) : Duration.zero, () {
       _restartIce();
       _restartTimer = Timer.periodic(const Duration(seconds: 5), (t) {
         if (!reconnecting) return t.cancel();
