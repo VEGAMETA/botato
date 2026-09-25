@@ -521,26 +521,27 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
           children: [
             Text(tr('Звук', 'Audio'), style: TextStyle(fontSize: 18)),
             const SizedBox(height: 8),
-            SegmentedButton<AudioMode>(
-              segments: [
-                ButtonSegment(
-                  value: AudioMode.voice,
-                  label: Text(tr('Голос', 'Voice')),
-                  icon: Icon(Icons.record_voice_over),
-                ),
-                ButtonSegment(
-                  value: AudioMode.clean,
-                  label: Text(tr('Чистый звук', 'Clean audio')),
-                  icon: Icon(Icons.graphic_eq),
-                ),
-              ],
-              selected: {s.audioMode},
-              onSelectionChanged: (v) async {
-                await c.setAudioMode(v.first);
-                setState(() {});
-              },
-            ),
-            if (s.audioMode == AudioMode.clean)
+            if (c.isDesktop)
+              SegmentedButton<AudioMode>(
+                segments: [
+                  ButtonSegment(
+                    value: AudioMode.voice,
+                    label: Text(tr('Голос', 'Voice')),
+                    icon: Icon(Icons.record_voice_over),
+                  ),
+                  ButtonSegment(
+                    value: AudioMode.clean,
+                    label: Text(tr('Чистый звук', 'Clean audio')),
+                    icon: Icon(Icons.graphic_eq),
+                  ),
+                ],
+                selected: {s.audioMode},
+                onSelectionChanged: (v) async {
+                  await c.setAudioMode(v.first);
+                  setState(() {});
+                },
+              ),
+            if (s.audioMode == AudioMode.clean && c.isDesktop)
               Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(

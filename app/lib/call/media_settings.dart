@@ -22,7 +22,14 @@ class MediaSettings {
   String? get outputId => _prefs.getString('output');
   set outputId(String? v) => _set('output', v);
 
-  AudioMode get audioMode => _prefs.getString('audio_mode') == 'clean' ? AudioMode.clean : AudioMode.voice;
+  /// Android: always clean audio. Any WebRTC processing on the phone's plain mic (even echo
+  /// cancellation alone) made the voice choppy and squashed in tests; the price is echo for the
+  /// other side when the phone is on the loudspeaker without headphones.
+  AudioMode get audioMode {
+    if (Platform.isAndroid) return AudioMode.clean;
+    return _prefs.getString('audio_mode') == 'clean' ? AudioMode.clean : AudioMode.voice;
+  }
+
   set audioMode(AudioMode m) => _prefs.setString('audio_mode', m.name);
 
   /// Contacts the user added (user ids); null before the first run of this scheme. Local only.
