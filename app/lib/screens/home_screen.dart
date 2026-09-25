@@ -586,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             _ContactCard(
                               contact: c,
                               conversation: r.conversations[c.userId],
-                              enabled: online,
+                              enabled: r.canCall,
                               peerOnline: r.isOnline(c),
                               onOpen: () => openChat(context, c),
                               onCall: () => widget.calls.startCall(c),

@@ -634,7 +634,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final online = widget.relay.state == ConnState.online;
+    final online = widget.relay.canCall;
     if (_searching) return _searchScaffold();
     return Scaffold(
       appBar: AppBar(

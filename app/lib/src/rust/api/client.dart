@@ -43,6 +43,9 @@ void clientSignal({required String toDevice, required String payload}) =>
 void clientNostrActive({required bool active}) =>
     RustLib.instance.api.crateApiClientClientNostrActive(active: active);
 
+/// The manifest lists Nostr relays: calls are possible without our server.
+bool clientHasNostr() => RustLib.instance.api.crateApiClientClientHasNostr();
+
 /// UI language for errors and message previews made in Rust.
 void clientSetEnglish({required bool english}) =>
     RustLib.instance.api.crateApiClientClientSetEnglish(english: english);

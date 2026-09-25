@@ -63,7 +63,9 @@ impl Config {
             // A 2 MiB attachment must reach a slow phone.
             write_timeout: Duration::from_secs(30),
             ping_interval: Duration::from_secs(30),
-            idle_timeout: Duration::from_secs(75),
+            // Clients ping every 10 s: a connection that died silently is dropped soon, so
+            // senders learn "offline" (and use the Nostr fallback) instead of a dead socket.
+            idle_timeout: Duration::from_secs(35),
             signal_hold_secs: 60,
             max_held_signals: 32,
             // Each unauthenticated socket may buffer one message up to READ_LIMIT (~2.8 MB,

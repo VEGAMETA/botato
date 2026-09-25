@@ -355,7 +355,19 @@ class RelayService extends ChangeNotifier {
   void reconnect() => core.clientReconnect();
 
   /// Fresh TURN credentials from the relay (2 h TTL).
+  /// A call can start: over our server, or over the Nostr fallback when the manifest has relays.
+  bool get canCall {
+    if (state == ConnState.online) return true;
+    try {
+      return core.clientHasNostr();
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<TurnCreds?> turnCreds() async {
+    // No server, no TURN: don't hold the call for the timeout, STUN is all there is.
+    if (state != ConnState.online) return null;
     final next = _turn.stream.first.timeout(const Duration(seconds: 5));
     core.clientRequestTurn();
     try {

@@ -160,7 +160,7 @@ Close codes: `4000` protocol error, `4001` auth failed, `4002` replaced by a new
 | Rate | token bucket, 20 frames/s, burst 100, per connection |
 | Concurrent unfinished handshakes | 16 (each may buffer one message up to the attachment size) |
 | Held signals per device | 32, 60 s |
-| Keepalive | server ping every 30 s; no inbound traffic for 75 s → close |
+| Keepalive | server ping every 30 s; clients ping every 10 s; no inbound traffic for 35 s → close |
 | Wake-up push debounce | messages 30 s, calls 5 s |
 | Attachments | ≤2 MiB each, 24 h; per uploading device 64 MiB / 200 files; 1 GiB in total |
 
@@ -321,9 +321,10 @@ created_at now
 pubkey     a fresh random secp256k1 key for every event (BIP-340 Schnorr, NIP-01 id and sig)
 ```
 
-- Sender: publishes to every relay of the list. When our relay is connected and reports the target
-  online (`signaled {online: true}`), Nostr is not used. It is used when our relay isn't connected, or
-  answers `signaled {online: false}` (the relay still keeps the signal and pushes, §4.2).
+- Sender: publishes to every relay of the list when our relay isn't connected, or answers
+  `signaled {online: false}` (the relay still keeps the signal and pushes, §4.2), and always for
+  `offer`, `answer`, `hangup`, `reoffer`, `reanswer`: a peer whose connection died silently looks
+  online to our relay until its idle timeout. ICE candidates go over Nostr only in the first two cases.
 - Receiver: subscribes `{"kinds": [25580], "#t": [its tags], "since": now - 60}` on every relay while
   the app is active (desktop: always; phone: in front or during a call). The event's own `sig` is not
   trusted for anything; the envelope is opened and verified exactly as from our relay (§6), duplicates

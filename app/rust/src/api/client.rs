@@ -190,9 +190,15 @@ pub fn client_contacts() -> Vec<ContactInfo> {
 pub fn client_signal(to_device: String, payload: String) -> anyhow::Result<()> {
     let to = parse_id(&to_device)?;
     with(|r| {
-        // Our relay not connected: the signal also goes over Nostr now (it stays queued for
-        // the relay too; the receiver takes whichever comes first).
-        if !r.shared.nostr.online() {
+        // Also over Nostr (the receiver takes whichever comes first): when our relay isn't
+        // connected, and always for the few signals a call can't do without — our relay may
+        // still believe a peer is online whose connection died silently (it notices only
+        // after its idle timeout) and hand them to a dead socket.
+        let control = serde_json::from_str::<serde_json::Value>(&payload)
+            .ok()
+            .and_then(|v| v["type"].as_str().map(|t| matches!(t, "offer" | "answer" | "hangup" | "reoffer" | "reanswer")))
+            .unwrap_or(false);
+        if !r.shared.nostr.online() || control {
             if let Ok(blob) = client::seal_signal(&r.shared, &to, payload.as_bytes()) {
                 client::nostr::publish_signal(&r.shared, to, blob);
             }
@@ -207,6 +213,12 @@ pub fn client_signal(to_device: String, payload: String) -> anyhow::Result<()> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_nostr_active(active: bool) {
     let _ = with(|r| r.shared.nostr.send(client::nostr::Cmd::Active(active)));
+}
+
+/// The manifest lists Nostr relays: calls are possible without our server.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_has_nostr() -> bool {
+    with(|r| !r.shared.manifest().nostr_relays.is_empty()).unwrap_or(false)
 }
 
 /// UI language for errors and message previews made in Rust.
