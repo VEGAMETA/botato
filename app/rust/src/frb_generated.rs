@@ -656,6 +656,7 @@ fn wire__crate__api__client__client_send_photo_impl(
             let api_image = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_caption = <String>::sse_decode(&mut deserializer);
             let api_reply_to = <Option<String>>::sse_decode(&mut deserializer);
+            let api_keep_png = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -665,6 +666,7 @@ fn wire__crate__api__client__client_send_photo_impl(
                             api_image,
                             api_caption,
                             api_reply_to,
+                            api_keep_png,
                         )?;
                         std::result::Result::Ok(output_ok)
                     })(),

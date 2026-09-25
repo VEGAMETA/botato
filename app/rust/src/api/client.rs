@@ -305,17 +305,19 @@ fn running() -> anyhow::Result<(Arc<Shared>, mpsc::UnboundedSender<Cmd>)> {
 }
 
 /// Queues a photo (any common image format; re-encoded, metadata dropped) with an optional caption.
+/// `keep_png`: send a PNG as PNG (false when the PNG is just an intermediate of a photo).
 /// Runs the image work on the caller's thread: call it off the UI isolate.
 pub fn client_send_photo(
     peer_user: String,
     image: Vec<u8>,
     caption: String,
     reply_to: Option<String>,
+    keep_png: bool,
 ) -> anyhow::Result<String> {
     let peer = parse_id(&peer_user)?;
     let reply = reply_to.as_deref().map(parse_id).transpose()?;
     let (shared, tx) = running()?;
-    let msg_id = client::messaging::compose_photo(&shared, &peer, &image, &caption, reply.as_ref())?;
+    let msg_id = client::messaging::compose_photo(&shared, &peer, &image, &caption, reply.as_ref(), keep_png)?;
     let _ = tx.send(Cmd::Flush);
     Ok(msg_id.to_hex())
 }

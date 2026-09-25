@@ -116,17 +116,20 @@ void clientReact({
 );
 
 /// Queues a photo (any common image format; re-encoded, metadata dropped) with an optional caption.
+/// `keep_png`: send a PNG as PNG (false when the PNG is just an intermediate of a photo).
 /// Runs the image work on the caller's thread: call it off the UI isolate.
 Future<String> clientSendPhoto({
   required String peerUser,
   required List<int> image,
   required String caption,
   String? replyTo,
+  required bool keepPng,
 }) => RustLib.instance.api.crateApiClientClientSendPhoto(
   peerUser: peerUser,
   image: image,
   caption: caption,
   replyTo: replyTo,
+  keepPng: keepPng,
 );
 
 /// The full JPEG of a photo message, if downloaded.

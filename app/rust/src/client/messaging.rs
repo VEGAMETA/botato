@@ -109,10 +109,18 @@ pub fn compose(shared: &Shared, peer_user: &Id, text: &str, reply: Option<&Id>) 
 }
 
 /// Re-encodes the picture, then queues the message; the session uploads the file first.
-pub fn compose_photo(shared: &Shared, peer_user: &Id, image: &[u8], caption: &str, reply: Option<&Id>) -> anyhow::Result<Id> {
-    let p = photo::prepare(image)?;
+/// `keep_png`: a PNG may be sent as PNG (screenshots); see `photo::prepare`.
+pub fn compose_photo(
+    shared: &Shared,
+    peer_user: &Id,
+    image: &[u8],
+    caption: &str,
+    reply: Option<&Id>,
+    keep_png: bool,
+) -> anyhow::Result<Id> {
+    let p = photo::prepare(image, keep_png)?;
     let extra = Extra { reply: reply.map(|r| reply_ref(shared, r)).transpose()?, fwd: None };
-    compose_with(shared, peer_user, caption, Some(new_photo(p.jpeg, p.thumb, p.w, p.h)?), extra)
+    compose_with(shared, peer_user, caption, Some(new_photo(p.data, p.thumb, p.w, p.h)?), extra)
 }
 
 /// Sends a copy of a stored message to `to_peer`, marked as forwarded from `from_name`.

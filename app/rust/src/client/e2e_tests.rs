@@ -206,7 +206,7 @@ async fn photo_upload_download() {
     let img: image::RgbImage = image::ImageBuffer::from_fn(2400, 1800, |x, y| image::Rgb([(x / 10) as u8, (y / 10) as u8, 7]));
     let mut png = vec![];
     image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
-    let msg = messaging::compose_photo(&a.shared, &bob, &png, "закат", None).unwrap();
+    let msg = messaging::compose_photo(&a.shared, &bob, &png, "закат", None, false).unwrap();
     a.tx.send(Cmd::Flush).unwrap();
 
     let e = b.wait(|e| matches!(e, Event::NewMessage { .. })).await;

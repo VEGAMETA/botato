@@ -101,8 +101,9 @@ object CallChannel {
                 "saveImage" -> {
                     val name = call.argument<String>("name") ?: "botato.jpg"
                     val data = call.argument<ByteArray>("data") ?: ByteArray(0)
+                    val mime = call.argument<String>("mime") ?: "image/jpeg"
                     Thread {
-                        val err = runCatching { Gallery.saveJpeg(app, name, data) }.exceptionOrNull()
+                        val err = runCatching { Gallery.save(app, name, mime, data) }.exceptionOrNull()
                         main.post {
                             if (err == null) result.success(null) else result.error("save", err.message, null)
                         }

@@ -148,6 +148,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> image,
     required String caption,
     String? replyTo,
+    required bool keepPng,
   });
 
   String crateApiClientClientSendText({
@@ -686,6 +687,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> image,
     required String caption,
     String? replyTo,
+    required bool keepPng,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -695,6 +697,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_prim_u_8_loose(image, serializer);
           sse_encode_String(caption, serializer);
           sse_encode_opt_String(replyTo, serializer);
+          sse_encode_bool(keepPng, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -707,7 +710,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiClientClientSendPhotoConstMeta,
-        argValues: [peerUser, image, caption, replyTo],
+        argValues: [peerUser, image, caption, replyTo, keepPng],
         apiImpl: this,
       ),
     );
@@ -716,7 +719,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiClientClientSendPhotoConstMeta =>
       const TaskConstMeta(
         debugName: "client_send_photo",
-        argNames: ["peerUser", "image", "caption", "replyTo"],
+        argNames: ["peerUser", "image", "caption", "replyTo", "keepPng"],
       );
 
   @override

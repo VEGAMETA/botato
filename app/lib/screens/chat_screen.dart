@@ -9,6 +9,7 @@ import '../call/call_service.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
 import '../emoji.dart';
+import '../image_prep.dart';
 import '../theme.dart';
 import 'photo_view.dart';
 
@@ -308,13 +309,8 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // On phones the picker re-encodes to JPEG (HEIC and friends become decodable);
       // the final resize and metadata stripping happen in Rust on every platform.
-      file = await ImagePicker().pickImage(
-        source: source,
-        maxWidth: Platform.isAndroid ? 3200 : null,
-        maxHeight: Platform.isAndroid ? 3200 : null,
-        imageQuality: Platform.isAndroid ? 95 : null,
-        requestFullMetadata: false,
-      );
+      // The original file: with size/quality options the picker would turn PNGs into JPEGs.
+      file = await ImagePicker().pickImage(source: source, requestFullMetadata: false);
     } catch (e) {
       _toast('Не удалось открыть фото: $e');
       return;
@@ -327,7 +323,21 @@ class _ChatScreenState extends State<ChatScreen> {
     final caption = _input.text.trim();
     setState(() => _sendingPhoto = true);
     try {
-      await core.clientSendPhoto(peerUser: _peer, image: bytes, caption: caption, replyTo: _replyTo?.msgId);
+      // PNG (screenshots) goes as is and may stay PNG. On phones any other image is first
+      // shrunk by the OS decoder (HEIC works, 100 MP photos don't blow the memory); that PNG
+      // is only an intermediate and becomes a JPEG.
+      var keepPng = true;
+      if (Platform.isAndroid && !isPng(bytes)) {
+        bytes = await downscaleToPng(bytes);
+        keepPng = false;
+      }
+      await core.clientSendPhoto(
+        peerUser: _peer,
+        image: bytes,
+        caption: caption,
+        replyTo: _replyTo?.msgId,
+        keepPng: keepPng,
+      );
       if (caption.isNotEmpty && _input.text.trim() == caption) _input.clear();
       if (mounted) setState(() => _replyTo = null);
       _reload();

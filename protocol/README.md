@@ -267,8 +267,10 @@ only in the kind-2 payload. Vector: `vectors/file.json`.
 blob = u8 version(1) | [24] nonce | XChaCha20-Poly1305(key, nonce, plaintext, AAD = "botato/v1/file\0" || file_id)
 ```
 
-- Photos are re-encoded by the sender before sealing: JPEG, longest side ≤ 1600 px, EXIF dropped
-  (orientation applied to the pixels). `thumb` is the same image ≤ 64 px, shown until the file arrives.
+- Photos are re-encoded by the sender before sealing, metadata dropped (EXIF orientation applied to the
+  pixels): JPEG with the longest side ≤ 1600 px; a PNG source (screenshots, transparency) may stay PNG
+  with the longest side ≤ 2560 px if it fits the size limit. Receivers tell JPEG and PNG apart by the magic
+  bytes. `thumb` is always a JPEG ≤ 64 px (transparency over white), shown until the file arrives.
 - The sender uploads before sending the message copies, on the same connection (the relay handles a
   connection's frames in order). It re-uploads on every connection while some copy of the message is
   still in its outbox: a restarted relay has lost its files.

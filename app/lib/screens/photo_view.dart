@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../call/call_notifier.dart';
+import '../image_prep.dart';
 import '../src/rust/api/client.dart' as core;
 import '../theme.dart';
 
@@ -188,10 +189,11 @@ class _PhotoViewerState extends State<PhotoViewer> {
     final id = widget.ids[_index];
     final data = await loadPhoto(id);
     if (data == null) return;
-    final name = 'botato-${id.substring(0, 8)}.jpg';
+    final (ext, mime) = imageType(data);
+    final name = 'botato-${id.substring(0, 8)}.$ext';
     if (Platform.isAndroid) {
       try {
-        await CallNotifier.saveToGallery(name, data);
+        await CallNotifier.saveToGallery(name, data, mime);
         messenger.showSnackBar(const SnackBar(content: Text('Сохранено в галерею (Pictures/botato)')));
       } catch (e) {
         messenger.showSnackBar(SnackBar(content: Text('Не сохранилось: $e')));
@@ -200,8 +202,8 @@ class _PhotoViewerState extends State<PhotoViewer> {
     }
     final loc = await getSaveLocation(
       suggestedName: name,
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'JPEG', extensions: ['jpg']),
+      acceptedTypeGroups: [
+        XTypeGroup(label: ext.toUpperCase(), extensions: [ext]),
       ],
     );
     if (loc == null) return;
