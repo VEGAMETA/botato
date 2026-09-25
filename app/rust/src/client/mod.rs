@@ -274,6 +274,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                     Cmd::PushToken => { send_push_token(shared, &mut ws).await?; continue; }
                     Cmd::Presence(mut devices) => {
                         devices.truncate(proto::frames::MAX_PRESENCE);
+                        s.presence_asked = devices.clone();
                         ClientFrame::Presence { devices }
                     }
                     Cmd::Signal { to, payload } => match seal_signal(shared, &to, &payload) {
@@ -313,6 +314,8 @@ struct SessionState {
     downloading: std::collections::HashSet<Id>,
     /// Signals sent lately, for a Nostr copy if the relay says the peer is offline.
     recent_signals: Vec<(Id, Vec<u8>, std::time::Instant)>,
+    /// The devices of the last presence query (the answer lists only the online ones).
+    presence_asked: Vec<Id>,
 }
 
 async fn send_push_token(shared: &Shared, ws: &mut Ws) -> anyhow::Result<()> {
@@ -429,7 +432,10 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
         }
         ServerFrame::Turn { urls, username, credential, .. } => emit(Event::Turn { urls, username, credential }),
         ServerFrame::Uploaded { .. } => {}
-        ServerFrame::Presence { online } => emit(Event::Presence { online }),
+        ServerFrame::Presence { online } => {
+            shared.nostr.presence(&s.presence_asked, &online);
+            emit(Event::Presence { online })
+        }
         ServerFrame::File { id, data } => {
             s.downloading.remove(&id);
             match messaging::on_file(shared, &id, &data) {

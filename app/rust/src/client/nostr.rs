@@ -34,6 +34,10 @@ const PUBLISH_KEEPS: Duration = Duration::from_secs(120);
 const OUTBOX_AFTER: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(15) };
 /// Message events published only until then are looked for this far back (their lifetime).
 const MESSAGES_SINCE: u64 = pn::MESSAGE_TTL;
+/// A device heard from over Nostr this recently is written to over Nostr too.
+const NOSTR_PEER_FOR: Duration = Duration::from_secs(600);
+/// A device our relay has reported offline this long is written to over Nostr too.
+const PEER_OFFLINE_AFTER: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(30) };
 
 pub enum Cmd {
     /// The app is active (desktop, phone in front, or a call): stay subscribed.
@@ -52,6 +56,10 @@ pub struct Link {
     seen: Mutex<HashMap<[u8; 32], Instant>>,
     /// Asks the relay session to send the outbox now (a receipt owed for a Nostr delivery).
     pub flush: tokio::sync::Notify,
+    /// Devices we lately got something from over Nostr.
+    heard_on_nostr: Mutex<HashMap<Id, Instant>>,
+    /// Devices our relay reports offline, and since when (from presence answers).
+    offline_peers: Mutex<HashMap<Id, Instant>>,
 }
 
 impl Link {
@@ -63,6 +71,8 @@ impl Link {
             offline_since: Mutex::new(Some(Instant::now())),
             seen: Mutex::default(),
             flush: tokio::sync::Notify::new(),
+            heard_on_nostr: Mutex::default(),
+            offline_peers: Mutex::default(),
         };
         (link, rx)
     }
@@ -83,6 +93,29 @@ impl Link {
 
     pub fn online(&self) -> bool {
         self.online.load(Ordering::Relaxed)
+    }
+
+    /// A presence answer: of `asked`, only `online` are connected to our relay.
+    pub fn presence(&self, asked: &[Id], online: &[Id]) {
+        let mut off = self.offline_peers.lock().unwrap();
+        for d in asked {
+            if online.contains(d) {
+                off.remove(d);
+            } else {
+                off.entry(*d).or_insert_with(Instant::now);
+            }
+        }
+    }
+
+    fn heard(&self, device: Id) {
+        self.heard_on_nostr.lock().unwrap().insert(device, Instant::now());
+    }
+
+    /// Our relay can't reach `device` (it lives on Nostr lately, or has been offline for a
+    /// while): copies to it go over Nostr too, even while we are connected.
+    fn peer_needs_nostr(&self, device: &Id) -> bool {
+        self.heard_on_nostr.lock().unwrap().get(device).is_some_and(|t| t.elapsed() < NOSTR_PEER_FOR)
+            || self.offline_peers.lock().unwrap().get(device).is_some_and(|t| t.elapsed() >= PEER_OFFLINE_AFTER)
     }
 
     fn offline_for(&self) -> Option<Duration> {
@@ -218,14 +251,16 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
                 }
                 if shared.nostr.online() {
                     last_manifest_query = None;
-                    published.clear();
-                } else if shared.nostr.offline_for().is_some_and(|d| d >= OUTBOX_AFTER) && !shared.manifest().nostr_relays.is_empty() {
-                    // No server: what waits in the outbox goes over Nostr (the receipt that
-                    // comes back clears it, as over our relay).
+                }
+                // What waits in the outbox goes over Nostr when we have no server, or for peers
+                // our server can't reach; the receipt that comes back clears it, as over our relay.
+                let self_off = shared.nostr.offline_for().is_some_and(|d| d >= OUTBOX_AFTER);
+                if !shared.manifest().nostr_relays.is_empty() {
                     let rows = shared.store.lock().unwrap().outbox().unwrap_or_default();
+                    published.retain(|id| rows.iter().any(|r| r.id == *id));
                     let now = config::now();
                     for row in rows {
-                        if published.contains(&row.id) {
+                        if published.contains(&row.id) || !(self_off || shared.nostr.peer_needs_nostr(&row.to_device)) {
                             continue;
                         }
                         let Some(tag) = tag_for(&shared, &row.to_device, now) else { continue };
@@ -256,6 +291,9 @@ fn handle(shared: &Shared, text: &str, d_tag: &str, root_pub: &[u8; 32], emit: &
                 return;
             }
             if let Ok(Some(e)) = super::open_signal(shared, &payload) {
+                if let Event::Signal { from_device, .. } = &e {
+                    shared.nostr.heard(*from_device);
+                }
                 emit(e);
             }
         }
@@ -265,6 +303,13 @@ fn handle(shared: &Shared, text: &str, d_tag: &str, root_pub: &[u8; 32], emit: &
             }
             // Exactly as a mailbox delivery; an unknown sender waits (no directory offline).
             if let Ok(super::messaging::Delivered::Done { changed, new_text }) = super::messaging::on_deliver(shared, &payload) {
+                // Verified inside on_deliver when it changed something: the sender lives on
+                // Nostr now, so what we owe it (the receipt first) goes there too.
+                if changed.is_some() {
+                    if let Ok(u) = proto::envelope::open(&shared.me, &payload) {
+                        shared.nostr.heard(u.sender());
+                    }
+                }
                 if let Some(peer) = changed {
                     emit(Event::MessagesChanged { peer });
                 }

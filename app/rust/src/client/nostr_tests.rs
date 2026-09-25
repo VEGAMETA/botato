@@ -333,3 +333,79 @@ async fn message_and_receipt_over_nostr() {
     }
     panic!("the receipt did not come back over Nostr");
 }
+
+/// A reaches our relay, B can't: presence says B is offline, so A's message goes over Nostr too;
+/// B's receipt (B has no server) comes back over Nostr and A sees it delivered.
+#[tokio::test]
+async fn message_to_a_peer_our_relay_cant_reach() {
+    let nostr_url = mock_relay().await;
+    let root = proto::generate_signing_key();
+    let server_key = proto::generate_signing_key();
+    let relay = relay::Relay::new(relay::Config::new(root.verifying_key().to_bytes(), server_key.clone()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, relay::router(relay)).await.unwrap() });
+    let live = ServerEntry { url: format!("ws://{addr}/ws"), ip_fallback: String::new(), server_pub: server_key.verifying_key().to_bytes() };
+    let dead = ServerEntry { url: "ws://127.0.0.1:9/ws".into(), ..live.clone() };
+    let for_a = Manifest { version: 1, servers: vec![live], nostr_relays: vec![nostr_url], ..Default::default() };
+    let for_b = Manifest { servers: vec![dead], ..for_a.clone() };
+
+    let dir = tempfile::tempdir().unwrap();
+    let (da, db) = (DeviceSecret::generate(), DeviceSecret::generate());
+    let (ua, ub) = (Id::random(), Id::random());
+    let (ca, cb) = (cert(&root, &da, ua, "a"), cert(&root, &db, ub, "b"));
+    let b_dev = db.device_id;
+    for d in ["a", "b"] {
+        std::fs::create_dir_all(dir.path().join(d)).unwrap();
+    }
+    let now = config::now();
+    let mut contacts = Contacts::load(dir.path().join("a/contacts.json"), root.verifying_key().to_bytes(), now);
+    contacts.merge(&[ca.clone(), cb.clone()], now, &for_a);
+    let (link, nrx) = nostr::Link::new();
+    let a = Arc::new(Shared {
+        me: da,
+        cert: ca.clone(),
+        contacts: Mutex::new(contacts),
+        manifest: std::sync::RwLock::new(Arc::new(for_a)),
+        manifest_path: dir.path().join("a/manifest.bin"),
+        reconnect: tokio::sync::Notify::new(),
+        store: Mutex::new(Store::open(&dir.path().join("a/botato.db"), [9; 32]).unwrap()),
+        my_user: ua,
+        push_token: Mutex::new(None),
+        nostr: link,
+    });
+    let (atx, mut aev) = mpsc::unbounded_channel();
+    let emit: Emit = Arc::new(move |e| {
+        let _ = atx.send(e);
+    });
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    tokio::spawn(super::run(a.clone(), cmd_rx, emit.clone()));
+    tokio::spawn(nostr::run_with_root(a.clone(), nrx, emit, root.verifying_key().to_bytes()));
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(e) = aev.recv().await {
+            if matches!(e, Event::Online { .. }) {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let mut b = node(&root, &for_b, db, ub, &[cb, ca], &dir.path().join("b"));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // What the app's presence polling does: B isn't connected to our relay.
+    cmd_tx.send(super::Cmd::Presence(vec![b_dev])).unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let msg = super::messaging::compose(&a, &ub, "via nostr while I'm online", None).unwrap();
+    cmd_tx.send(super::Cmd::Flush).unwrap();
+
+    wait(&mut b, 10, |e| matches!(e, Event::NewMessage { .. }).then_some(())).await.expect("message over Nostr");
+    for _ in 0..100 {
+        let status = a.store.lock().unwrap().messages(&ub, None, 10).unwrap().into_iter().find(|m| m.msg_id == msg).map(|m| m.status);
+        if status == Some(super::store::DELIVERED) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("no receipt over Nostr");
+}

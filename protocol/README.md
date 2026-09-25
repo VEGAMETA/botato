@@ -334,8 +334,10 @@ pubkey     a fresh random secp256k1 key for every event (BIP-340 Schnorr, NIP-01
 
 ### 7.3 Message events
 
-When our relay has been unreachable for 15 s, the outbox (messages, receipts, updates: §6.2) also
-goes over Nostr, each copy as its own event; the receipt that comes back clears it as usual. Nothing
+The outbox (messages, receipts, updates: §6.2) also goes over Nostr, each copy as its own event, when
+our relay has been unreachable for 15 s, or for a recipient device our relay can't reach: one we
+heard from over Nostr in the last 10 min, or one presence (§4.2) has reported offline for 30 s. The
+receipt that comes back clears the copy as usual; a copy that came both ways is taken once. Nothing
 changes for attachments: the file stays on our relay and is fetched when it is back.
 
 ```
