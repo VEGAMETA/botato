@@ -156,7 +156,15 @@ CREATE TABLE IF NOT EXISTS reactions (
     at          INTEGER NOT NULL,
     PRIMARY KEY (msg_id, user_id)
 );
+-- Deleted messages: a late copy (another path, a Nostr event read again) must not bring them back.
+CREATE TABLE IF NOT EXISTS tombstones (
+    msg_id      BLOB PRIMARY KEY,
+    at          INTEGER NOT NULL
+);
 ";
+
+/// Tombstones outlive every copy of a message (outbox and Nostr events live 24 h).
+const TOMBSTONE_SECS: i64 = 3 * 24 * 3600;
 
 /// Columns added after the first release; `ALTER TABLE` keeps existing history.
 fn migrate(db: &Connection) -> anyhow::Result<()> {
@@ -344,8 +352,12 @@ impl Store {
         Ok(out)
     }
 
-    /// Returns false if the message is already known (duplicate delivery).
+    /// Returns false if the message is already known (duplicate delivery) or was deleted.
     pub fn insert_message(&self, msg_id: &Id, peer_user: &Id, from_me: bool, text: &str, sent_at: i64, status: i64) -> anyhow::Result<bool> {
+        let dead: Option<i64> = self.db.query_row("SELECT at FROM tombstones WHERE msg_id = ?1", [&msg_id.0[..]], |r| r.get(0)).optional()?;
+        if dead.is_some() {
+            return Ok(false);
+        }
         let read = from_me as i64;
         let n = self.db.execute(
             "INSERT OR IGNORE INTO messages (msg_id, peer_user, from_me, sent_at, body, status, read) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -424,6 +436,7 @@ impl Store {
             params![FAILED, SENDING, SENT, cutoff],
         )?;
         self.db.execute("DELETE FROM outbox WHERE created_at < ?1", [cutoff])?;
+        self.db.execute("DELETE FROM tombstones WHERE at < ?1", [now - TOMBSTONE_SECS])?;
         Ok(peers)
     }
 
@@ -532,6 +545,7 @@ impl Store {
         for table in ["photos", "uploads", "reactions", "outbox", "messages"] {
             tx.execute(&format!("DELETE FROM {table} WHERE msg_id = ?1"), [&msg_id.0[..]])?;
         }
+        tx.execute("INSERT OR REPLACE INTO tombstones (msg_id, at) VALUES (?1, ?2)", params![&msg_id.0[..], crate::config::now() as i64])?;
         tx.commit()?;
         Ok(peer)
     }
@@ -825,5 +839,17 @@ mod tests {
         // Wrong key can't read bodies.
         let s2 = Store { db: Connection::open(s.db.path().unwrap()).unwrap(), key: [8; 32] };
         assert!(s2.messages(&a, None, 1).unwrap()[0].text.starts_with('⚠'));
+    }
+
+    #[test]
+    fn a_deleted_message_does_not_come_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("t.db"), [7; 32]).unwrap();
+        let (m, peer) = (Id::random(), Id::random());
+        assert!(s.insert_message(&m, &peer, false, "тест 222", 1, RECEIVED).unwrap());
+        s.delete_local(&m).unwrap();
+        // A late copy (the relay, or a Nostr event read again after a restart).
+        assert!(!s.insert_message(&m, &peer, false, "тест 222", 1, RECEIVED).unwrap());
+        assert!(s.messages(&peer, None, 10).unwrap().is_empty());
     }
 }
