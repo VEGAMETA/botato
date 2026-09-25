@@ -110,6 +110,8 @@ ansible-playbook -i infra/ansible/inventory.ini infra/ansible/deploy.yml --tags 
 1. Поднять `version: x.y.z+build` в `app/pubspec.yaml` (build только растёт — по нему клиент решает, что версия новее).
 2. `tools\build-release.ps1` — кладёт в сборку последний подписанный `manifest.bin` из папки админа, собирает APK и установщик.
 3. botatoadmin → «Релиз и выкатка» → пароль → «Подписать релиз и выкатить»: `releases/release.bin` (подписан корневым ключом, `protocol/README.md` §3b) + файлы в папке админа, затем Ansible выкладывает их в `/opt/botato/releases`, Caddy раздаёт как `/releases/*`.
+Android — два APK: arm64 и 32-битный ARM (`android-arm`, armeabi-v7a: у части бюджетных Samsung, например A40, 32-битная ОС на 64-битном процессоре); клиент берёт файл своей архитектуры. Постоянные ссылки: `botato-latest.apk` (arm64), `botato-latest-arm32.apk`, `botato-latest.exe`. minSdk 24 (Android 7); всё, что новее, — проверками версии в одном APK. Самообновление на Android 12+ — без окна подтверждения (сессия `PackageInstaller`, `USER_ACTION_NOT_REQUIRED`; первое обновление после установки через adb/браузер спросит один раз), ниже — системный установщик; после обновления — уведомление «открыть».
+
 4. Клиенты (Android, Windows) раз в 6 ч и при старте берут `release.bin`, проверяют подпись и build, предлагают обновиться; скачанный файл ставится только при совпадении размера и SHA-256. Сервер может задержать обновление, но не подменить.
 
 После удаления устройства botatoadmin сам подписывает манифест с отзывом и выкатывает его (`--tags manifest`).
