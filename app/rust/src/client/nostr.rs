@@ -193,8 +193,10 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
     let mut last_manifest_query: Option<Instant> = None;
     let d_tag = pn::manifest_d_tag(&root_pub);
     let mut tick = tokio::time::interval(if cfg!(test) { Duration::from_millis(500) } else { Duration::from_secs(5) });
-    // Outbox copies already published during this outage.
+    // Outbox copies already published, and which event carries which copy (a relay's OK
+    // marks the message sent, one check, as our relay's `stored` does).
     let mut published: std::collections::HashSet<Id> = std::collections::HashSet::new();
+    let mut event_rows: HashMap<String, Id> = HashMap::new();
 
     loop {
         // Connections follow the wanted state: active (or a recent publish) and a relay list.
@@ -235,7 +237,14 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
                     });
                 }
             },
-            Some(text) = in_rx.recv() => handle(&shared, &text, &d_tag, &root_pub, &emit),
+            Some(text) = in_rx.recv() => {
+                if let Some(row) = accepted(&text).and_then(|id| event_rows.remove(&id)) {
+                    if let Ok(Some(peer)) = shared.store.lock().unwrap().on_stored(&row) {
+                        emit(Event::MessagesChanged { peer });
+                    }
+                }
+                handle(&shared, &text, &d_tag, &root_pub, &emit)
+            }
             _ = tick.tick() => {
                 // New contacts, a new day or a new manifest: resubscribe if the tags changed.
                 let tags = own_tags(&shared, config::now());
@@ -258,6 +267,7 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
                 if !shared.manifest().nostr_relays.is_empty() {
                     let rows = shared.store.lock().unwrap().outbox().unwrap_or_default();
                     published.retain(|id| rows.iter().any(|r| r.id == *id));
+                    event_rows.retain(|_, r| published.contains(r));
                     let now = config::now();
                     for row in rows {
                         if published.contains(&row.id) || !(self_off || shared.nostr.peer_needs_nostr(&row.to_device)) {
@@ -266,6 +276,7 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
                         let Some(tag) = tag_for(&shared, &row.to_device, now) else { continue };
                         let Ok(ev) = pn::message_event(&row.blob, &tag, now) else { continue };
                         published.insert(row.id);
+                        event_rows.insert(ev.id.clone(), row.id);
                         keep_until = Some(Instant::now() + PUBLISH_KEEPS);
                         let _ = out_tx.send(json!(["EVENT", ev.to_json()]).to_string());
                     }
@@ -276,6 +287,12 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
     for t in tasks {
         t.abort();
     }
+}
+
+/// `["OK", id, true, ...]`: a relay stored our event.
+fn accepted(text: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    (v[0] == "OK" && v[2] == true).then(|| v[1].as_str().map(str::to_owned)).flatten()
 }
 
 fn handle(shared: &Shared, text: &str, d_tag: &str, root_pub: &[u8; 32], emit: &Emit) {
