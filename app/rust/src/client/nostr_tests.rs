@@ -32,7 +32,7 @@ async fn mock_relay() -> String {
             tokio::spawn(async move {
                 let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
                 let mut rx = bus.subscribe();
-                let mut subs: Vec<(String, Value)> = Vec::new();
+                let mut subs: Vec<(String, Vec<Value>)> = Vec::new();
                 let matches = |f: &Value, ev: &Value| {
                     let kind_ok = f["kinds"].as_array().is_none_or(|k| k.contains(&ev["kind"]));
                     let tag_ok = ["t", "d"].iter().all(|n| {
@@ -51,17 +51,19 @@ async fn mock_relay() -> String {
                                 "REQ" => {
                                     let id = v[1].as_str().unwrap().to_string();
                                     subs.retain(|(s, _)| *s != id);
-                                    let old: Vec<Value> = stored.lock().unwrap().iter().filter(|e| matches(&v[2], e)).cloned().collect();
+                                    let filters: Vec<Value> = v.as_array().unwrap()[2..].to_vec();
+                                    let old: Vec<Value> = stored.lock().unwrap().iter().filter(|e| filters.iter().any(|f| matches(f, e))).cloned().collect();
                                     for e in old {
                                         ws.send(Message::Text(json!(["EVENT", id, e]).to_string().into())).await.unwrap();
                                     }
                                     ws.send(Message::Text(json!(["EOSE", id]).to_string().into())).await.unwrap();
-                                    subs.push((id, v[2].clone()));
+                                    subs.push((id, filters));
                                 }
                                 "EVENT" => {
                                     let ev = v[1].clone();
                                     proto::nostr::Event::from_json(&ev).unwrap().verify().unwrap();
-                                    if ev["kind"].as_u64().unwrap() >= 30000 {
+                                    let kind = ev["kind"].as_u64().unwrap();
+                                    if !(20000..30000).contains(&kind) {
                                         stored.lock().unwrap().push(ev.clone());
                                     }
                                     ws.send(Message::Text(json!(["OK", ev["id"], true, ""]).to_string().into())).await.unwrap();
@@ -71,8 +73,8 @@ async fn mock_relay() -> String {
                             }
                         }
                         Ok(ev) = rx.recv() => {
-                            for (id, f) in &subs {
-                                if matches(f, &ev) {
+                            for (id, fs) in &subs {
+                                if fs.iter().any(|f| matches(f, &ev)) {
                                     let _ = ws.send(Message::Text(json!(["EVENT", id, ev]).to_string().into())).await;
                                 }
                             }
@@ -286,4 +288,48 @@ async fn relay_says_offline_so_nostr_carries_it() {
     .await
     .expect("signal copied to Nostr after 'offline'");
     assert_eq!(got, ua);
+}
+
+/// No server for either side: a text goes over Nostr, the receipt comes back the same way and
+/// the message becomes delivered.
+#[tokio::test]
+async fn message_and_receipt_over_nostr() {
+    let nostr_url = mock_relay().await;
+    let root = proto::generate_signing_key();
+    let manifest = Manifest {
+        version: 1,
+        servers: vec![ServerEntry { url: "ws://127.0.0.1:9/ws".into(), ip_fallback: String::new(), server_pub: [7; 32] }],
+        nostr_relays: vec![nostr_url],
+        ..Default::default()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let (da, db) = (DeviceSecret::generate(), DeviceSecret::generate());
+    let (ua, ub) = (Id::random(), Id::random());
+    let (ca, cb) = (cert(&root, &da, ua, "a"), cert(&root, &db, ub, "b"));
+    for d in ["a", "b"] {
+        std::fs::create_dir_all(dir.path().join(d)).unwrap();
+    }
+    let a = node(&root, &manifest, da, ua, &[ca.clone(), cb.clone()], &dir.path().join("a"));
+    let mut b = node(&root, &manifest, db, ub, &[cb, ca], &dir.path().join("b"));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let msg = super::messaging::compose(&a.shared, &ub, "hello over nostr", None).unwrap();
+    let got = wait(&mut b, 10, |e| match e {
+        Event::NewMessage { peer, text } => Some((*peer, text.clone())),
+        _ => None,
+    })
+    .await
+    .expect("message over Nostr");
+    assert_eq!(got.0, ua);
+    assert!(got.1.contains("hello over nostr"));
+
+    for _ in 0..100 {
+        let status = a.shared.store.lock().unwrap().messages(&ub, None, 10).unwrap().into_iter().find(|m| m.msg_id == msg).map(|m| m.status);
+        if status == Some(super::store::DELIVERED) {
+            assert!(a.shared.store.lock().unwrap().outbox().unwrap().is_empty(), "outbox cleared by the receipt");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the receipt did not come back over Nostr");
 }

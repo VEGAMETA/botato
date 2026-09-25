@@ -17,6 +17,10 @@ use crate::{Error, Id, Result};
 
 /// Call signals: ephemeral range, relays forward and don't store.
 pub const KIND_SIGNAL: u64 = 25580;
+/// Messages, receipts, updates (kinds 2..4 envelopes): stored by relays, NIP-40 expiration.
+pub const KIND_MESSAGE: u64 = 4580;
+/// How long relays keep a message event: the outbox lifetime.
+pub const MESSAGE_TTL: u64 = 24 * 3600;
 /// The signed manifest (NIP-78 parameterized replaceable).
 pub const KIND_MANIFEST: u64 = 30078;
 
@@ -155,6 +159,13 @@ impl Event {
 pub fn signal_event(blob: &[u8], tag: &str, now: u64) -> Result<Event> {
     let key = Zeroizing::new(random_secp_key());
     Event::sign(&key, &crate::random_bytes::<32>(), now, KIND_SIGNAL, vec![vec!["t".into(), tag.into()]], B64.encode(blob))
+}
+
+/// A message event for `tag` (fresh key), expiring with the outbox copy it carries.
+pub fn message_event(blob: &[u8], tag: &str, now: u64) -> Result<Event> {
+    let key = Zeroizing::new(random_secp_key());
+    let tags = vec![vec!["t".into(), tag.into()], vec!["expiration".into(), (now + MESSAGE_TTL).to_string()]];
+    Event::sign(&key, &crate::random_bytes::<32>(), now, KIND_MESSAGE, tags, B64.encode(blob))
 }
 
 /// The manifest event, signed with the admin's Nostr key.

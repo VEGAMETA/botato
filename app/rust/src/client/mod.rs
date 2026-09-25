@@ -295,6 +295,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
                 ws.send(Message::Ping(Default::default())).await?;
             }
             _ = shared.reconnect.notified() => return Ok(Exit::Reconnect),
+            _ = shared.nostr.flush.notified() => flush(shared, &mut ws, &mut s).await?,
             _ = directory.tick() => send(&mut ws, &ClientFrame::Directory {}).await?,
             _ = housekeeping.tick() => expire(shared, emit),
         }

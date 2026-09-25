@@ -332,7 +332,24 @@ pubkey     a fresh random secp256k1 key for every event (BIP-340 Schnorr, NIP-01
   10 min.
 - Fresh keys per event: relays can't link a device's events by pubkey (they still see IPs and timing).
 
-### 7.3 Manifest event
+### 7.3 Message events
+
+When our relay has been unreachable for 15 s, the outbox (messages, receipts, updates: §6.2) also
+goes over Nostr, each copy as its own event; the receipt that comes back clears it as usual. Nothing
+changes for attachments: the file stays on our relay and is fetched when it is back.
+
+```
+kind       4580 (regular: relays store it)
+tags       [["t", tag], ["expiration", created_at + 86400]]      (NIP-40; the outbox lifetime)
+content    base64 of the envelope blob (kind 2, 3 or 4)
+pubkey     a fresh random key for every event
+```
+
+Receivers subscribe to kind 4580 with their tags and `since = now - 86400` alongside the signals, and
+process an event exactly as a mailbox delivery (§6.2): duplicates are dropped by `msg_id` (and by the
+blob hash within a session), an unknown sender is ignored.
+
+### 7.4 Manifest event
 
 The admin also publishes the signed manifest (§3) on the manifest's relays, so clients find a new
 server when the old one is gone:

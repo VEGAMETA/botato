@@ -95,6 +95,43 @@ async fn probe_stored(url: &str) -> Result<(), String> {
     .map_err(|_| "no answer".to_string())?
 }
 
+/// A stored message event (kind 4580, NIP-40 expiration in 24 h) under a random tag, read back later.
+async fn probe_message(url: &str) -> Result<(), String> {
+    let t = Duration::from_secs(8);
+    let (mut ws, _) = timeout(t, tokio_tungstenite::connect_async(url)).await.map_err(|_| "connect timeout")?.map_err(|e| format!("connect: {e}"))?;
+    let tag = hex::encode(proto::random_bytes::<16>());
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let ev = proto::nostr::message_event(b"probe", &tag, now).map_err(|e| e.to_string())?;
+    ws.send(Message::Text(json!(["EVENT", ev.to_json()]).to_string().into())).await.map_err(|e| e.to_string())?;
+    timeout(t, async {
+        while let Some(Ok(Message::Text(m))) = ws.next().await {
+            let v: Value = serde_json::from_str(m.as_str()).unwrap_or(Value::Null);
+            if v[0] == "OK" {
+                return if v[2] == true { Ok(()) } else { Err(format!("rejected: {}", v[3])) };
+            }
+        }
+        Err("closed".to_string())
+    })
+    .await
+    .map_err(|_| "no OK".to_string())??;
+    let (mut ws2, _) = timeout(t, tokio_tungstenite::connect_async(url)).await.map_err(|_| "connect timeout")?.map_err(|e| format!("connect: {e}"))?;
+    ws2.send(Message::Text(json!(["REQ", "x", {"kinds": [proto::nostr::KIND_MESSAGE], "#t": [tag], "since": now - 60}]).to_string().into())).await.map_err(|e| e.to_string())?;
+    timeout(t, async {
+        while let Some(Ok(Message::Text(m))) = ws2.next().await {
+            let v: Value = serde_json::from_str(m.as_str()).unwrap_or(Value::Null);
+            if v[0] == "EVENT" && v[2]["id"] == ev.id {
+                return Ok(());
+            }
+            if v[0] == "EOSE" {
+                return Err("not stored".to_string());
+            }
+        }
+        Err("closed".to_string())
+    })
+    .await
+    .map_err(|_| "no answer".to_string())?
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -103,8 +140,8 @@ async fn main() {
         eprintln!("usage: nostr_probe <wss-url>...");
         std::process::exit(2);
     }
-    let results = futures_util::future::join_all(urls.iter().map(|u| async move { (u, probe(u).await, probe_stored(u).await) })).await;
-    for (u, signal, stored) in results {
+    let results = futures_util::future::join_all(urls.iter().map(|u| async move { (u, probe(u).await, probe_stored(u).await, probe_message(u).await) })).await;
+    for (u, signal, stored, message) in results {
         let signal = match signal {
             Ok(d) => format!("signal ok {} ms", d.as_millis()),
             Err(e) => format!("signal FAIL ({e})"),
@@ -113,6 +150,10 @@ async fn main() {
             Ok(()) => "manifest ok".to_string(),
             Err(e) => format!("manifest FAIL ({e})"),
         };
-        println!("{u}: {signal}; {stored}");
+        let message = match message {
+            Ok(()) => "message ok".to_string(),
+            Err(e) => format!("message FAIL ({e})"),
+        };
+        println!("{u}: {signal}; {stored}; {message}");
     }
 }

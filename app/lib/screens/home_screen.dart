@@ -640,8 +640,8 @@ class _ServerDownBanner extends StatelessWidget {
           Expanded(
             child: Text(
               tr(
-                'Сервер недоступен. Звонки идут через резервный канал, если собеседник в приложении; сообщения уйдут, когда связь вернётся.',
-                'The server is unreachable. Calls go over the backup channel if the other side has the app open; messages will go out when it is back.',
+                'Сервер недоступен. Звонки и сообщения идут через резервный канал; фото и голосовые — когда связь вернётся.',
+                'The server is unreachable. Calls and messages go over the backup channel; photos and voice messages when it is back.',
               ),
             ),
           ),

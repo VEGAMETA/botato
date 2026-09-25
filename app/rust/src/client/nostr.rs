@@ -1,5 +1,6 @@
-//! Nostr fallback (protocol/README.md §7): call signals over public Nostr relays when our relay
-//! can't carry them, and the signed manifest from there when our server is gone.
+//! Nostr fallback (protocol/README.md §7): call signals and outbox copies (messages, receipts,
+//! updates) over public Nostr relays when our relay can't carry them, and the signed manifest
+//! from there when our server is gone.
 //!
 //! One task keeps a WebSocket per relay of the manifest's list while the app is active,
 //! subscribed to the tags our peers would address us with. Everything that arrives is an
@@ -29,6 +30,10 @@ const MANIFEST_AFTER: Duration = if cfg!(test) { Duration::from_secs(1) } else {
 const MANIFEST_EVERY: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(300) };
 /// A publish while inactive keeps the relays connected this long (the answer may come back).
 const PUBLISH_KEEPS: Duration = Duration::from_secs(120);
+/// Our relay unreachable this long → the outbox also goes out over Nostr.
+const OUTBOX_AFTER: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(15) };
+/// Message events published only until then are looked for this far back (their lifetime).
+const MESSAGES_SINCE: u64 = pn::MESSAGE_TTL;
 
 pub enum Cmd {
     /// The app is active (desktop, phone in front, or a call): stay subscribed.
@@ -45,12 +50,20 @@ pub struct Link {
     /// Since when our relay has been unreachable.
     offline_since: Mutex<Option<Instant>>,
     seen: Mutex<HashMap<[u8; 32], Instant>>,
+    /// Asks the relay session to send the outbox now (a receipt owed for a Nostr delivery).
+    pub flush: tokio::sync::Notify,
 }
 
 impl Link {
     pub fn new() -> (Link, mpsc::UnboundedReceiver<Cmd>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let link = Link { tx, online: AtomicBool::new(false), offline_since: Mutex::new(Some(Instant::now())), seen: Mutex::default() };
+        let link = Link {
+            tx,
+            online: AtomicBool::new(false),
+            offline_since: Mutex::new(Some(Instant::now())),
+            seen: Mutex::default(),
+            flush: tokio::sync::Notify::new(),
+        };
         (link, rx)
     }
 
@@ -122,7 +135,12 @@ fn own_tags(shared: &Shared, now: u64) -> Vec<String> {
 }
 
 fn signal_filter(tags: &[String], now: u64) -> Value {
-    json!(["REQ", "s", {"kinds": [pn::KIND_SIGNAL], "#t": tags, "since": now.saturating_sub(60)}])
+    json!([
+        "REQ",
+        "s",
+        {"kinds": [pn::KIND_SIGNAL], "#t": tags, "since": now.saturating_sub(60)},
+        {"kinds": [pn::KIND_MESSAGE], "#t": tags, "since": now.saturating_sub(MESSAGES_SINCE)}
+    ])
 }
 
 /// Runs for the client's lifetime.
@@ -141,7 +159,9 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
     let mut tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
     let mut last_manifest_query: Option<Instant> = None;
     let d_tag = pn::manifest_d_tag(&root_pub);
-    let mut tick = tokio::time::interval(if cfg!(test) { Duration::from_millis(500) } else { Duration::from_secs(20) });
+    let mut tick = tokio::time::interval(if cfg!(test) { Duration::from_millis(500) } else { Duration::from_secs(5) });
+    // Outbox copies already published during this outage.
+    let mut published: std::collections::HashSet<Id> = std::collections::HashSet::new();
 
     loop {
         // Connections follow the wanted state: active (or a recent publish) and a relay list.
@@ -198,6 +218,22 @@ pub async fn run_with_root(shared: std::sync::Arc<Shared>, mut cmds: mpsc::Unbou
                 }
                 if shared.nostr.online() {
                     last_manifest_query = None;
+                    published.clear();
+                } else if shared.nostr.offline_for().is_some_and(|d| d >= OUTBOX_AFTER) && !shared.manifest().nostr_relays.is_empty() {
+                    // No server: what waits in the outbox goes over Nostr (the receipt that
+                    // comes back clears it, as over our relay).
+                    let rows = shared.store.lock().unwrap().outbox().unwrap_or_default();
+                    let now = config::now();
+                    for row in rows {
+                        if published.contains(&row.id) {
+                            continue;
+                        }
+                        let Some(tag) = tag_for(&shared, &row.to_device, now) else { continue };
+                        let Ok(ev) = pn::message_event(&row.blob, &tag, now) else { continue };
+                        published.insert(row.id);
+                        keep_until = Some(Instant::now() + PUBLISH_KEEPS);
+                        let _ = out_tx.send(json!(["EVENT", ev.to_json()]).to_string());
+                    }
                 }
             }
         }
@@ -221,6 +257,23 @@ fn handle(shared: &Shared, text: &str, d_tag: &str, root_pub: &[u8; 32], emit: &
             }
             if let Ok(Some(e)) = super::open_signal(shared, &payload) {
                 emit(e);
+            }
+        }
+        pn::KIND_MESSAGE => {
+            if !shared.nostr.first_seen(&payload) {
+                return;
+            }
+            // Exactly as a mailbox delivery; an unknown sender waits (no directory offline).
+            if let Ok(super::messaging::Delivered::Done { changed, new_text }) = super::messaging::on_deliver(shared, &payload) {
+                if let Some(peer) = changed {
+                    emit(Event::MessagesChanged { peer });
+                }
+                if let Some((peer, text)) = new_text {
+                    emit(Event::NewMessage { peer, text });
+                }
+                // The receipt we owe is in the outbox: our relay sends it now if connected,
+                // otherwise the next tick publishes it here.
+                shared.nostr.flush.notify_one();
             }
         }
         pn::KIND_MANIFEST if ev.tag("d") == Some(d_tag) => {
