@@ -67,10 +67,18 @@ object CallChannel {
                 }
                 "incoming" -> {
                     activity?.requestNotificationPermission()
-                    // The single activity already exists: it must be allowed over the lock screen
-                    // before the full-screen intent brings it up (set in onNewIntent it is too
-                    // late, the keyguard stays on top). Cleared by "hide" when the call ends.
-                    activity?.showOverLockScreen(true)
+                    // A stopped activity brought back by the full-screen intent stays under the
+                    // keyguard (its show-when-locked is decided too late). Finish it: the intent
+                    // then creates a fresh one, which sets the flags in onCreate. The Flutter
+                    // engine is cached, so the call and the relay session go on. A visible
+                    // activity is kept and just allowed over the lock screen.
+                    activity?.let { a ->
+                        if (a.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                            a.showOverLockScreen(true)
+                        } else {
+                            a.finish()
+                        }
+                    }
                     IncomingCallNotification.show(
                         ctx,
                         call.argument<String>("peer") ?: "",
