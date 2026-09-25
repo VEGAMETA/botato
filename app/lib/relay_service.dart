@@ -250,6 +250,7 @@ class RelayService extends ChangeNotifier {
         state = ConnState.online;
         detail = server;
         contacts = _loadContacts();
+        _loadConversations();
         _queryPresence();
       case core.ClientEvent_Offline(:final reason):
         debugPrint('[relay] offline: $reason');
@@ -258,6 +259,9 @@ class RelayService extends ChangeNotifier {
         _onlineDevices = {};
       case core.ClientEvent_ContactsChanged():
         contacts = _loadContacts();
+        // Also the first event after start: only now can the store be read (start() asked
+        // too early and got an empty list, so every contact showed "нет сообщений").
+        _loadConversations();
         _queryPresence();
       case core.ClientEvent_Presence(:final online):
         _onlineDevices = online.toSet();
