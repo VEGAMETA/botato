@@ -1,3 +1,35 @@
 target/
+
+# Deployment inventory: server address, admin-machine paths.
 infra/ansible/inventory.ini
+*.retry
+
+# Admin data must never be committed, wherever it ends up: root key, certs, signed
+# manifests and releases, FCM service account, Android release signing.
 admin-data/
+root.key
+state.json
+manifest.bin
+release.bin
+fcm-service-account*.json
+google-services.json
+*.jks
+*.keystore
+key.properties
+android-release-password.txt
+
+# Build outputs that may get copied around by hand.
+*.apk
+*.aab
+botato-setup-*.exe
+botato-latest.*
+
+# Tooling and OS noise.
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.iml
+Thumbs.db
+desktop.ini
+.DS_Store
