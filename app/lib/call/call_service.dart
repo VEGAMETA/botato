@@ -376,6 +376,7 @@ class CallService extends ChangeNotifier {
       case 'reoffer':
         if (_isCaller || _pc == null) return;
         final offerSdp = d['sdp'] as String;
+        _log(offerSdp == _lastReoffer ? 'reoffer (repeat), answering again' : 'reoffer, answering');
         // A re-sent copy of an offer we already answered: just answer again.
         if (offerSdp != _lastReoffer) {
           _lastReoffer = offerSdp;
@@ -390,6 +391,7 @@ class CallService extends ChangeNotifier {
       case 'reanswer':
         // Only the answer to the offer we are waiting for; duplicates are ignored.
         if (!_isCaller || _pc == null || _pendingReoffer == null) return;
+        _log('reanswer applied');
         _pendingReoffer = null;
         _remoteSet = false;
         await _pc!.setRemoteDescription(RTCSessionDescription(d['sdp'] as String, 'answer'));
@@ -673,6 +675,7 @@ class CallService extends ChangeNotifier {
     };
     // Some platforms (flutter_webrtc on Windows) report only ICE state, so watch both.
     _pc!.onConnectionState = (s) {
+      _log('pc ${s.name.replaceFirst('RTCPeerConnectionState', '')}');
       switch (s) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _connected();
@@ -684,6 +687,7 @@ class CallService extends ChangeNotifier {
       }
     };
     _pc!.onIceConnectionState = (s) {
+      _log('ice ${s.name.replaceFirst('RTCIceConnectionState', '')}');
       switch (s) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
@@ -720,6 +724,8 @@ class CallService extends ChangeNotifier {
     _deadline?.cancel();
     _deadline = null;
     if (reconnecting) {
+      final lost = _lostAt;
+      _log('media back${lost == null ? '' : ' after ${DateTime.now().difference(lost).inMilliseconds} ms'}');
       reconnecting = false;
       _updateNotification();
       notifyListeners();
@@ -731,10 +737,23 @@ class CallService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Call diagnostics for `flutter logs` / logcat: events only, never SDP, keys or addresses.
+  void _log(String event) {
+    final t = DateTime.now();
+    final ts =
+        '${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}.'
+        '${(t.millisecond ~/ 100)}';
+    debugPrint('[call $ts] $event');
+  }
+
+  DateTime? _lostAt;
+
   /// Network changed or broke. The caller restarts ICE; both sides give up after the deadline.
   void _connectionLost({required bool soft}) {
     if (phase != CallPhase.active && phase != CallPhase.connecting) return;
+    _log('connection lost (${soft ? 'disconnected' : 'failed'}), ${_isCaller ? 'caller' : 'callee'}');
     if (!reconnecting) {
+      _lostAt = DateTime.now();
       reconnecting = true;
       // The relay socket probably died with the old network too; don't wait to notice.
       relay.reconnect();
@@ -742,6 +761,7 @@ class CallService extends ChangeNotifier {
       notifyListeners();
     }
     _deadline ??= Timer(_reconnectDeadline, () {
+      _log('gave up after ${_reconnectDeadline.inSeconds} s');
       if (_peerDevice != null) {
         relay.signal(_peerDevice!, {'type': 'hangup', 'call': _callId, 'reason': 'failed'});
       }
@@ -757,8 +777,10 @@ class CallService extends ChangeNotifier {
         if (pending != null) {
           // No answer yet (the relay may have been reconnecting): re-send the same offer,
           // don't start over; restarting again would abort candidate gathering.
+          _log('no reanswer yet, re-sending the same reoffer (relay ${relay.state.name})');
           relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': pending});
         } else if (DateTime.now().difference(_lastRestart) > const Duration(seconds: 15)) {
+          _log('answered but still no media, fresh ICE restart');
           _restartIce(); // answered, but still no media: try a fresh restart
         }
       });
@@ -774,8 +796,11 @@ class CallService extends ChangeNotifier {
       final sdp = tuneSdp(offer.sdp!);
       await pc.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
       _pendingReoffer = sdp;
+      _log('ICE restart: reoffer sent (relay ${relay.state.name})');
       relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': sdp});
-    } catch (_) {}
+    } catch (e) {
+      _log('ICE restart failed: $e');
+    }
   }
 
   // ---- lifecycle

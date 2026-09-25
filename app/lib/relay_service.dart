@@ -168,7 +168,10 @@ class RelayService extends ChangeNotifier {
     _sub = core.clientStart(dataDir: dir.path, secret: secret, cert: cert, dbKey: dbKey).listen(_onEvent);
     // Wi-Fi <-> LTE, VPN on/off: the old socket may be silently dead, dial again right away.
     _net ??= Connectivity().onConnectivityChanged.listen((r) {
-      if (_lastNet != null && !listEquals(r, _lastNet)) reconnect();
+      if (_lastNet != null && !listEquals(r, _lastNet)) {
+        debugPrint('[relay] network changed (${r.map((x) => x.name).join(',')}), reconnecting');
+        reconnect();
+      }
       _lastNet = r;
     });
     contacts = _loadContacts();
@@ -188,11 +191,13 @@ class RelayService extends ChangeNotifier {
         state = ConnState.connecting;
         detail = server;
       case core.ClientEvent_Online(:final server):
+        if (state != ConnState.online) debugPrint('[relay] online');
         state = ConnState.online;
         detail = server;
         contacts = _loadContacts();
         _queryPresence();
       case core.ClientEvent_Offline(:final reason):
+        debugPrint('[relay] offline: $reason');
         state = ConnState.offline;
         detail = reason;
         _onlineDevices = {};
