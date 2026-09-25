@@ -243,74 +243,78 @@ class _ChatScreenState extends State<ChatScreen> {
     final mine = m.reactions.where((r) => r.userId == _me).firstOrNull?.emoji;
     final action = await showModalBottomSheet<String>(
       context: context,
+      // Its full height (the default caps a sheet at 9/16 of the screen: "Delete" was cut off).
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!m.deleted)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
-                child: Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 4,
-                  children: [
-                    for (final e in _quickReactions)
-                      InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: () => Navigator.pop(ctx, 'react:$e'),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: e == mine ? BotatoColors.potato.withValues(alpha: 0.35) : null,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!m.deleted)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 4,
+                    children: [
+                      for (final e in _quickReactions)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(24),
+                          onTap: () => Navigator.pop(ctx, 'react:$e'),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: e == mine ? BotatoColors.potato.withValues(alpha: 0.35) : null,
+                            ),
+                            child: Text(e, style: const TextStyle(fontSize: 26)),
                           ),
-                          child: Text(e, style: const TextStyle(fontSize: 26)),
                         ),
+                      IconButton(
+                        tooltip: tr('Своё эмодзи', 'Custom emoji'),
+                        icon: const Icon(Icons.add_reaction_outlined),
+                        onPressed: () => Navigator.pop(ctx, 'custom'),
                       ),
-                    IconButton(
-                      tooltip: tr('Своё эмодзи', 'Custom emoji'),
-                      icon: const Icon(Icons.add_reaction_outlined),
-                      onPressed: () => Navigator.pop(ctx, 'custom'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            if (!m.deleted) ...[
+              if (!m.deleted) ...[
+                ListTile(
+                  leading: const Icon(Icons.reply),
+                  title: Text(tr('Ответить', 'Reply')),
+                  onTap: () => Navigator.pop(ctx, 'reply'),
+                ),
+                if (m.text.isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.copy),
+                    title: Text(tr('Копировать', 'Copy')),
+                    onTap: () => Navigator.pop(ctx, 'copy'),
+                  ),
+                if (m.text.isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.text_fields),
+                    title: Text(tr('Выделить текст', 'Select text')),
+                    onTap: () => Navigator.pop(ctx, 'select'),
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.forward),
+                  title: Text(tr('Переслать', 'Forward')),
+                  onTap: () => Navigator.pop(ctx, 'forward'),
+                ),
+                if (m.fromMe && (m.text.isNotEmpty || m.photo == null))
+                  ListTile(
+                    leading: const Icon(Icons.edit_outlined),
+                    title: Text(tr('Изменить', 'Edit')),
+                    onTap: () => Navigator.pop(ctx, 'edit'),
+                  ),
+              ],
               ListTile(
-                leading: const Icon(Icons.reply),
-                title: Text(tr('Ответить', 'Reply')),
-                onTap: () => Navigator.pop(ctx, 'reply'),
+                leading: const Icon(Icons.delete_outline, color: BotatoColors.danger),
+                title: Text(tr('Удалить', 'Delete'), style: TextStyle(color: BotatoColors.danger)),
+                onTap: () => Navigator.pop(ctx, 'delete'),
               ),
-              if (m.text.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.copy),
-                  title: Text(tr('Копировать', 'Copy')),
-                  onTap: () => Navigator.pop(ctx, 'copy'),
-                ),
-              if (m.text.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.text_fields),
-                  title: Text(tr('Выделить текст', 'Select text')),
-                  onTap: () => Navigator.pop(ctx, 'select'),
-                ),
-              ListTile(
-                leading: const Icon(Icons.forward),
-                title: Text(tr('Переслать', 'Forward')),
-                onTap: () => Navigator.pop(ctx, 'forward'),
-              ),
-              if (m.fromMe && (m.text.isNotEmpty || m.photo == null))
-                ListTile(
-                  leading: const Icon(Icons.edit_outlined),
-                  title: Text(tr('Изменить', 'Edit')),
-                  onTap: () => Navigator.pop(ctx, 'edit'),
-                ),
             ],
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: BotatoColors.danger),
-              title: Text(tr('Удалить', 'Delete'), style: TextStyle(color: BotatoColors.danger)),
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -348,121 +348,127 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(widget.info.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Why "no connection": the last error from the relay client, copyable.
-            if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
-              row(
-                widget.relay.state == ConnState.connecting
-                    ? tr('Подключение к', 'Connecting to')
-                    : tr('Нет связи', 'No connection'),
-                widget.relay.detail,
+        // Version, language, switches, ids, then diagnostics; scrolls on small screens.
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('Версия', 'Version'), style: TextStyle(color: BotatoColors.smoke, fontSize: 13)),
+                subtitle: Text(widget.updates.current, style: const TextStyle(fontSize: 15)),
+                trailing: TextButton(
+                  onPressed: () async {
+                    final ok = await widget.updates.check();
+                    final u = widget.updates;
+                    _toast(
+                      u.available != null
+                          ? tr(
+                              'Доступна версия ${u.available!.version}',
+                              'Version ${u.available!.version} is available',
+                            )
+                          : ok
+                          ? tr('Установлена последняя версия', 'The latest version is installed')
+                          : '${tr('Не удалось проверить', "Couldn't check")}: ${u.error ?? tr('нет связи', 'no connection')}',
+                    );
+                  },
+                  child: Text(tr('Проверить', 'Check')),
+                ),
               ),
-            row(tr('ID пользователя', 'User ID'), widget.info.userId),
-            StatefulBuilder(
-              builder: (ctx, set) {
-                final s = widget.calls.settings;
-                return Column(
-                  children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Язык / Language'),
-                      trailing: DropdownButton<AppLanguage>(
-                        value: Lang.instance.setting,
-                        underline: const SizedBox(),
-                        items: [
-                          DropdownMenuItem(value: AppLanguage.system, child: Text(tr('Системный', 'System'))),
-                          const DropdownMenuItem(value: AppLanguage.ru, child: Text('Русский')),
-                          const DropdownMenuItem(value: AppLanguage.en, child: Text('English')),
-                        ],
-                        onChanged: (l) async {
-                          if (l == null) return;
-                          await Lang.instance.set(l);
-                          set(() {});
-                        },
-                      ),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(tr('Текст в уведомлениях', 'Text in notifications')),
-                      subtitle: Text(
-                        tr(
-                          'Выкл.: только «новое сообщение», без имени и текста',
-                          'Off: only “new message”, no name or text',
+              StatefulBuilder(
+                builder: (ctx, set) {
+                  final s = widget.calls.settings;
+                  return Column(
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Язык / Language'),
+                        trailing: DropdownButton<AppLanguage>(
+                          value: Lang.instance.setting,
+                          underline: const SizedBox(),
+                          items: [
+                            DropdownMenuItem(value: AppLanguage.system, child: Text(tr('Системный', 'System'))),
+                            const DropdownMenuItem(value: AppLanguage.ru, child: Text('Русский')),
+                            const DropdownMenuItem(value: AppLanguage.en, child: Text('English')),
+                          ],
+                          onChanged: (l) async {
+                            if (l == null) return;
+                            await Lang.instance.set(l);
+                            set(() {});
+                          },
                         ),
                       ),
-                      value: s.notifyPreview,
-                      onChanged: (v) => set(() => s.notifyPreview = v),
-                    ),
-                    if (Platform.isAndroid)
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(tr('Защита экрана', 'Screen protection')),
+                        title: Text(tr('Текст в уведомлениях', 'Text in notifications')),
                         subtitle: Text(
                           tr(
-                            'Скрыть чаты в «Недавних», запретить скриншоты',
-                            'Hide chats in Recents, block screenshots',
+                            'Выкл.: только «новое сообщение», без имени и текста',
+                            'Off: only “new message”, no name or text',
                           ),
                         ),
-                        value: s.secureScreen,
-                        onChanged: (v) => set(() {
-                          s.secureScreen = v;
-                          widget.calls.notifier.secureScreen(v);
-                        }),
+                        value: s.notifyPreview,
+                        onChanged: (v) => set(() => s.notifyPreview = v),
                       ),
-                  ],
-                );
-              },
-            ),
-            if (Platform.isAndroid)
-              FutureBuilder<bool>(
-                future: widget.calls.notifier.fullScreenAllowed(),
-                builder: (ctx, snap) => snap.data == false
-                    ? ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.warning_amber, color: Colors.orange),
-                        title: Text(tr('Звонки на весь экран выключены', 'Full-screen calls are off')),
-                        subtitle: Text(
-                          tr(
-                            'На заблокированном телефоне звонок придёт только уведомлением',
-                            'On a locked phone a call arrives only as a notification',
+                      if (Platform.isAndroid)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(tr('Защита экрана', 'Screen protection')),
+                          subtitle: Text(
+                            tr(
+                              'Скрыть чаты в «Недавних», запретить скриншоты',
+                              'Hide chats in Recents, block screenshots',
+                            ),
                           ),
+                          value: s.secureScreen,
+                          onChanged: (v) => set(() {
+                            s.secureScreen = v;
+                            widget.calls.notifier.secureScreen(v);
+                          }),
                         ),
-                        trailing: TextButton(
-                          onPressed: widget.calls.notifier.openFullScreenSettings,
-                          child: Text(tr('Разрешить', 'Allow')),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.bug_report_outlined),
-              title: Text(tr('Журнал ошибок', 'Error log')),
-              onTap: () => _showErrorLog(context),
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(tr('Версия', 'Version'), style: TextStyle(color: BotatoColors.smoke, fontSize: 13)),
-              subtitle: Text(widget.updates.current, style: const TextStyle(fontSize: 15)),
-              trailing: TextButton(
-                onPressed: () async {
-                  final ok = await widget.updates.check();
-                  final u = widget.updates;
-                  _toast(
-                    u.available != null
-                        ? tr('Доступна версия ${u.available!.version}', 'Version ${u.available!.version} is available')
-                        : ok
-                        ? tr('Установлена последняя версия', 'The latest version is installed')
-                        : '${tr('Не удалось проверить', "Couldn't check")}: ${u.error ?? tr('нет связи', 'no connection')}',
+                    ],
                   );
                 },
-                child: Text(tr('Проверить', 'Check')),
               ),
-            ),
-            if (device != null) row(tr('ID этого устройства', 'This device ID'), device),
-          ],
+              if (Platform.isAndroid)
+                FutureBuilder<bool>(
+                  future: widget.calls.notifier.fullScreenAllowed(),
+                  builder: (ctx, snap) => snap.data == false
+                      ? ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.warning_amber, color: Colors.orange),
+                          title: Text(tr('Звонки на весь экран выключены', 'Full-screen calls are off')),
+                          subtitle: Text(
+                            tr(
+                              'На заблокированном телефоне звонок придёт только уведомлением',
+                              'On a locked phone a call arrives only as a notification',
+                            ),
+                          ),
+                          trailing: TextButton(
+                            onPressed: widget.calls.notifier.openFullScreenSettings,
+                            child: Text(tr('Разрешить', 'Allow')),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              row(tr('ID пользователя', 'User ID'), widget.info.userId),
+              if (device != null) row(tr('ID этого устройства', 'This device ID'), device),
+              // Why "no connection": the last error from the relay client, copyable.
+              if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
+                row(
+                  widget.relay.state == ConnState.connecting
+                      ? tr('Подключение к', 'Connecting to')
+                      : tr('Нет связи', 'No connection'),
+                  widget.relay.detail,
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.bug_report_outlined),
+                title: Text(tr('Журнал ошибок', 'Error log')),
+                onTap: () => _showErrorLog(context),
+              ),
+            ],
+          ),
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Закрыть', 'Close')))],
       ),

@@ -432,7 +432,8 @@ pub fn on_deliver(shared: &Shared, blob: &[u8]) -> anyhow::Result<Delivered> {
                     store.set_extra(&p.msg, &extra)?;
                 }
             }
-            if let Some(m) = &meta {
+            // Not for a copy of a deleted message (tombstone): no attachment to fetch.
+            if let (true, Some(m)) = (fresh, &meta) {
                 store.insert_photo(&p.msg, m, None)?;
             }
             receipt(&p.msg)?;
