@@ -14,6 +14,7 @@ import '../src/rust/api/client.dart' as core;
 import '../src/rust/api/identity.dart' as id;
 import '../theme.dart';
 import 'chat_screen.dart';
+import '../l10n.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.info, required this.relay, required this.calls, required this.updates});
@@ -75,13 +76,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final r = widget.relay;
     final contacts = _matchingContacts(q);
     if (contacts.isEmpty && _msgHits.isEmpty) {
-      return const Center(
-        child: Text('Ничего не найдено', style: TextStyle(color: BotatoColors.smoke)),
+      return Center(
+        child: Text(tr('Ничего не найдено', 'Nothing found'), style: TextStyle(color: BotatoColors.smoke)),
       );
     }
     return ListView(
       children: [
-        if (contacts.isNotEmpty) const _SectionLabel('Контакты'),
+        if (contacts.isNotEmpty) _SectionLabel(tr('Контакты', 'Contacts')),
         for (final c in contacts)
           ListTile(
             leading: Avatar(c.name),
@@ -89,7 +90,8 @@ class _HomeScreenState extends State<HomeScreen> {
             subtitle: Text(
               [
                 if (r.certName(c.userId) != c.name) r.certName(c.userId),
-                if (!r.isAdded(c.userId)) 'не в списке — нажмите, чтобы открыть чат',
+                if (!r.isAdded(c.userId))
+                  tr('не в списке — нажмите, чтобы открыть чат', 'not in the list — tap to open the chat'),
               ].join(' · '),
               style: const TextStyle(color: BotatoColors.smoke, fontSize: 12),
             ),
@@ -99,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
               openChat(context, c);
             },
           ),
-        if (_msgHits.isNotEmpty) const _SectionLabel('Сообщения'),
+        if (_msgHits.isNotEmpty) _SectionLabel(tr('Сообщения', 'Messages')),
         for (final h in _msgHits)
           if (r.contacts.where((c) => c.userId == h.peerUser).firstOrNull case final c?)
             ListTile(
@@ -154,11 +156,11 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (s.data['type']) {
       case 'ping':
         widget.relay.signal(s.fromDevice, {'type': 'pong'});
-        _toast('ping от $who');
+        _toast(tr('ping от $who', 'ping from $who'));
       case 'pong':
         final sent = _pingSent.remove(s.fromDevice);
         final ms = sent == null ? '?' : DateTime.now().difference(sent).inMilliseconds;
-        _toast('pong от $who: $ms мс');
+        _toast(tr('pong от $who: $ms мс', 'pong from $who: $ms ms'));
     }
   }
 
@@ -183,13 +185,17 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).popUntil((r) => r.isFirst);
     final contacts = widget.relay.visibleContacts;
     if (contacts.isEmpty) {
-      _toast('Некому отправить: сначала добавьте контакт');
+      _toast(tr('Некому отправить: сначала добавьте контакт', 'Nobody to send to: add a contact first'));
       return;
     }
     final to = await showDialog<core.ContactInfo>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: Text(shared.files.isEmpty ? 'Отправить текст' : 'Отправить фото: ${shared.files.length}'),
+        title: Text(
+          shared.files.isEmpty
+              ? tr('Отправить текст', 'Send text')
+              : tr('Отправить фото: ${shared.files.length}', 'Send photos: ${shared.files.length}'),
+        ),
         children: [
           for (final c in contacts)
             SimpleDialogOption(
@@ -214,23 +220,28 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: Text('Забыть «${c.name}»?'),
+          title: Text(tr('Забыть «${c.name}»?', 'Forget “${c.name}”?')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Контакт пропадёт из списка. Если он напишет или позвонит — вернётся сам.'),
+              Text(
+                tr(
+                  'Контакт пропадёт из списка. Если он напишет или позвонит — вернётся сам.',
+                  'The contact disappears from the list. If they write or call, they come back by themselves.',
+                ),
+              ),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: deleteHistory,
                 onChanged: (v) => set(() => deleteHistory = v ?? false),
-                title: const Text('Удалить переписку на этом устройстве'),
+                title: Text(tr('Удалить переписку на этом устройстве', 'Delete the conversation on this device')),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Забыть')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Отмена', 'Cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Забыть', 'Forget'))),
           ],
         ),
       ),
@@ -245,7 +256,11 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => _AddContactDialog(relay: widget.relay),
     );
     if (added == null || added.isEmpty) return;
-    _toast(added.length == 1 ? 'Добавлен: ${added.first.name}' : 'Добавлено: ${added.length}');
+    _toast(
+      added.length == 1
+          ? tr('Добавлен: ${added.first.name}', 'Added: ${added.first.name}')
+          : tr('Добавлено: ${added.length}', 'Added: ${added.length}'),
+    );
   }
 
   /// Android 14+ ships full-screen notifications switched off for sideloaded apps: without them
@@ -257,14 +272,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final open = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Звонки на весь экран'),
-        content: const Text(
-          'Сейчас на заблокированном телефоне входящий звонок приходит только уведомлением. '
-          'Разрешите botato полноэкранные уведомления — тогда звонок откроется поверх экрана блокировки.',
+        title: Text(tr('Звонки на весь экран', 'Full-screen calls')),
+        content: Text(
+          tr(
+            'Сейчас на заблокированном телефоне входящий звонок приходит только уведомлением. Разрешите botato полноэкранные уведомления — тогда звонок откроется поверх экрана блокировки.',
+            'On a locked phone an incoming call now arrives only as a notification. Allow botato full-screen notifications, and the call will open over the lock screen.',
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Не сейчас')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Разрешить')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Не сейчас', 'Not now'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Разрешить', 'Allow'))),
         ],
       ),
     );
@@ -276,13 +293,13 @@ class _HomeScreenState extends State<HomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Журнал ошибок'),
+        title: Text(tr('Журнал ошибок', 'Error log')),
         content: SizedBox(
           width: 560,
           height: 360,
           child: text.isEmpty
-              ? const Center(
-                  child: Text('Ошибок нет', style: TextStyle(color: BotatoColors.smoke)),
+              ? Center(
+                  child: Text(tr('Ошибок нет', 'No errors'), style: TextStyle(color: BotatoColors.smoke)),
                 )
               : SingleChildScrollView(
                   reverse: true,
@@ -296,17 +313,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ErrorLog.clear();
                 Navigator.pop(ctx);
               },
-              child: const Text('Очистить'),
+              child: Text(tr('Очистить', 'Clear')),
             ),
           if (text.isNotEmpty)
             TextButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: text));
-                _toast('Скопировано');
+                _toast(tr('Скопировано', 'Copied'));
               },
-              child: const Text('Скопировать'),
+              child: Text(tr('Скопировать', 'Copy')),
             ),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Закрыть', 'Close'))),
         ],
       ),
     );
@@ -319,11 +336,11 @@ class _HomeScreenState extends State<HomeScreen> {
       title: Text(label, style: const TextStyle(color: BotatoColors.smoke, fontSize: 13)),
       subtitle: SelectableText(value, style: const TextStyle(fontFamily: 'monospace', fontSize: 15)),
       trailing: IconButton(
-        tooltip: 'Скопировать',
+        tooltip: tr('Скопировать', 'Copy'),
         icon: const Icon(Icons.copy, size: 20),
         onPressed: () {
           Clipboard.setData(ClipboardData(text: value));
-          _toast('Скопировано');
+          _toast(tr('Скопировано', 'Copied'));
         },
       ),
     );
@@ -336,25 +353,58 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             // Why "no connection": the last error from the relay client, copyable.
             if (widget.relay.state != ConnState.online && widget.relay.detail.isNotEmpty)
-              row(widget.relay.state == ConnState.connecting ? 'Подключение к' : 'Нет связи', widget.relay.detail),
-            row('ID пользователя', widget.info.userId),
+              row(
+                widget.relay.state == ConnState.connecting
+                    ? tr('Подключение к', 'Connecting to')
+                    : tr('Нет связи', 'No connection'),
+                widget.relay.detail,
+              ),
+            row(tr('ID пользователя', 'User ID'), widget.info.userId),
             StatefulBuilder(
               builder: (ctx, set) {
                 final s = widget.calls.settings;
                 return Column(
                   children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Язык / Language'),
+                      trailing: DropdownButton<AppLanguage>(
+                        value: Lang.instance.setting,
+                        underline: const SizedBox(),
+                        items: [
+                          DropdownMenuItem(value: AppLanguage.system, child: Text(tr('Системный', 'System'))),
+                          const DropdownMenuItem(value: AppLanguage.ru, child: Text('Русский')),
+                          const DropdownMenuItem(value: AppLanguage.en, child: Text('English')),
+                        ],
+                        onChanged: (l) async {
+                          if (l == null) return;
+                          await Lang.instance.set(l);
+                          set(() {});
+                        },
+                      ),
+                    ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Текст в уведомлениях'),
-                      subtitle: const Text('Выкл.: только «новое сообщение», без имени и текста'),
+                      title: Text(tr('Текст в уведомлениях', 'Text in notifications')),
+                      subtitle: Text(
+                        tr(
+                          'Выкл.: только «новое сообщение», без имени и текста',
+                          'Off: only “new message”, no name or text',
+                        ),
+                      ),
                       value: s.notifyPreview,
                       onChanged: (v) => set(() => s.notifyPreview = v),
                     ),
                     if (Platform.isAndroid)
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Защита экрана'),
-                        subtitle: const Text('Скрыть чаты в «Недавних», запретить скриншоты'),
+                        title: Text(tr('Защита экрана', 'Screen protection')),
+                        subtitle: Text(
+                          tr(
+                            'Скрыть чаты в «Недавних», запретить скриншоты',
+                            'Hide chats in Recents, block screenshots',
+                          ),
+                        ),
                         value: s.secureScreen,
                         onChanged: (v) => set(() {
                           s.secureScreen = v;
@@ -372,11 +422,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.warning_amber, color: Colors.orange),
-                        title: const Text('Звонки на весь экран выключены'),
-                        subtitle: const Text('На заблокированном телефоне звонок придёт только уведомлением'),
+                        title: Text(tr('Звонки на весь экран выключены', 'Full-screen calls are off')),
+                        subtitle: Text(
+                          tr(
+                            'На заблокированном телефоне звонок придёт только уведомлением',
+                            'On a locked phone a call arrives only as a notification',
+                          ),
+                        ),
                         trailing: TextButton(
                           onPressed: widget.calls.notifier.openFullScreenSettings,
-                          child: const Text('Разрешить'),
+                          child: Text(tr('Разрешить', 'Allow')),
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -384,12 +439,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.bug_report_outlined),
-              title: const Text('Журнал ошибок'),
+              title: Text(tr('Журнал ошибок', 'Error log')),
               onTap: () => _showErrorLog(context),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Версия', style: TextStyle(color: BotatoColors.smoke, fontSize: 13)),
+              title: Text(tr('Версия', 'Version'), style: TextStyle(color: BotatoColors.smoke, fontSize: 13)),
               subtitle: Text(widget.updates.current, style: const TextStyle(fontSize: 15)),
               trailing: TextButton(
                 onPressed: () async {
@@ -397,19 +452,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   final u = widget.updates;
                   _toast(
                     u.available != null
-                        ? 'Доступна версия ${u.available!.version}'
+                        ? tr('Доступна версия ${u.available!.version}', 'Version ${u.available!.version} is available')
                         : ok
-                        ? 'Установлена последняя версия'
-                        : 'Не удалось проверить: ${u.error ?? 'нет связи'}',
+                        ? tr('Установлена последняя версия', 'The latest version is installed')
+                        : '${tr('Не удалось проверить', "Couldn't check")}: ${u.error ?? tr('нет связи', 'no connection')}',
                   );
                 },
-                child: const Text('Проверить'),
+                child: Text(tr('Проверить', 'Check')),
               ),
             ),
-            if (device != null) row('ID этого устройства', device),
+            if (device != null) row(tr('ID этого устройства', 'This device ID'), device),
           ],
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Закрыть', 'Close')))],
       ),
     );
   }
@@ -430,9 +485,9 @@ class _HomeScreenState extends State<HomeScreen> {
         final r = widget.relay;
         final online = r.state == ConnState.online;
         final (color, label) = switch (r.state) {
-          ConnState.online => (BotatoColors.ok, 'в сети'),
-          ConnState.connecting => (Colors.amber, 'подключение…'),
-          ConnState.offline => (BotatoColors.danger, 'нет связи'),
+          ConnState.online => (BotatoColors.ok, tr('в сети', 'online')),
+          ConnState.connecting => (Colors.amber, tr('подключение…', 'connecting…')),
+          ConnState.offline => (BotatoColors.danger, tr('нет связи', 'no connection')),
         };
         final others = r.visibleContacts
           // Most recent first (last message or when added), then alphabetically.
@@ -452,8 +507,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: TextField(
                   controller: _query,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Имя, ник, ID или текст сообщения',
+                  decoration: InputDecoration(
+                    hintText: tr('Имя, ник, ID или текст сообщения', 'Name, nickname, ID or message text'),
                     border: InputBorder.none,
                   ),
                   onChanged: _search,
@@ -496,22 +551,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             actions: [
               IconButton(
-                tooltip: 'Поиск',
+                tooltip: tr('Поиск', 'Search'),
                 icon: const Icon(Icons.search),
                 onPressed: () => setState(() => _searching = true),
               ),
               IconButton(
-                tooltip: 'Добавить контакт',
+                tooltip: tr('Добавить контакт', 'Add contact'),
                 icon: const Icon(Icons.person_add_alt),
                 onPressed: () => _addContact(context),
               ),
               IconButton(
-                tooltip: 'Звук и камера',
+                tooltip: tr('Звук и камера', 'Audio and camera'),
                 icon: const Icon(Icons.tune),
                 onPressed: () => showMediaSettings(context, widget.calls),
               ),
               IconButton(
-                tooltip: 'Обновить подключение и статусы',
+                tooltip: tr('Обновить подключение и статусы', 'Refresh connection and statuses'),
                 icon: const Icon(Icons.refresh),
                 onPressed: r.refresh,
               ),
@@ -580,7 +635,14 @@ class _UpdateBanner extends StatelessWidget {
                   children: [
                     const Icon(Icons.system_update_alt),
                     const SizedBox(width: 12),
-                    Expanded(child: Text('Доступна версия ${u.version}  (у вас ${updates.version.version})')),
+                    Expanded(
+                      child: Text(
+                        tr(
+                          'Доступна версия ${u.version}  (у вас ${updates.version.version})',
+                          'Version ${u.version} is available  (you have ${updates.version.version})',
+                        ),
+                      ),
+                    ),
                     FilledButton(
                       onPressed: p != null
                           ? null
@@ -591,7 +653,7 @@ class _UpdateBanner extends StatelessWidget {
                                 onError(updates.error ?? '$e');
                               }
                             },
-                      child: Text(p == null ? 'Обновить' : '${(p * 100).round()}%'),
+                      child: Text(p == null ? tr('Обновить', 'Update') : '${(p * 100).round()}%'),
                     ),
                   ],
                 ),
@@ -632,7 +694,7 @@ class _ContactCard extends StatelessWidget {
     final conv = conversation;
     final unread = conv?.unread.toInt() ?? 0;
     final subtitle = conv == null
-        ? (peerOnline ? 'в сети' : 'нет сообщений')
+        ? (peerOnline ? tr('в сети', 'online') : tr('нет сообщений', 'no messages'))
         : '${conv.lastFromMe ? 'Вы: ' : ''}${conv.lastText.replaceAll('\n', ' ')}';
     final theme = Theme.of(context);
     return Card(
@@ -687,13 +749,13 @@ class _ContactCard extends StatelessWidget {
                 ),
               ),
               IconButton.filledTonal(
-                tooltip: 'Позвонить',
+                tooltip: tr('Позвонить', 'Call'),
                 icon: const Icon(Icons.call),
                 onPressed: enabled ? onCall : null,
               ),
               const SizedBox(width: 6),
               IconButton.filledTonal(
-                tooltip: 'Видеозвонок',
+                tooltip: tr('Видеозвонок', 'Video call'),
                 icon: const Icon(Icons.videocam),
                 onPressed: enabled ? onVideo : null,
               ),
@@ -705,9 +767,9 @@ class _ContactCard extends StatelessWidget {
                   _ => onForget(),
                 },
                 itemBuilder: (_) => [
-                  PopupMenuItem(value: 'ping', enabled: enabled, child: const Text('Проверить связь')),
-                  const PopupMenuItem(value: 'rename', child: Text('Переименовать…')),
-                  const PopupMenuItem(value: 'forget', child: Text('Забыть…')),
+                  PopupMenuItem(value: 'ping', enabled: enabled, child: Text(tr('Проверить связь', 'Test connection'))),
+                  PopupMenuItem(value: 'rename', child: Text(tr('Переименовать…', 'Rename…'))),
+                  PopupMenuItem(value: 'forget', child: Text(tr('Забыть…', 'Forget…'))),
                 ],
               ),
             ],
@@ -733,10 +795,15 @@ class _Empty extends StatelessWidget {
           children: [
             Opacity(opacity: 0.85, child: Image.asset('assets/icon/potato.png', width: 140)),
             const SizedBox(height: 16),
-            Text('Пока никого', style: Theme.of(context).textTheme.titleLarge),
+            Text(tr('Пока никого', 'Nobody yet'), style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 6),
             Text(
-              online ? 'Добавьте контакт по имени: кнопка вверху справа' : 'Ждём связи с сервером…',
+              online
+                  ? tr(
+                      'Добавьте контакт по имени: кнопка вверху справа',
+                      'Add a contact by name: the button at the top right',
+                    )
+                  : tr('Ждём связи с сервером…', 'Waiting for the server…'),
               textAlign: TextAlign.center,
               style: const TextStyle(color: BotatoColors.smoke),
             ),
@@ -770,7 +837,12 @@ class _AddContactDialogState extends State<_AddContactDialog> {
   void _submit() {
     final found = widget.relay.findContacts(_field.text);
     if (found.isEmpty) {
-      setState(() => _error = 'Такого пользователя нет. Он должен хотя бы раз подключиться с сертификатом.');
+      setState(
+        () => _error = tr(
+          'Такого пользователя нет. Он должен хотя бы раз подключиться с сертификатом.',
+          'No such user. They have to connect with their certificate at least once.',
+        ),
+      );
       return;
     }
     for (final c in found) {
@@ -782,19 +854,19 @@ class _AddContactDialogState extends State<_AddContactDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Добавить контакт'),
+      title: Text(tr('Добавить контакт', 'Add contact')),
       content: TextField(
         controller: _field,
         autofocus: true,
-        decoration: InputDecoration(labelText: 'Имя или ID', errorText: _error, errorMaxLines: 3),
+        decoration: InputDecoration(labelText: tr('Имя или ID', 'Name or ID'), errorText: _error, errorMaxLines: 3),
         onChanged: (_) {
           if (_error != null) setState(() => _error = null);
         },
         onSubmitted: (_) => _submit(),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-        FilledButton(onPressed: _submit, child: const Text('Добавить')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Отмена', 'Cancel'))),
+        FilledButton(onPressed: _submit, child: Text(tr('Добавить', 'Add'))),
       ],
     );
   }
@@ -829,22 +901,25 @@ class _RenameDialogState extends State<_RenameDialog> {
   Widget build(BuildContext context) {
     final certName = widget.relay.certName(widget.contact.userId);
     return AlertDialog(
-      title: const Text('Как показывать'),
+      title: Text(tr('Как показывать', 'Display name')),
       content: TextField(
         controller: _field,
         autofocus: true,
         decoration: InputDecoration(
-          labelText: 'Имя',
-          helperText: 'Видно только на этом устройстве. В сертификате: $certName',
+          labelText: tr('Имя', 'Name'),
+          helperText: tr(
+            'Видно только на этом устройстве. В сертификате: $certName',
+            'Visible only on this device. In the certificate: $certName',
+          ),
           helperMaxLines: 2,
         ),
         onSubmitted: _save,
       ),
       actions: [
         if (widget.relay.hasAlias(widget.contact.userId))
-          TextButton(onPressed: () => _save(null), child: const Text('Вернуть исходное')),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-        FilledButton(onPressed: () => _save(_field.text), child: const Text('Сохранить')),
+          TextButton(onPressed: () => _save(null), child: Text(tr('Вернуть исходное', 'Restore original'))),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Отмена', 'Cancel'))),
+        FilledButton(onPressed: () => _save(_field.text), child: Text(tr('Сохранить', 'Save'))),
       ],
     );
   }

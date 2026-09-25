@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import 'l10n.dart';
+
 /// Bars in a voice message's waveform (protocol allows up to 128).
 const waveBars = 48;
 
@@ -46,7 +48,7 @@ class VoiceRecorder extends ChangeNotifier {
   /// Throws a readable message when the microphone is unavailable.
   Future<void> start() async {
     if (recording) return;
-    if (!await _rec.hasPermission()) throw 'нет доступа к микрофону';
+    if (!await _rec.hasPermission()) throw tr('нет доступа к микрофону', 'no access to the microphone');
     final path = '${(await _voiceDir()).path}${Platform.pathSeparator}rec-${DateTime.now().millisecondsSinceEpoch}.m4a';
     await _rec.start(
       const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 32000, sampleRate: 16000, numChannels: 1),

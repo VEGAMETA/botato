@@ -10,6 +10,7 @@ use crate::client::contacts::Contacts;
 use crate::client::{self, Cmd, Event, Shared};
 use crate::config;
 use crate::frb_generated::StreamSink;
+use crate::lang::tr;
 
 pub enum ClientEvent {
     Connecting { server: String },
@@ -151,7 +152,7 @@ pub fn client_stop() {
 
 fn with<T>(f: impl FnOnce(&Running) -> T) -> anyhow::Result<T> {
     let guard = RUNNING.lock().unwrap();
-    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
+    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!(tr("клиент не запущен", "the client is not running")))?;
     Ok(f(r))
 }
 
@@ -183,7 +184,13 @@ pub fn client_contacts() -> Vec<ContactInfo> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_signal(to_device: String, payload: String) -> anyhow::Result<()> {
     let to = parse_id(&to_device)?;
-    with(|r| r.tx.send(Cmd::Signal { to, payload: payload.into_bytes() }))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
+    with(|r| r.tx.send(Cmd::Signal { to, payload: payload.into_bytes() }))?.map_err(|_| anyhow::anyhow!(tr("клиент остановлен", "the client has stopped")))
+}
+
+/// UI language for errors and message previews made in Rust.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_set_english(english: bool) {
+    crate::lang::set_english(english);
 }
 
 /// Network changed: drop the (possibly silently dead) relay connection and dial again now.
@@ -194,19 +201,19 @@ pub fn client_reconnect() {
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_request_turn() -> anyhow::Result<()> {
-    with(|r| r.tx.send(Cmd::Turn))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
+    with(|r| r.tx.send(Cmd::Turn))?.map_err(|_| anyhow::anyhow!(tr("клиент остановлен", "the client has stopped")))
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_refresh_directory() -> anyhow::Result<()> {
-    with(|r| r.tx.send(Cmd::Directory))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
+    with(|r| r.tx.send(Cmd::Directory))?.map_err(|_| anyhow::anyhow!(tr("клиент остановлен", "the client has stopped")))
 }
 
 /// Asks the relay which of these devices are connected; answered by `ClientEvent::Presence`.
 #[flutter_rust_bridge::frb(sync)]
 pub fn client_query_presence(devices: Vec<String>) -> anyhow::Result<()> {
     let ids = devices.iter().map(|d| parse_id(d)).collect::<anyhow::Result<Vec<_>>>()?;
-    with(|r| r.tx.send(Cmd::Presence(ids)))?.map_err(|_| anyhow::anyhow!("клиент остановлен"))
+    with(|r| r.tx.send(Cmd::Presence(ids)))?.map_err(|_| anyhow::anyhow!(tr("клиент остановлен", "the client has stopped")))
 }
 
 /// This device's id (hex).
@@ -318,7 +325,7 @@ pub fn client_send_text(peer_user: String, text: String, reply_to: Option<String
     let peer = parse_id(&peer_user)?;
     let reply = reply_to.as_deref().map(parse_id).transpose()?;
     let guard = RUNNING.lock().unwrap();
-    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
+    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!(tr("клиент не запущен", "the client is not running")))?;
     let msg_id = client::messaging::compose(&r.shared, &peer, &text, reply.as_ref())?;
     let _ = r.tx.send(Cmd::Flush);
     Ok(msg_id.to_hex())
@@ -366,7 +373,7 @@ fn send_update(peer_user: &str, msg_id: &str, op: client::messaging::Update) -> 
 
 fn running() -> anyhow::Result<(Arc<Shared>, mpsc::UnboundedSender<Cmd>)> {
     let guard = RUNNING.lock().unwrap();
-    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
+    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!(tr("клиент не запущен", "the client is not running")))?;
     Ok((r.shared.clone(), r.tx.clone()))
 }
 
@@ -475,7 +482,7 @@ pub fn client_conversations() -> Vec<ConversationInfo> {
         .map(|c| ConversationInfo {
             peer_user: c.peer_user.to_hex(),
             last_text: if c.last_deleted {
-                "сообщение удалено".into()
+                tr("сообщение удалено", "message deleted").into()
             } else {
                 client::messaging::preview(&c.last_text, c.last_attach)
             },

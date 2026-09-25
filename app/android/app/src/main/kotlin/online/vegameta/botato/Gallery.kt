@@ -10,7 +10,7 @@ import android.provider.MediaStore
 object Gallery {
     fun save(ctx: Context, name: String, mime: String, data: ByteArray) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            throw IllegalStateException("нужен Android 10 или новее")
+            throw IllegalStateException(Lang.tr(ctx, "нужен Android 10 или новее", "Android 10 or newer is required"))
         }
         val resolver = ctx.contentResolver
         val values = ContentValues().apply {
@@ -20,9 +20,9 @@ object Gallery {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IllegalStateException("галерея недоступна")
+            ?: throw IllegalStateException(Lang.tr(ctx, "галерея недоступна", "the gallery is unavailable"))
         try {
-            resolver.openOutputStream(uri)?.use { it.write(data) } ?: throw IllegalStateException("не открылся файл")
+            resolver.openOutputStream(uri)?.use { it.write(data) } ?: throw IllegalStateException(Lang.tr(ctx, "не открылся файл", "the file didn't open"))
             values.clear()
             values.put(MediaStore.Images.Media.IS_PENDING, 0)
             resolver.update(uri, values, null, null)

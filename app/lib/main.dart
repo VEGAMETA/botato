@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'call/call_banner.dart';
@@ -10,6 +11,7 @@ import 'call/media_settings.dart';
 import 'desktop.dart';
 import 'error_log.dart';
 import 'identity_store.dart';
+import 'l10n.dart';
 import 'relay_service.dart';
 import 'update_service.dart';
 import 'screens/home_screen.dart';
@@ -51,7 +53,7 @@ class Services {
     final s = Services._(store, media, secret, relay, calls, navigator);
     relay.onNewMessage = (peer, name, text) => media.notifyPreview
         ? calls.notifier.showMessage(peer, name, text)
-        : calls.notifier.showMessage(peer, 'botato', 'Новое сообщение');
+        : calls.notifier.showMessage(peer, 'botato', tr('Новое сообщение', 'New message'));
     calls.notifier.secureScreen(media.secureScreen);
     calls.notifier.onPushToken = (token) => client.clientSetPushToken(token: token);
     calls.notifier.onWake = relay.reconnect;
@@ -86,9 +88,11 @@ class Services {
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await ErrorLog.init();
+  await Lang.instance.load(); // before the tray menu is built
   // --minimized: started at Windows logon, stay in the tray.
   if (isDesktop) await Desktop.instance.init(hidden: args.contains('--minimized'));
   await RustLib.init();
+  Lang.instance.pushToNative(); // Rust wasn't loaded when the language was
   final services = await Services.create();
   runApp(BotatoApp(services: services));
 }
@@ -109,6 +113,7 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    Lang.instance.addListener(_languageChanged);
     // The UI may attach to a call that started while the app ran headless (from a push).
     WidgetsBinding.instance.addPostFrameCallback((_) => s.calls.showScreenIfNeeded());
   }
@@ -119,8 +124,20 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
     s.relay.foreground = state == AppLifecycleState.resumed;
   }
 
+  void _languageChanged() {
+    if (isDesktop) Desktop.instance.refreshTray();
+    setState(() {});
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    // "System" follows a change of the phone's language.
+    if (Lang.instance.setting == AppLanguage.system) Lang.instance.set(AppLanguage.system);
+  }
+
   @override
   void dispose() {
+    Lang.instance.removeListener(_languageChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -131,6 +148,9 @@ class _BotatoAppState extends State<BotatoApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'botato',
       navigatorKey: s.navigator,
+      locale: Lang.instance.locale,
+      supportedLocales: const [Locale('ru'), Locale('en')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) {
         final app = CallBanner(calls: s.calls, child: child!);
         if (!isDesktop) return app;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import 'call_service.dart';
+import '../l10n.dart';
 
 /// While a call runs with its screen closed (the user went to a chat), a bar above the
 /// whole app leads back to it.
@@ -54,7 +55,7 @@ class CallBanner extends StatelessWidget {
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                   ),
                 ),
-                const Text('вернуться', style: TextStyle(color: Colors.white)),
+                Text(tr('вернуться', 'return'), style: TextStyle(color: Colors.white)),
                 const Icon(Icons.chevron_right, color: Colors.white),
               ],
             ),

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::store::{self, Extra, PhotoMeta, RECEIVED, ReplyRef, SENDING};
 use super::{Shared, photo};
 use crate::config;
+use crate::lang::tr;
 
 /// Most text a message may carry (well under the envelope limit after JSON escaping).
 pub const MAX_TEXT: usize = 16 * 1024;
@@ -141,8 +142,8 @@ struct ReceiptPayload {
 pub fn preview(text: &str, attach: Option<u8>) -> String {
     let label = match attach {
         None => return text.to_owned(),
-        Some(store::KIND_VOICE) => "🎤 Голосовое",
-        Some(_) => "📷 Фото",
+        Some(store::KIND_VOICE) => tr("🎤 Голосовое", "🎤 Voice message"),
+        Some(_) => tr("📷 Фото", "📷 Photo"),
     };
     if text.is_empty() { label.to_owned() } else { format!("{} {text}", label.split(' ').next().unwrap_or("")) }
 }
@@ -150,7 +151,7 @@ pub fn preview(text: &str, attach: Option<u8>) -> String {
 /// Writes the message and its copies to the store. The session sends the outbox.
 pub fn compose(shared: &Shared, peer_user: &Id, text: &str, reply: Option<&Id>) -> anyhow::Result<Id> {
     if text.trim().is_empty() {
-        anyhow::bail!("пустое сообщение");
+        anyhow::bail!(tr("пустое сообщение", "empty message"));
     }
     let extra = Extra { reply: reply.map(|r| reply_ref(shared, r)).transpose()?, fwd: None };
     compose_with(shared, peer_user, text, None, extra)
@@ -181,10 +182,10 @@ pub fn compose_voice(
     reply: Option<&Id>,
 ) -> anyhow::Result<Id> {
     if audio.is_empty() || audio.len() > proto::file::MAX_PLAINTEXT {
-        anyhow::bail!("голосовое слишком длинное");
+        anyhow::bail!(tr("голосовое слишком длинное", "the voice message is too long"));
     }
     if !(1..=MAX_VOICE_MS).contains(&ms) {
-        anyhow::bail!("голосовое слишком длинное");
+        anyhow::bail!(tr("голосовое слишком длинное", "the voice message is too long"));
     }
     let wave: Vec<u8> = wave.into_iter().take(MAX_WAVE).collect();
     let extra = Extra { reply: reply.map(|r| reply_ref(shared, r)).transpose()?, fwd: None };
@@ -195,14 +196,14 @@ pub fn compose_voice(
 /// A photo goes up again under a new file id and key.
 pub fn forward(shared: &Shared, msg_id: &Id, to_peer: &Id, from_name: &str) -> anyhow::Result<Id> {
     let original = shared.store.lock().unwrap().original(msg_id)?;
-    let Some(o) = original.filter(|o| !o.deleted) else { anyhow::bail!("сообщения нет") };
+    let Some(o) = original.filter(|o| !o.deleted) else { anyhow::bail!(tr("сообщения нет", "no such message")) };
     let photo = match o.photo {
         None => None,
-        Some((_, None)) => anyhow::bail!("фото ещё не загрузилось"),
+        Some((_, None)) => anyhow::bail!(tr("фото ещё не загрузилось", "the photo hasn't loaded yet")),
         Some((meta, Some(data))) => Some(new_attachment(meta.kind, data, meta.thumb, meta.w, meta.h)?),
     };
     if photo.is_none() && o.text.trim().is_empty() {
-        anyhow::bail!("нечего пересылать");
+        anyhow::bail!(tr("нечего пересылать", "nothing to forward"));
     }
     let fwd: String = from_name.chars().take(64).collect();
     compose_with(shared, to_peer, &o.text, photo, Extra { reply: None, fwd: Some(fwd) })
@@ -219,7 +220,7 @@ fn new_attachment(kind: u8, data: Vec<u8>, thumb: Vec<u8>, w: u32, h: u32) -> an
 /// Snapshot of the quoted message (§6.2 Reply).
 fn reply_ref(shared: &Shared, msg: &Id) -> anyhow::Result<ReplyRef> {
     let original = shared.store.lock().unwrap().original(msg)?;
-    let Some(o) = original else { anyhow::bail!("сообщения нет") };
+    let Some(o) = original else { anyhow::bail!(tr("сообщения нет", "no such message")) };
     let text = preview(&o.text, o.photo.as_ref().map(|(m, _)| m.kind));
     Ok(ReplyRef {
         msg: *msg,
@@ -243,7 +244,7 @@ fn targets(shared: &Shared, peer_user: &Id) -> anyhow::Result<Vec<(Id, [u8; 32])
         }
     }
     if peer_devices == 0 {
-        anyhow::bail!("у собеседника нет доступных устройств");
+        anyhow::bail!(tr("у собеседника нет доступных устройств", "the contact has no available devices"));
     }
     Ok(targets)
 }
@@ -274,7 +275,7 @@ fn compose_with(
 ) -> anyhow::Result<Id> {
     let text = text.trim();
     if text.len() > MAX_TEXT {
-        anyhow::bail!("слишком длинное сообщение");
+        anyhow::bail!(tr("слишком длинное сообщение", "the message is too long"));
     }
     let msg_id = Id::random();
     let now = config::now();
@@ -333,17 +334,17 @@ pub fn update(shared: &Shared, peer_user: &Id, msg: &Id, op: Update) -> anyhow::
         Update::Edit(t) => {
             let t = t.trim();
             if t.is_empty() {
-                anyhow::bail!("пустое сообщение");
+                anyhow::bail!(tr("пустое сообщение", "empty message"));
             }
             if t.len() > MAX_TEXT {
-                anyhow::bail!("слишком длинное сообщение");
+                anyhow::bail!(tr("слишком длинное сообщение", "the message is too long"));
             }
             ("edit", Some(t.to_owned()), None)
         }
         Update::Delete => ("delete", None, None),
         Update::React(e) => {
             if e.len() > MAX_EMOJI {
-                anyhow::bail!("слишком длинная реакция");
+                anyhow::bail!(tr("слишком длинная реакция", "the reaction is too long"));
             }
             ("react", None, Some(e.clone()))
         }
@@ -359,7 +360,7 @@ pub fn update(shared: &Shared, peer_user: &Id, msg: &Id, op: Update) -> anyhow::
         Update::React(e) => store.apply_react(msg, &me, &me, &e, now as i64)?,
     };
     if applied.is_none() {
-        anyhow::bail!("это сообщение нельзя изменить");
+        anyhow::bail!(tr("это сообщение нельзя изменить", "this message can't be edited"));
     }
     enqueue(shared, &store, targets, KIND_UPDATE, &id, &payload, now)
 }

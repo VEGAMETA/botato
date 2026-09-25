@@ -10,6 +10,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType as PngFilter, PngEncoder};
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Rgba, RgbaImage};
+use crate::lang::tr;
 
 /// Longest side of a sent photo (JPEG).
 pub const MAX_SIDE: u32 = 1600;
@@ -34,13 +35,13 @@ pub struct Prepared {
 /// phone photo the app already decoded and re-encoded losslessly).
 pub fn prepare(input: &[u8], keep_png: bool) -> anyhow::Result<Prepared> {
     if input.len() > MAX_INPUT {
-        anyhow::bail!("файл слишком большой");
+        anyhow::bail!(tr("файл слишком большой", "the file is too large"));
     }
     let reader = ImageReader::new(Cursor::new(input)).with_guessed_format()?;
     let is_png = reader.format() == Some(ImageFormat::Png);
     let mut decoder = reader
         .into_decoder()
-        .map_err(|_| anyhow::anyhow!("это не картинка (поддерживаются JPEG, PNG, WebP, GIF)"))?;
+        .map_err(|_| anyhow::anyhow!(tr("это не картинка (поддерживаются JPEG, PNG, WebP, GIF)", "not an image (JPEG, PNG, WebP, GIF are supported)")))?;
     let orientation = decoder.orientation()?;
     let mut img = DynamicImage::from_decoder(decoder)?;
     img.apply_orientation(orientation);
@@ -66,7 +67,7 @@ pub fn prepare(input: &[u8], keep_png: bool) -> anyhow::Result<Prepared> {
         }
     }
     if data.len() > proto::file::MAX_PLAINTEXT {
-        anyhow::bail!("фото не ужимается до 2 МБ");
+        anyhow::bail!(tr("фото не ужимается до 2 МБ", "the photo doesn't fit into 2 MB"));
     }
     Ok(Prepared { data, thumb, w: rgb.width(), h: rgb.height() })
 }

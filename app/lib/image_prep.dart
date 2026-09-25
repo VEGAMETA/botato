@@ -3,6 +3,8 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'l10n.dart';
+
 /// PNG signature.
 bool isPng(Uint8List b) => b.length > 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4e && b[3] == 0x47;
 
@@ -62,7 +64,7 @@ Future<Uint8List> downscaleToPng(Uint8List bytes, {int maxSide = 3200}) async {
     final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
     frame.image.dispose();
     codec.dispose();
-    if (data == null) throw 'не удалось прочитать картинку';
+    if (data == null) throw tr('не удалось прочитать картинку', 'couldn\'t read the image');
     return data.buffer.asUint8List();
   } finally {
     desc.dispose();

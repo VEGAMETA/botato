@@ -9,6 +9,7 @@ import '../call/call_notifier.dart';
 import '../image_prep.dart';
 import '../src/rust/api/client.dart' as core;
 import '../theme.dart';
+import '../l10n.dart';
 
 /// Decrypted photos recently shown (they live encrypted in the store).
 class _PhotoCache {
@@ -116,7 +117,7 @@ class _PhotoContentState extends State<PhotoContent> {
             const ColoredBox(color: BotatoColors.night),
           Center(
             child: p.gone
-                ? const _Badge(icon: Icons.broken_image_outlined, text: 'фото недоступно')
+                ? _Badge(icon: Icons.broken_image_outlined, text: tr('фото недоступно', 'photo unavailable'))
                 : const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3)),
           ),
         ],
@@ -227,7 +228,7 @@ class _PhotoViewerState extends State<PhotoViewer> {
       await file.writeAsBytes(data);
       await CallNotifier.shareFile(file.path, mime);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не получилось поделиться: $e')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Не получилось поделиться: $e', 'Couldn\'t share: $e'))));
     }
   }
 
@@ -241,9 +242,13 @@ class _PhotoViewerState extends State<PhotoViewer> {
     if (Platform.isAndroid) {
       try {
         await CallNotifier.saveToGallery(name, data, mime);
-        messenger.showSnackBar(const SnackBar(content: Text('Сохранено в галерею (Pictures/botato)')));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(tr('Сохранено в галерею (Pictures/botato)', 'Saved to the gallery (Pictures/botato)')),
+          ),
+        );
       } catch (e) {
-        messenger.showSnackBar(SnackBar(content: Text('Не сохранилось: $e')));
+        messenger.showSnackBar(SnackBar(content: Text(tr('Не сохранилось: $e', 'Couldn\'t save: $e'))));
       }
       return;
     }
@@ -256,9 +261,9 @@ class _PhotoViewerState extends State<PhotoViewer> {
     if (loc == null) return;
     try {
       await File(loc.path).writeAsBytes(data);
-      messenger.showSnackBar(const SnackBar(content: Text('Сохранено')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Сохранено', 'Saved'))));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не сохранилось: $e')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Не сохранилось: $e', 'Couldn\'t save: $e'))));
     }
   }
 
@@ -282,10 +287,15 @@ class _PhotoViewerState extends State<PhotoViewer> {
               : AppBar(
                   backgroundColor: Colors.black54,
                   foregroundColor: Colors.white,
-                  title: count > 1 ? Text('${_index + 1} из $count', style: const TextStyle(fontSize: 16)) : null,
+                  title: count > 1
+                      ? Text(
+                          tr('${_index + 1} из $count', '${_index + 1} of $count'),
+                          style: const TextStyle(fontSize: 16),
+                        )
+                      : null,
                   actions: [
                     IconButton(
-                      tooltip: 'Повернуть',
+                      tooltip: tr('Повернуть', 'Rotate'),
                       icon: const Icon(Icons.rotate_90_degrees_cw_outlined),
                       onPressed: () => setState(() {
                         final id = widget.ids[_index];
@@ -293,10 +303,12 @@ class _PhotoViewerState extends State<PhotoViewer> {
                       }),
                     ),
                     if (Platform.isAndroid)
-                      IconButton(tooltip: 'Поделиться', icon: const Icon(Icons.share), onPressed: _share),
+                      IconButton(tooltip: tr('Поделиться', 'Share'), icon: const Icon(Icons.share), onPressed: _share),
                     if (_desktop || Platform.isAndroid)
                       IconButton(
-                        tooltip: _desktop ? 'Сохранить как…' : 'Сохранить в галерею',
+                        tooltip: _desktop
+                            ? tr('Сохранить как…', 'Save as…')
+                            : tr('Сохранить в галерею', 'Save to gallery'),
                         icon: const Icon(Icons.save_alt),
                         onPressed: _save,
                       ),

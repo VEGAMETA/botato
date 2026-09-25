@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'sounds.dart';
 import 'theme.dart';
+import 'l10n.dart';
 
 bool get isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -73,15 +74,20 @@ class Desktop with TrayListener, WindowListener {
     trayManager.addListener(this);
   }
 
+  /// Menu labels follow the UI language.
+  Future<void> refreshTray() => _updateTray();
+
   Future<void> _updateTray() async {
-    if (!Platform.isLinux) await trayManager.setToolTip(_dnd ? 'botato — не беспокоить' : 'botato');
+    if (!Platform.isLinux) {
+      await trayManager.setToolTip(_dnd ? tr('botato — не беспокоить', 'botato — do not disturb') : 'botato');
+    }
     await trayManager.setContextMenu(
       Menu(
         items: [
-          MenuItem(key: 'show', label: 'Открыть'),
-          MenuItem.checkbox(key: 'dnd', label: 'Не беспокоить', checked: _dnd),
+          MenuItem(key: 'show', label: tr('Открыть', 'Open')),
+          MenuItem.checkbox(key: 'dnd', label: tr('Не беспокоить', 'Do not disturb'), checked: _dnd),
           MenuItem.separator(),
-          MenuItem(key: 'quit', label: 'Выход'),
+          MenuItem(key: 'quit', label: tr('Выход', 'Quit')),
         ],
       ),
     );
@@ -140,10 +146,10 @@ class Desktop with TrayListener, WindowListener {
       identifier: 'call',
       silent: true, // the app rings itself (CallSounds)
       title: peer,
-      body: video ? 'Видеозвонок' : 'Звонок',
+      body: video ? tr('Видеозвонок', 'Video call') : tr('Звонок', 'Call'),
       actions: [
-        LocalNotificationAction(text: 'Принять'),
-        LocalNotificationAction(text: 'Отклонить'),
+        LocalNotificationAction(text: tr('Принять', 'Answer')),
+        LocalNotificationAction(text: tr('Отклонить', 'Decline')),
       ],
     );
     n.onClick = showWindow;

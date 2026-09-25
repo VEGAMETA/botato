@@ -130,10 +130,11 @@ class CallForegroundService : Service() {
 
     private fun buildNotification(): android.app.Notification {
         val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL_ID) == null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Every time: for an existing channel this only renames it (the UI language may change).
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Звонки", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Идущий звонок"
+                NotificationChannel(CHANNEL_ID, Lang.tr(this, "Звонки", "Calls"), NotificationManager.IMPORTANCE_LOW).apply {
+                    description = Lang.tr(this@CallForegroundService, "Идущий звонок", "Ongoing call")
                     setShowBadge(false)
                 },
             )
@@ -157,7 +158,7 @@ class CallForegroundService : Service() {
             .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, actionIntent(ACTION_HANGUP, 2)))
             .addAction(
                 if (s.muted) R.drawable.ic_call_mic_off else R.drawable.ic_call_mic,
-                filled(if (s.muted) "Включить микрофон" else "Выключить микрофон", if (s.muted) MUTED else UNMUTED),
+                filled(if (s.muted) Lang.tr(this, "Включить микрофон", "Unmute") else Lang.tr(this, "Выключить микрофон", "Mute"), if (s.muted) MUTED else UNMUTED),
                 actionIntent(ACTION_MUTE, 1),
             )
             .build()

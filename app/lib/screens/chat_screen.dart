@@ -16,6 +16,7 @@ import '../link_text.dart';
 import '../voice.dart';
 import '../theme.dart';
 import 'photo_view.dart';
+import '../l10n.dart';
 
 /// Message status codes from the Rust store.
 abstract final class MsgStatus {
@@ -57,7 +58,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _startVoice() async {
     if (widget.calls.busy) {
-      _toast('Во время звонка голосовые недоступны');
+      _toast(tr('Во время звонка голосовые недоступны', 'Voice messages are unavailable during a call'));
       return;
     }
     await VoicePlayer.instance.stop();
@@ -71,7 +72,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendVoice() async {
     final v = await _recorder.stop();
     if (v == null) {
-      _toast('Слишком коротко');
+      _toast(tr('Слишком коротко', 'Too short'));
       return;
     }
     try {
@@ -159,7 +160,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _myName => widget.relay.contacts.where((c) => c.isMe).firstOrNull?.name ?? '';
 
   String _nameOf(String userId) {
-    if (userId == _me) return 'Вы';
+    if (userId == _me) return tr('Вы', 'You');
     return widget.relay.contacts.where((c) => c.userId == userId).firstOrNull?.name ?? widget.contact.name;
   }
 
@@ -267,7 +268,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     IconButton(
-                      tooltip: 'Своё эмодзи',
+                      tooltip: tr('Своё эмодзи', 'Custom emoji'),
                       icon: const Icon(Icons.add_reaction_outlined),
                       onPressed: () => Navigator.pop(ctx, 'custom'),
                     ),
@@ -277,36 +278,36 @@ class _ChatScreenState extends State<ChatScreen> {
             if (!m.deleted) ...[
               ListTile(
                 leading: const Icon(Icons.reply),
-                title: const Text('Ответить'),
+                title: Text(tr('Ответить', 'Reply')),
                 onTap: () => Navigator.pop(ctx, 'reply'),
               ),
               if (m.text.isNotEmpty)
                 ListTile(
                   leading: const Icon(Icons.copy),
-                  title: const Text('Копировать'),
+                  title: Text(tr('Копировать', 'Copy')),
                   onTap: () => Navigator.pop(ctx, 'copy'),
                 ),
               if (m.text.isNotEmpty)
                 ListTile(
                   leading: const Icon(Icons.text_fields),
-                  title: const Text('Выделить текст'),
+                  title: Text(tr('Выделить текст', 'Select text')),
                   onTap: () => Navigator.pop(ctx, 'select'),
                 ),
               ListTile(
                 leading: const Icon(Icons.forward),
-                title: const Text('Переслать'),
+                title: Text(tr('Переслать', 'Forward')),
                 onTap: () => Navigator.pop(ctx, 'forward'),
               ),
               if (m.fromMe && (m.text.isNotEmpty || m.photo == null))
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
-                  title: const Text('Изменить'),
+                  title: Text(tr('Изменить', 'Edit')),
                   onTap: () => Navigator.pop(ctx, 'edit'),
                 ),
             ],
             ListTile(
               leading: const Icon(Icons.delete_outline, color: BotatoColors.danger),
-              title: const Text('Удалить', style: TextStyle(color: BotatoColors.danger)),
+              title: Text(tr('Удалить', 'Delete'), style: TextStyle(color: BotatoColors.danger)),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
           ],
@@ -329,13 +330,13 @@ class _ChatScreenState extends State<ChatScreen> {
         _focus.requestFocus();
       case 'copy':
         await Clipboard.setData(ClipboardData(text: m.text));
-        _toast('Скопировано');
+        _toast(tr('Скопировано', 'Copied'));
       case 'select':
         await showDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
             content: SingleChildScrollView(child: SelectableText(m.text, style: const TextStyle(fontSize: 16))),
-            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть'))],
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Закрыть', 'Close')))],
           ),
         );
       case 'forward':
@@ -357,12 +358,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final choice = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Удалить сообщение?'),
-        content: const Text('Удалить у всех или только на этом устройстве?'),
+        title: Text(tr('Удалить сообщение?', 'Delete the message?')),
+        content: Text(
+          tr('Удалить у всех или только на этом устройстве?', 'Delete for everyone or only on this device?'),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Только у меня')),
-          if (canForAll) FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('У всех')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Отмена', 'Cancel'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Только у меня', 'Only for me'))),
+          if (canForAll)
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('У всех', 'For everyone'))),
         ],
       ),
     );
@@ -380,7 +384,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final to = await showDialog<core.ContactInfo>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Переслать'),
+        title: Text(tr('Переслать', 'Forward')),
         children: [
           for (final c in widget.relay.visibleContacts)
             SimpleDialogOption(
@@ -443,14 +447,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Отправить картинку?'),
+        title: Text(tr('Отправить картинку?', 'Send the image?')),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 360, maxWidth: 420),
           child: Image.memory(bytes, fit: BoxFit.contain),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отправить')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Отмена', 'Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Отправить', 'Send'))),
         ],
       ),
     );
@@ -471,18 +475,18 @@ class _ChatScreenState extends State<ChatScreen> {
               if (clipboard != null)
                 ListTile(
                   leading: const Icon(Icons.content_paste),
-                  title: const Text('Из буфера обмена'),
+                  title: Text(tr('Из буфера обмена', 'From clipboard')),
                   onTap: () => Navigator.pop(ctx, 'clipboard'),
                 ),
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: Text(Platform.isAndroid || Platform.isIOS ? 'Галерея' : 'Файл'),
+                title: Text(Platform.isAndroid || Platform.isIOS ? tr('Галерея', 'Gallery') : tr('Файл', 'File')),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
               ),
               if (Platform.isAndroid || Platform.isIOS)
                 ListTile(
                   leading: const Icon(Icons.photo_camera_outlined),
-                  title: const Text('Камера'),
+                  title: Text(tr('Камера', 'Camera')),
                   onTap: () => Navigator.pop(ctx, ImageSource.camera),
                 ),
             ],
@@ -500,7 +504,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // The original file: with size/quality options the picker would turn PNGs into JPEGs.
       file = await ImagePicker().pickImage(source: source, requestFullMetadata: false);
     } catch (e) {
-      _toast('Не удалось открыть фото: $e');
+      _toast(tr('Не удалось открыть фото: $e', 'Couldn\'t open the photo: $e'));
       return;
     }
     if (file == null) return;
@@ -517,11 +521,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(s.files.length == 1 ? 'Отправить фото?' : 'Отправить фото: ${s.files.length}?'),
-        content: text.isEmpty ? null : Text('Подпись: $text', maxLines: 4, overflow: TextOverflow.ellipsis),
+        title: Text(
+          s.files.length == 1
+              ? tr('Отправить фото?', 'Send the photo?')
+              : tr('Отправить фото: ${s.files.length}?', 'Send photos: ${s.files.length}?'),
+        ),
+        content: text.isEmpty
+            ? null
+            : Text(tr('Подпись: $text', 'Caption: $text'), maxLines: 4, overflow: TextOverflow.ellipsis),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отправить')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Отмена', 'Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Отправить', 'Send'))),
         ],
       ),
     );
@@ -579,15 +589,15 @@ class _ChatScreenState extends State<ChatScreen> {
           title: TextField(
             controller: _searchField,
             autofocus: true,
-            decoration: const InputDecoration(hintText: 'Поиск в чате', border: InputBorder.none),
+            decoration: InputDecoration(hintText: tr('Поиск в чате', 'Search in chat'), border: InputBorder.none),
             onChanged: _search,
           ),
         ),
         body: q.isEmpty
             ? const SizedBox.shrink()
             : _hits.isEmpty
-            ? const Center(
-                child: Text('Ничего не найдено', style: TextStyle(color: BotatoColors.smoke)),
+            ? Center(
+                child: Text(tr('Ничего не найдено', 'Nothing found'), style: TextStyle(color: BotatoColors.smoke)),
               )
             : ListView.separated(
                 itemCount: _hits.length,
@@ -595,7 +605,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 itemBuilder: (_, i) {
                   final h = _hits[i];
                   return ListTile(
-                    title: Text(h.fromMe ? 'Вы' : widget.contact.name, style: const TextStyle(fontSize: 13)),
+                    title: Text(h.fromMe ? tr('Вы', 'You') : widget.contact.name, style: const TextStyle(fontSize: 13)),
                     subtitle: _Snippet(text: h.text, query: q),
                     trailing: Text(
                       _dateTime(h.sentAt.toInt()),
@@ -643,7 +653,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       Text(widget.contact.name, overflow: TextOverflow.ellipsis),
                       Text(
-                        on ? 'в сети' : 'не в сети',
+                        on ? tr('в сети', 'online') : tr('не в сети', 'offline'),
                         style: TextStyle(fontSize: 12, color: on ? BotatoColors.ok : BotatoColors.smoke),
                       ),
                     ],
@@ -655,17 +665,17 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Поиск в чате',
+            tooltip: tr('Поиск в чате', 'Search in chat'),
             icon: const Icon(Icons.search),
             onPressed: () => setState(() => _searching = true),
           ),
           IconButton(
-            tooltip: 'Позвонить',
+            tooltip: tr('Позвонить', 'Call'),
             icon: const Icon(Icons.call),
             onPressed: online ? () => widget.calls.startCall(widget.contact) : null,
           ),
           IconButton(
-            tooltip: 'Видеозвонок',
+            tooltip: tr('Видеозвонок', 'Video call'),
             icon: const Icon(Icons.videocam),
             onPressed: online ? () => widget.calls.startCall(widget.contact, video: true) : null,
           ),
@@ -675,8 +685,11 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: _messages.isEmpty
-                ? const Center(
-                    child: Text('Сообщений пока нет', style: TextStyle(color: BotatoColors.smoke)),
+                ? Center(
+                    child: Text(
+                      tr('Сообщений пока нет', 'No messages yet'),
+                      style: TextStyle(color: BotatoColors.smoke),
+                    ),
                   )
                 : ListView.builder(
                     controller: _scroll,
@@ -724,14 +737,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: _editing != null
-                        ? _Quote(name: 'Редактирование', text: _editing!.text, maxLines: 1)
+                        ? _Quote(name: tr('Редактирование', 'Editing'), text: _editing!.text, maxLines: 1)
                         : _Quote(
                             name: _nameOf(_replyTo!.fromMe ? _me : _peer),
-                            text: _replyTo!.text.isEmpty && _replyTo!.photo != null ? '📷 Фото' : _replyTo!.text,
+                            text: _replyTo!.text.isEmpty && _replyTo!.photo != null
+                                ? tr('📷 Фото', '📷 Photo')
+                                : _replyTo!.text,
                             maxLines: 1,
                           ),
                   ),
-                  IconButton(tooltip: 'Отмена', icon: const Icon(Icons.close), onPressed: _cancelCompose),
+                  IconButton(tooltip: tr('Отмена', 'Cancel'), icon: const Icon(Icons.close), onPressed: _cancelCompose),
                 ],
               ),
             ),
@@ -747,7 +762,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           IconButton(
-                            tooltip: 'Фото',
+                            tooltip: tr('Фото', 'Photo'),
                             icon: const Icon(Icons.add_photo_alternate_outlined),
                             onPressed: _sendingPhoto ? null : _pickPhoto,
                           ),
@@ -774,7 +789,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   },
                                 ),
                                 decoration: InputDecoration(
-                                  hintText: 'Сообщение',
+                                  hintText: tr('Сообщение', 'Message'),
                                   filled: true,
                                   fillColor: Theme.of(context).colorScheme.surfaceContainer,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -789,7 +804,11 @@ class _ChatScreenState extends State<ChatScreen> {
                           const SizedBox(width: 6),
                           // Empty input: record a voice message instead (like Telegram).
                           if (_input.text.trim().isEmpty && _editing == null)
-                            IconButton.filled(tooltip: 'Голосовое', icon: const Icon(Icons.mic), onPressed: _startVoice)
+                            IconButton.filled(
+                              tooltip: tr('Голосовое', 'Voice message'),
+                              icon: const Icon(Icons.mic),
+                              onPressed: _startVoice,
+                            )
                           else
                             IconButton.filled(icon: const Icon(Icons.send), onPressed: _send),
                         ],
@@ -823,22 +842,22 @@ class _DayLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final d = DateTime.fromMillisecondsSinceEpoch(at * 1000);
     final now = DateTime.now();
-    const months = [
-      'января',
-      'февраля',
-      'марта',
-      'апреля',
-      'мая',
-      'июня',
-      'июля',
-      'августа',
-      'сентября',
-      'октября',
-      'ноября',
-      'декабря',
+    final months = [
+      tr('января', 'January'),
+      tr('февраля', 'February'),
+      tr('марта', 'March'),
+      tr('апреля', 'April'),
+      tr('мая', 'May'),
+      tr('июня', 'June'),
+      tr('июля', 'July'),
+      tr('августа', 'August'),
+      tr('сентября', 'September'),
+      tr('октября', 'October'),
+      tr('ноября', 'November'),
+      tr('декабря', 'December'),
     ];
     final text = _sameDay(at, now.millisecondsSinceEpoch ~/ 1000)
-        ? 'Сегодня'
+        ? tr('Сегодня', 'Today')
         : '${d.day} ${months[d.month - 1]}${d.year == now.year ? '' : ' ${d.year}'}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -923,11 +942,11 @@ class _Bubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (m.deleted)
-                  const Align(
+                  Align(
                     alignment: Alignment.centerLeft,
                     widthFactor: 1,
                     child: Text(
-                      'сообщение удалено',
+                      tr('сообщение удалено', 'message deleted'),
                       style: TextStyle(fontStyle: FontStyle.italic, color: BotatoColors.smoke),
                     ),
                   )
@@ -939,7 +958,7 @@ class _Bubble extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          'Переслано от $from',
+                          tr('Переслано от $from', 'Forwarded from $from'),
                           style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: BotatoColors.smoke),
                         ),
                       ),
@@ -993,16 +1012,16 @@ class _Bubble extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (m.edited && !m.deleted)
-                      const Text('изменено · ', style: TextStyle(color: BotatoColors.smoke, fontSize: 11)),
+                      Text(tr('изменено · ', 'edited · '), style: TextStyle(color: BotatoColors.smoke, fontSize: 11)),
                     Text(_hhmm(m.sentAt.toInt()), style: const TextStyle(color: BotatoColors.smoke, fontSize: 11)),
                     if (icon != null) ...[
                       const SizedBox(width: 4),
                       Tooltip(
                         message: switch (status) {
-                          MsgStatus.sending => 'отправляется',
-                          MsgStatus.sent => 'на сервере',
-                          MsgStatus.delivered => 'доставлено',
-                          _ => 'не доставлено за 24 ч',
+                          MsgStatus.sending => tr('отправляется', 'sending'),
+                          MsgStatus.sent => tr('на сервере', 'on the server'),
+                          MsgStatus.delivered => tr('доставлено', 'delivered'),
+                          _ => tr('не доставлено за 24 ч', 'not delivered within 24 h'),
                         },
                         child: Icon(icon, size: 14, color: color),
                       ),
@@ -1079,21 +1098,24 @@ class _EmojiDialogState extends State<_EmojiDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Своя реакция'),
+      title: Text(tr('Своя реакция', 'Custom reaction')),
       content: TextField(
         controller: _field,
         autofocus: true,
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 32),
-        decoration: const InputDecoration(hintText: '🙂', helperText: 'Одно эмодзи; на ПК: Win + .'),
+        decoration: InputDecoration(
+          hintText: '🙂',
+          helperText: tr('Одно эмодзи; на ПК: Win + .', 'One emoji; on PC: Win + .'),
+        ),
         onChanged: (_) => setState(() {}),
         onSubmitted: (_) => Navigator.pop(context, _emoji),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Отмена', 'Cancel'))),
         FilledButton(
           onPressed: _emoji.isEmpty ? null : () => Navigator.pop(context, _emoji),
-          child: const Text('Поставить'),
+          child: Text(tr('Поставить', 'Set')),
         ),
       ],
     );
@@ -1154,7 +1176,7 @@ class _RecordingBar extends StatelessWidget {
     final ss = (t.inSeconds % 60).toString().padLeft(2, '0');
     return Row(
       children: [
-        IconButton(tooltip: 'Отменить', icon: const Icon(Icons.delete_outline), onPressed: onCancel),
+        IconButton(tooltip: tr('Отменить', 'Cancel'), icon: const Icon(Icons.delete_outline), onPressed: onCancel),
         const SizedBox(width: 4),
         Container(
           width: 12 + 12 * recorder.level,
@@ -1164,7 +1186,7 @@ class _RecordingBar extends StatelessWidget {
         const SizedBox(width: 12),
         Text('$mm:$ss', style: const TextStyle(fontSize: 16, fontFeatures: [FontFeature.tabularFigures()])),
         const Expanded(child: SizedBox()),
-        IconButton.filled(tooltip: 'Отправить', icon: const Icon(Icons.send), onPressed: onSend),
+        IconButton.filled(tooltip: tr('Отправить', 'Send'), icon: const Icon(Icons.send), onPressed: onSend),
       ],
     );
   }
@@ -1213,7 +1235,10 @@ class _VoiceBubble extends StatelessWidget {
                 child: SizedBox(height: 28, child: CustomPaint(painter: _WavePainter(voice.waveform, progress))),
               ),
               const SizedBox(width: 8),
-              Text(voice.gone ? 'недоступно' : label, style: const TextStyle(color: BotatoColors.smoke, fontSize: 12)),
+              Text(
+                voice.gone ? tr('недоступно', 'unavailable') : label,
+                style: const TextStyle(color: BotatoColors.smoke, fontSize: 12),
+              ),
             ],
           ),
         );

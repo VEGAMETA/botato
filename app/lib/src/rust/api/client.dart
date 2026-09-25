@@ -38,6 +38,10 @@ void clientSignal({required String toDevice, required String payload}) =>
       payload: payload,
     );
 
+/// UI language for errors and message previews made in Rust.
+void clientSetEnglish({required bool english}) =>
+    RustLib.instance.api.crateApiClientClientSetEnglish(english: english);
+
 /// Network changed: drop the (possibly silently dead) relay connection and dial again now.
 void clientReconnect() => RustLib.instance.api.crateApiClientClientReconnect();
 

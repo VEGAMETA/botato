@@ -10,6 +10,7 @@ import '../screens/chat_screen.dart';
 import '../theme.dart';
 import 'call_service.dart';
 import 'media_settings.dart';
+import '../l10n.dart';
 
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key, required this.calls});
@@ -106,13 +107,14 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   String _status(CallService c) {
-    if (c.reconnecting) return 'переподключение…';
+    if (c.reconnecting) return tr('переподключение…', 'reconnecting…');
     return switch (c.phase) {
-      CallPhase.outgoing => 'вызов…',
-      CallPhase.incoming => c.videoCall ? 'входящий видеозвонок' : 'входящий звонок',
-      CallPhase.connecting => 'соединение…',
+      CallPhase.outgoing => tr('вызов…', 'calling…'),
+      CallPhase.incoming =>
+        c.videoCall ? tr('входящий видеозвонок', 'incoming video call') : tr('входящий звонок', 'incoming call'),
+      CallPhase.connecting => tr('соединение…', 'connecting…'),
       CallPhase.active => _elapsed(c.connectedAt),
-      CallPhase.ended => c.endReason ?? 'завершён',
+      CallPhase.ended => c.endReason ?? tr('завершён', 'ended'),
       CallPhase.idle => '',
     };
   }
@@ -235,19 +237,21 @@ class _CallScreenState extends State<CallScreen> {
                         children: [
                           if (canMinimize && c.peerUser != null)
                             IconButton(
-                              tooltip: 'Чат',
+                              tooltip: tr('Чат', 'Chat'),
                               icon: const Icon(Icons.chat_bubble_outline, color: Colors.white70),
                               onPressed: _openChat,
                             ),
                           if (showRemote && c.isDesktop)
                             IconButton(
-                              tooltip: _fullscreen ? 'Выйти из полного экрана (Esc)' : 'Полный экран',
+                              tooltip: _fullscreen
+                                  ? tr('Выйти из полного экрана (Esc)', 'Exit full screen (Esc)')
+                                  : tr('Полный экран', 'Full screen'),
                               icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white70),
                               onPressed: _toggleFullscreen,
                             ),
                           if (canMinimize)
                             IconButton(
-                              tooltip: 'Свернуть',
+                              tooltip: tr('Свернуть', 'Minimize'),
                               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70),
                               onPressed: _minimize,
                             ),
@@ -263,13 +267,13 @@ class _CallScreenState extends State<CallScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            tooltip: 'Статистика',
+                            tooltip: tr('Статистика', 'Statistics'),
                             icon: const Icon(Icons.insights, color: Colors.white54),
                             onPressed: c.toggleStats,
                           ),
                           if (live)
                             IconButton(
-                              tooltip: 'Настройки',
+                              tooltip: tr('Настройки', 'Settings'),
                               icon: const Icon(Icons.tune, color: Colors.white54),
                               onPressed: () => showMediaSettings(context, c),
                             ),
@@ -306,9 +310,9 @@ class _CallScreenState extends State<CallScreen> {
         spacing: 24,
         runSpacing: 16,
         children: [
-          _round(Icons.call_end, Colors.red, c.decline, 'Отклонить'),
-          _round(Icons.call, Colors.green, () => c.accept(video: false), 'Голосом'),
-          if (c.videoCall) _round(Icons.videocam, Colors.green, () => c.accept(video: true), 'С видео'),
+          _round(Icons.call_end, Colors.red, c.decline, tr('Отклонить', 'Decline')),
+          _round(Icons.call, Colors.green, () => c.accept(video: false), tr('Голосом', 'Voice')),
+          if (c.videoCall) _round(Icons.videocam, Colors.green, () => c.accept(video: true), tr('С видео', 'Video')),
         ],
       );
     }
@@ -319,12 +323,13 @@ class _CallScreenState extends State<CallScreen> {
       spacing: 20,
       runSpacing: 16,
       children: [
-        _toggle(c.muted ? Icons.mic_off : Icons.mic, c.muted, c.toggleMute, 'Микрофон'),
-        if (live) _toggle(c.cameraOn ? Icons.videocam : Icons.videocam_off, c.cameraOn, c.toggleCamera, 'Камера'),
-        if (live) _toggle(Icons.screen_share, c.screenOn, () => _shareScreen(c), 'Экран'),
-        _round(Icons.call_end, Colors.red, () => c.hangup(), 'Завершить'),
+        _toggle(c.muted ? Icons.mic_off : Icons.mic, c.muted, c.toggleMute, tr('Микрофон', 'Microphone')),
+        if (live)
+          _toggle(c.cameraOn ? Icons.videocam : Icons.videocam_off, c.cameraOn, c.toggleCamera, tr('Камера', 'Camera')),
+        if (live) _toggle(Icons.screen_share, c.screenOn, () => _shareScreen(c), tr('Экран', 'Screen')),
+        _round(Icons.call_end, Colors.red, () => c.hangup(), tr('Завершить', 'End')),
         if (Platform.isAndroid)
-          _toggle(_routeIcon(c.audioRoute), c.audioRoute != 'earpiece', () => _pickRoute(c), 'Звук'),
+          _toggle(_routeIcon(c.audioRoute), c.audioRoute != 'earpiece', () => _pickRoute(c), tr('Звук', 'Audio')),
       ],
     );
   }
@@ -338,9 +343,9 @@ class _CallScreenState extends State<CallScreen> {
 
   static String _routeName(String id) => switch (id) {
     'bluetooth' => 'Bluetooth',
-    'wired-headset' => 'Наушники',
-    'speaker' => 'Громкая связь',
-    _ => 'Телефон',
+    'wired-headset' => tr('Наушники', 'Headphones'),
+    'speaker' => tr('Громкая связь', 'Loudspeaker'),
+    _ => tr('Телефон', 'Phone'),
   };
 
   /// Only earpiece and loudspeaker: a toggle. With a headset around: pick from the list.
@@ -379,18 +384,23 @@ class _CallScreenState extends State<CallScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Сейчас: ${_routeName(c.audioRoute)}', style: Theme.of(ctx).textTheme.titleMedium),
+              Text(
+                tr('Сейчас: ${_routeName(c.audioRoute)}', 'Now: ${_routeName(c.audioRoute)}'),
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
-              const Text(
-                'В режиме «Чистый звук» выход выбирает Android: наушники или Bluetooth, если подключены, '
-                'иначе громкий динамик. Разговорный динамик и ручной выбор — в режиме «Голос».',
+              Text(
+                tr(
+                  'В режиме «Чистый звук» выход выбирает Android: наушники или Bluetooth, если подключены, иначе громкий динамик. Разговорный динамик и ручной выбор — в режиме «Голос».',
+                  'In the “Clean audio” mode Android picks the output: headphones or Bluetooth if connected, otherwise the loudspeaker. The earpiece and manual choice are available in the “Voice” mode.',
+                ),
               ),
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
                 child: FilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('Переключить на «Голос»'),
+                  child: Text(tr('Переключить на «Голос»', 'Switch to “Voice”')),
                 ),
               ),
             ],
@@ -445,7 +455,7 @@ class _ScreenPickerState extends State<_ScreenPicker> {
   Widget build(BuildContext context) {
     final sources = _sources;
     return AlertDialog(
-      title: const Text('Что показать'),
+      title: Text(tr('Что показать', 'What to share')),
       content: SizedBox(
         width: 720,
         height: 420,
@@ -474,7 +484,7 @@ class _ScreenPickerState extends State<_ScreenPicker> {
                 ],
               ),
       ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена'))],
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Отмена', 'Cancel')))],
     );
   }
 }
@@ -522,7 +532,7 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
         isExpanded: true,
         value: value,
         items: [
-          const DropdownMenuItem(value: null, child: Text('по умолчанию')),
+          DropdownMenuItem(value: null, child: Text(tr('по умолчанию', 'default'))),
           for (final d in list)
             DropdownMenuItem(
               value: d.deviceId,
@@ -548,12 +558,20 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Звук', style: TextStyle(fontSize: 18)),
+            Text(tr('Звук', 'Audio'), style: TextStyle(fontSize: 18)),
             const SizedBox(height: 8),
             SegmentedButton<AudioMode>(
-              segments: const [
-                ButtonSegment(value: AudioMode.voice, label: Text('Голос'), icon: Icon(Icons.record_voice_over)),
-                ButtonSegment(value: AudioMode.clean, label: Text('Чистый звук'), icon: Icon(Icons.graphic_eq)),
+              segments: [
+                ButtonSegment(
+                  value: AudioMode.voice,
+                  label: Text(tr('Голос', 'Voice')),
+                  icon: Icon(Icons.record_voice_over),
+                ),
+                ButtonSegment(
+                  value: AudioMode.clean,
+                  label: Text(tr('Чистый звук', 'Clean audio')),
+                  icon: Icon(Icons.graphic_eq),
+                ),
               ],
               selected: {s.audioMode},
               onSelectionChanged: (v) async {
@@ -562,29 +580,32 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
               },
             ),
             if (s.audioMode == AudioMode.clean)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                  'Без шумо- и эхоподавления, стерео 128 кбит/с. Только в наушниках, иначе будет эхо.',
+                  tr(
+                    'Без шумо- и эхоподавления, стерео 128 кбит/с. Только в наушниках, иначе будет эхо.',
+                    'No noise or echo suppression, stereo 128 kbit/s. Headphones only, otherwise there will be echo.',
+                  ),
                   style: TextStyle(color: Colors.orange),
                 ),
               ),
             if (c.isDesktop) ...[
-              _picker('Микрофон', 'audioinput', s.micId, c.setMicrophone),
-              _picker('Вывод звука', 'audiooutput', s.outputId, c.setOutput),
-              _picker('Камера', 'videoinput', s.cameraId, c.setCamera),
+              _picker(tr('Микрофон', 'Microphone'), 'audioinput', s.micId, c.setMicrophone),
+              _picker(tr('Вывод звука', 'Audio output'), 'audiooutput', s.outputId, c.setOutput),
+              _picker(tr('Камера', 'Camera'), 'videoinput', s.cameraId, c.setCamera),
             ] else if (c.cameraOn)
               ListTile(
                 leading: const Icon(Icons.cameraswitch),
-                title: const Text('Сменить камеру'),
+                title: Text(tr('Сменить камеру', 'Switch camera')),
                 onTap: c.switchCamera,
               ),
             const SizedBox(height: 16),
-            const Text('Видео', style: TextStyle(fontSize: 18)),
+            Text(tr('Видео', 'Video'), style: TextStyle(fontSize: 18)),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Expanded(child: Text('Показ экрана')),
+                Expanded(child: Text(tr('Показ экрана', 'Screen sharing'))),
                 SegmentedButton<int>(
                   segments: const [
                     ButtonSegment(value: 30, label: Text('30 fps')),
@@ -598,20 +619,22 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
             if (_codecs.isNotEmpty)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Видеокодек'),
+                title: Text(tr('Видеокодек', 'Video codec')),
                 subtitle: DropdownButton<String?>(
                   isExpanded: true,
                   value: _codecs.contains(s.videoCodec) ? s.videoCodec : null,
                   items: [
-                    const DropdownMenuItem(value: null, child: Text('авто')),
+                    DropdownMenuItem(value: null, child: Text(tr('авто', 'auto'))),
                     for (final name in _codecs) DropdownMenuItem(value: name, child: Text(name)),
                   ],
                   onChanged: (v) => setState(() => s.videoCodec = v),
                 ),
               ),
-            const Text(
-              'Кодек выбирает тот, кто звонит; применяется со следующего звонка. '
-              'Если у собеседника такого нет — будет другой.',
+            Text(
+              tr(
+                'Кодек выбирает тот, кто звонит; применяется со следующего звонка. Если у собеседника такого нет — будет другой.',
+                'The caller picks the codec; applies from the next call. If the other side doesn\'t have it, another one is used.',
+              ),
               style: TextStyle(color: BotatoColors.smoke, fontSize: 12),
             ),
             if (Platform.isAndroid)
@@ -619,10 +642,12 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 contentPadding: EdgeInsets.zero,
                 value: s.hwAudioProcessing,
                 onChanged: (v) => setState(() => s.hwAudioProcessing = v),
-                title: const Text('Шумоподавление телефона'),
-                subtitle: const Text(
-                  'Встроенная обработка микрофона. Если голос тихий или слышно только вблизи — выключите. '
-                  'Применится после перезапуска приложения.',
+                title: Text(tr('Шумоподавление телефона', 'Phone noise suppression')),
+                subtitle: Text(
+                  tr(
+                    'Встроенная обработка микрофона. Если голос тихий или слышно только вблизи — выключите. Применится после перезапуска приложения.',
+                    'The phone\'s built-in microphone processing. Turn it off if your voice is quiet or only heard up close. Applies after restarting the app.',
+                  ),
                 ),
               ),
           ],

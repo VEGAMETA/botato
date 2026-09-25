@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::client::load_manifest;
 use crate::config;
+use crate::lang::tr;
 
 pub struct AppVersion {
     pub version: String,
@@ -47,7 +48,7 @@ pub fn update_bases() -> Vec<String> {
 /// `None` = nothing to install.
 #[flutter_rust_bridge::frb(sync)]
 pub fn update_check(signed: Vec<u8>, base: String) -> anyhow::Result<Option<UpdateInfo>> {
-    let rel = Release::verify(&config::root_pub(), &signed).map_err(|e| anyhow::anyhow!("релиз не подписан админом: {e}"))?;
+    let rel = Release::verify(&config::root_pub(), &signed).map_err(|e| anyhow::anyhow!("{}: {e}", tr("релиз не подписан админом", "the release is not signed by the admin")))?;
     if rel.build <= config::app_build() {
         return Ok(None);
     }

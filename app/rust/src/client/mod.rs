@@ -24,6 +24,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::config;
 use contacts::Contacts;
+use crate::lang::tr;
 
 /// Signals older (or further in the future) than this are dropped.
 const SIGNAL_MAX_AGE_SECS: u64 = 120;
@@ -92,9 +93,9 @@ pub type Emit = Arc<dyn Fn(Event) + Send + Sync>;
 /// Picks the built-in manifest (the only channel so far).
 pub fn load_manifest() -> anyhow::Result<Manifest> {
     if config::BUILTIN_MANIFEST.is_empty() {
-        anyhow::bail!("в сборке нет манифеста");
+        anyhow::bail!(tr("в сборке нет манифеста", "the build has no manifest"));
     }
-    Manifest::verify(&config::root_pub(), config::BUILTIN_MANIFEST).map_err(|e| anyhow::anyhow!("манифест: {e}"))
+    Manifest::verify(&config::root_pub(), config::BUILTIN_MANIFEST).map_err(|e| anyhow::anyhow!("{}: {e}", tr("манифест", "manifest")))
 }
 
 /// The built-in manifest, or the saved one at `path` if it is valid and newer.
@@ -122,7 +123,7 @@ impl Shared {
     }
 
     fn offer_manifest_signed_by(&self, raw: &[u8], root_pub: &[u8; 32]) -> anyhow::Result<bool> {
-        let m = Manifest::verify(root_pub, raw).map_err(|e| anyhow::anyhow!("манифест: {e}"))?;
+        let m = Manifest::verify(root_pub, raw).map_err(|e| anyhow::anyhow!("{}: {e}", tr("манифест", "manifest")))?;
         let mut cur = self.manifest.write().unwrap();
         if m.version <= cur.version {
             return Ok(false);
@@ -179,10 +180,10 @@ async fn recv(ws: &mut Ws, last_rx: &mut tokio::time::Instant) -> anyhow::Result
         *last_rx = tokio::time::Instant::now();
         match msg {
             Some(Ok(Message::Text(t))) => return Ok(serde_json::from_str(t.as_str())?),
-            Some(Ok(Message::Close(f))) => anyhow::bail!("закрыто сервером: {}", f.map(|f| f.code.to_string()).unwrap_or_default()),
+            Some(Ok(Message::Close(f))) => anyhow::bail!("{}: {}", tr("закрыто сервером", "closed by the server"), f.map(|f| f.code.to_string()).unwrap_or_default()),
             Some(Ok(_)) => continue,
             Some(Err(e)) => return Err(e.into()),
-            None => anyhow::bail!("соединение закрыто"),
+            None => anyhow::bail!(tr("соединение закрыто", "connection closed")),
         }
     }
 }
@@ -203,7 +204,7 @@ async fn dial(server: &ServerEntry) -> anyhow::Result<Ws> {
     let port = uri.port_u16().unwrap_or(443);
     let tcp = tokio::net::TcpStream::connect((server.ip_fallback.as_str(), port))
         .await
-        .map_err(|e2| anyhow::anyhow!("{err}; по IP тоже не вышло: {e2}"))?;
+        .map_err(|e2| anyhow::anyhow!("{err}; {}: {e2}", tr("по IP тоже не вышло", "by IP failed too")))?;
     let (ws, _) = tokio_tungstenite::client_async_tls(server.url.as_str(), tcp).await?;
     Ok(ws)
 }
@@ -214,26 +215,26 @@ async fn handshake(shared: &Shared, server: &ServerEntry) -> anyhow::Result<Ws> 
     let cn: Nonce = proto::random_bytes();
     send(&mut ws, &ClientFrame::Hello { v: PROTOCOL_VERSION, nonce: cn.to_vec() }).await?;
     let ServerFrame::Challenge { nonce, server_pub, sig } = recv(&mut ws, &mut last).await? else {
-        anyhow::bail!("сервер нарушил протокол");
+        anyhow::bail!(tr("сервер нарушил протокол", "the server broke the protocol"));
     };
     // Verify the server before revealing who we are.
     if server_pub != server.server_pub {
-        anyhow::bail!("ключ сервера не совпадает с манифестом");
+        anyhow::bail!(tr("ключ сервера не совпадает с манифестом", "the server key doesn't match the manifest"));
     }
     let sn: Nonce = nonce.try_into().map_err(|_| anyhow::anyhow!("bad nonce"))?;
-    auth::verify_server(&server_pub, &cn, &sn, &sig).map_err(|_| anyhow::anyhow!("сервер не подтвердил ключ"))?;
+    auth::verify_server(&server_pub, &cn, &sn, &sig).map_err(|_| anyhow::anyhow!(tr("сервер не подтвердил ключ", "the server didn't prove its key")))?;
     let csig = auth::sign_client(shared.me.signing_key(), &sn, &server.server_pub, &cn);
     send(&mut ws, &ClientFrame::Auth { cert: shared.cert.clone(), device_id: shared.me.device_id, sig: csig.to_vec() }).await?;
     match recv(&mut ws, &mut last).await? {
         ServerFrame::Ready { .. } => Ok(ws),
-        other => anyhow::bail!("авторизация не прошла: {other:?}"),
+        other => anyhow::bail!("{}: {other:?}", tr("авторизация не прошла", "authorization failed")),
     }
 }
 
 async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::UnboundedReceiver<Cmd>, emit: &Emit) -> anyhow::Result<Exit> {
     let mut ws = tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(shared, server))
         .await
-        .map_err(|_| anyhow::anyhow!("таймаут подключения"))??;
+        .map_err(|_| anyhow::anyhow!(tr("таймаут подключения", "connection timeout")))??;
     emit(Event::Online { server: server.url.clone() });
     send(&mut ws, &ClientFrame::Directory {}).await?;
 
@@ -275,7 +276,7 @@ async fn session(shared: &Shared, server: &ServerEntry, cmds: &mut mpsc::Unbound
             frame = recv(&mut ws, &mut last_rx) => handle(shared, &mut ws, &mut s, frame?, emit).await?,
             _ = ping.tick() => {
                 if last_rx.elapsed() > LIVENESS {
-                    anyhow::bail!("сервер не отвечает");
+                    anyhow::bail!(tr("сервер не отвечает", "the server is not responding"));
                 }
                 ws.send(Message::Ping(Default::default())).await?;
             }
@@ -360,14 +361,14 @@ async fn deliver(shared: &Shared, ws: &mut Ws, s: &mut SessionState, id: Id, blo
             send(ws, &ClientFrame::Directory {}).await?;
         }
         // Local storage error: leave it on the relay, it comes again next connection.
-        Err(e) => emit(Event::Error { message: format!("сообщение: {e}") }),
+        Err(e) => emit(Event::Error { message: format!("{}: {e}", tr("сообщение", "message")) }),
     }
     Ok(())
 }
 
 fn seal_signal(shared: &Shared, to: &Id, payload: &[u8]) -> anyhow::Result<Vec<u8>> {
     let contacts = shared.contacts.lock().unwrap();
-    let (_, dev) = contacts.device(to, &shared.manifest()).ok_or_else(|| anyhow::anyhow!("неизвестное устройство"))?;
+    let (_, dev) = contacts.device(to, &shared.manifest()).ok_or_else(|| anyhow::anyhow!(tr("неизвестное устройство", "unknown device")))?;
     envelope::seal(&shared.me, to, &dev.enc_pub, KIND_SIGNAL, config::now(), payload).map_err(|e| anyhow::anyhow!("seal: {e}"))
 }
 
@@ -405,7 +406,7 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
             match messaging::on_file(shared, &id, &data) {
                 Ok(Some(peer)) => emit(Event::MessagesChanged { peer }),
                 Ok(None) => {}
-                Err(e) => emit(Event::Error { message: format!("фото: {e}") }),
+                Err(e) => emit(Event::Error { message: format!("{}: {e}", tr("фото", "photo")) }),
             }
         }
         // Not there (yet): asked again on the next connection, given up after 24 h.
@@ -418,7 +419,7 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
         // on the next connection and dropped at expiry. Same for a refused upload.
         ServerFrame::Error { r#ref, code, .. } => emit(Event::Error { message: format!("{ref}: {code:?}") }),
         ServerFrame::Ok { .. } => {}
-        ServerFrame::Challenge { .. } | ServerFrame::Ready { .. } => anyhow::bail!("неожиданный фрейм"),
+        ServerFrame::Challenge { .. } | ServerFrame::Ready { .. } => anyhow::bail!(tr("неожиданный фрейм", "unexpected frame")),
     }
     Ok(())
 }

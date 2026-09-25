@@ -1,5 +1,7 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../l10n.dart';
+
 /// A snapshot of what the call is actually doing, derived from getStats deltas.
 class CallStats {
   String route = '…'; // direct / via TURN, with candidate types
@@ -40,14 +42,16 @@ class CallStats {
   String toString() {
     String f(double v) => v.toStringAsFixed(0);
     final lines = [
-      'маршрут: $route${rttMs == null ? '' : ', RTT ${f(rttMs!)} мс'}',
-      'аудио $audioCodec: ↑${f(audioOutKbps)} ↓${f(audioInKbps)} кбит/с, потери ${audioLossPct.toStringAsFixed(1)}%',
+      '${tr('маршрут', 'route')}: $route${rttMs == null ? '' : ', RTT ${f(rttMs!)} ${tr('мс', 'ms')}'}',
+      '${tr('аудио', 'audio')} $audioCodec: ↑${f(audioOutKbps)} ↓${f(audioInKbps)} ${tr('кбит/с', 'kbit/s')}, '
+          '${tr('потери', 'loss')} ${audioLossPct.toStringAsFixed(1)}%',
       if (videoCodec.isNotEmpty)
-        'видео $videoCodec: ↑${f(videoOutKbps)} ${f(videoOutFps)}fps $videoOutSize'
-            ' ↓${f(videoInKbps)} ${f(videoInFps)}fps $videoInSize, потери ${videoLossPct.toStringAsFixed(1)}%',
+        '${tr('видео', 'video')} $videoCodec: ↑${f(videoOutKbps)} ${f(videoOutFps)}fps $videoOutSize'
+            ' ↓${f(videoInKbps)} ${f(videoInFps)}fps $videoInSize, ${tr('потери', 'loss')} ${videoLossPct.toStringAsFixed(1)}%',
       if (videoEncoder.isNotEmpty || videoDecoder.isNotEmpty)
-        'кодер ${videoEncoder.isEmpty ? '—' : videoEncoder}, декодер ${videoDecoder.isEmpty ? '—' : videoDecoder}'
-            '${videoLimit.isEmpty || videoLimit == 'none' ? '' : ', упор: $videoLimit'}',
+        '${tr('кодер', 'encoder')} ${videoEncoder.isEmpty ? '—' : videoEncoder}, '
+            '${tr('декодер', 'decoder')} ${videoDecoder.isEmpty ? '—' : videoDecoder}'
+            '${videoLimit.isEmpty || videoLimit == 'none' ? '' : ', ${tr('упор', 'limited by')}: $videoLimit'}',
     ];
     return lines.join('\n');
   }
@@ -87,7 +91,7 @@ class CallStatsSampler {
           final local = byId[v['localCandidateId']]?.values['candidateType'];
           final remote = byId[v['remoteCandidateId']]?.values['candidateType'];
           final relayed = local == 'relay' || remote == 'relay';
-          s.route = '${relayed ? 'через TURN' : 'напрямую'} ($local↔$remote)';
+          s.route = '${relayed ? 'через TURN' : tr('напрямую', 'direct')} ($local↔$remote)';
           final rtt = v['currentRoundTripTime'];
           if (rtt is num) s.rttMs = rtt * 1000;
         case 'outbound-rtp':

@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../identity_store.dart';
 import '../src/rust/api/identity.dart' as core;
 import '../theme.dart';
+import '../l10n.dart';
 
 /// First launch: show the enrollment request, then accept the admin's certificate.
 class SetupScreen extends StatefulWidget {
@@ -90,52 +91,63 @@ class _SetupScreenState extends State<SetupScreen> {
                 const SizedBox(height: 8),
                 Text('botato', textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
                 const SizedBox(height: 4),
-                const Text(
-                  'Подключение устройства',
+                Text(
+                  tr('Подключение устройства', 'Device setup'),
                   textAlign: TextAlign.center,
                   style: TextStyle(color: BotatoColors.smoke),
                 ),
                 const SizedBox(height: 16),
-                _step(1, 'Как вас подписать?', [
+                _step(1, tr('Как вас подписать?', 'Your name?'), [
                   TextField(
                     controller: _name,
                     maxLength: 64,
-                    decoration: const InputDecoration(hintText: 'Имя', border: OutlineInputBorder()),
+                    decoration: InputDecoration(hintText: tr('Имя', 'Name'), border: OutlineInputBorder()),
                     onChanged: (v) {
                       widget.store.saveRequestedName(v);
                       _rebuildRequest();
                     },
                   ),
                 ]),
-                _step(2, 'Отправьте запрос админу — QR или текстом', [
-                  if (_request != null) ...[
-                    Center(
-                      child: Container(
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                        padding: const EdgeInsets.all(12),
-                        child: QrImageView(data: _request!, size: 240),
+                _step(
+                  2,
+                  tr(
+                    'Отправьте запрос админу — QR или текстом',
+                    'Send the request to the admin — as a QR code or text',
+                  ),
+                  [
+                    if (_request != null) ...[
+                      Center(
+                        child: Container(
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                          padding: const EdgeInsets.all(12),
+                          child: QrImageView(data: _request!, size: 240),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.copy),
+                        label: Text(tr('Скопировать запрос', 'Copy the request')),
+                        onPressed: () => Clipboard.setData(ClipboardData(text: _request!)),
+                      ),
+                    ],
+                  ],
+                ),
+                _step(
+                  3,
+                  tr('Сверьте с админом голосом этот отпечаток', 'Compare this fingerprint with the admin by voice'),
+                  [
+                    SelectableText(
+                      _device.fingerprint,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontFamily: 'monospace',
+                        letterSpacing: 2,
+                        color: BotatoColors.potato,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.copy),
-                      label: const Text('Скопировать запрос'),
-                      onPressed: () => Clipboard.setData(ClipboardData(text: _request!)),
-                    ),
                   ],
-                ]),
-                _step(3, 'Сверьте с админом голосом этот отпечаток', [
-                  SelectableText(
-                    _device.fingerprint,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontFamily: 'monospace',
-                      letterSpacing: 2,
-                      color: BotatoColors.potato,
-                    ),
-                  ),
-                ]),
-                _step(4, 'Вставьте сертификат от админа', [
+                ),
+                _step(4, tr('Вставьте сертификат от админа', 'Paste the admin\'s certificate'), [
                   TextField(
                     controller: _cert,
                     minLines: 2,
@@ -148,7 +160,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
                     ),
                   const SizedBox(height: 12),
-                  FilledButton(onPressed: _import, child: const Text('Импортировать')),
+                  FilledButton(onPressed: _import, child: Text(tr('Импортировать', 'Import'))),
                 ]),
               ],
             ),

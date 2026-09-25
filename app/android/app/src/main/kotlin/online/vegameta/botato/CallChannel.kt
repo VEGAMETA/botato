@@ -112,6 +112,10 @@ object CallChannel {
                     Sounds.stopLoop()
                     result.success(null)
                 }
+                "language" -> {
+                    Lang.set(ctx, call.arguments as Boolean)
+                    result.success(null)
+                }
                 "audioMode" -> {
                     // flutter_webrtc stores a new audio mode but applies it only when the next call
                     // activates the session; a switch during a call is applied here.
@@ -136,7 +140,7 @@ object CallChannel {
                     if (Updates.install(ctx, path)) {
                         result.success(null)
                     } else {
-                        result.error("permission", "разрешите botato устанавливать приложения и нажмите «Обновить» ещё раз", null)
+                        result.error("permission", Lang.tr(ctx, "разрешите botato устанавливать приложения и нажмите «Обновить» ещё раз", "allow botato to install apps and tap “Update” again"), null)
                     }
                 }
                 "saveImage" -> {

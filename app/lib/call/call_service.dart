@@ -14,6 +14,7 @@ import 'call_screen.dart';
 import 'call_stats.dart';
 import 'media_settings.dart';
 import 'sdp.dart';
+import '../l10n.dart';
 
 enum CallPhase { idle, outgoing, incoming, connecting, active, ended }
 
@@ -176,9 +177,9 @@ class CallService extends ChangeNotifier {
         relay.signal(d, {'type': 'offer', 'call': _callId, 'sdp': sdp, 'video': video, 'vcodec': ?settings.videoCodec});
       }
       _ringTimer = Timer(_ringTimeout, () => hangup(reason: 'no_answer'));
-      notifier.show(peerName, 'вызов…', muted: muted);
+      notifier.show(peerName, tr('вызов…', 'calling…'), muted: muted);
     } catch (e) {
-      _fail('не удалось начать звонок: $e');
+      _fail(tr('не удалось начать звонок: $e', 'couldn\'t start the call: $e'));
     }
   }
 
@@ -211,16 +212,16 @@ class CallService extends ChangeNotifier {
       relay.signal(_peerDevice!, {'type': 'answer', 'call': _callId, 'sdp': sdp});
       await _applyAudioBitrate();
       _sendMediaState();
-      notifier.show(peerName, 'соединение…', muted: muted);
+      notifier.show(peerName, tr('соединение…', 'connecting…'), muted: muted);
     } catch (e) {
-      _fail('не удалось принять звонок: $e');
+      _fail(tr('не удалось принять звонок: $e', 'couldn\'t answer the call: $e'));
     }
   }
 
   void decline() {
     if (phase != CallPhase.incoming) return;
     relay.signal(_peerDevice!, {'type': 'hangup', 'call': _callId, 'reason': 'declined'});
-    _end('отклонён');
+    _end(tr('отклонён', 'declined'));
   }
 
   /// Local hangup (button, notification, timeout).
@@ -231,7 +232,7 @@ class CallService extends ChangeNotifier {
     for (final d in targets) {
       relay.signal(d, {'type': 'hangup', 'call': _callId, 'reason': reason == 'no_answer' ? 'hangup' : reason});
     }
-    _end(reason == 'no_answer' ? 'нет ответа' : 'завершён');
+    _end(reason == 'no_answer' ? tr('нет ответа', 'no answer') : tr('завершён', 'ended'));
   }
 
   // ---- in-call controls
@@ -355,7 +356,7 @@ class CallService extends ChangeNotifier {
       });
     } catch (e) {
       if (Platform.isAndroid) await notifier.update(screen: false);
-      _toast('не удалось показать экран: $e');
+      _toast(tr('не удалось показать экран: $e', 'couldn\'t share the screen: $e'));
       return;
     }
     screenOn = true;
@@ -430,7 +431,7 @@ class CallService extends ChangeNotifier {
         // The device we are "reconnecting" with calls anew: for it the old call is over (its
         // hangup got lost). Close ours and take the new one instead of answering busy.
         _log('new offer from the peer while reconnecting: the old call is over');
-        _end('завершён');
+        _end(tr('завершён', 'ended'));
       }
       if (phase == CallPhase.ended) phase = CallPhase.idle; // a quick redial is not busy
       if (busy) {
@@ -444,10 +445,10 @@ class CallService extends ChangeNotifier {
       _offer = d;
       videoCall = d['video'] == true;
       peerVideo = videoCall;
-      peerName = relay.contactOfDevice(s.fromDevice)?.name ?? 'неизвестный';
+      peerName = relay.contactOfDevice(s.fromDevice)?.name ?? tr('неизвестный', 'unknown');
       peerUser = s.fromUser;
       phase = CallPhase.incoming;
-      _ringTimer = Timer(_ringTimeout, () => _end('пропущенный вызов'));
+      _ringTimer = Timer(_ringTimeout, () => _end(tr('пропущенный вызов', 'missed call')));
       _showScreen();
       notifier.showIncoming(peerName, video: videoCall);
       _bringToFront();
@@ -546,12 +547,12 @@ class CallService extends ChangeNotifier {
         _log('hangup received ($reason)');
         if (phase == CallPhase.outgoing && _peerDevice == null) {
           _ringing.remove(s.fromDevice);
-          if (_ringing.isEmpty) _end(reason == 'busy' ? 'занято' : 'отклонён');
+          if (_ringing.isEmpty) _end(reason == 'busy' ? tr('занято', 'busy') : tr('отклонён', 'declined'));
         } else if (s.fromDevice == _peerDevice) {
           _end(switch (reason) {
-            'answered_elsewhere' => 'отвечено на другом устройстве',
-            'failed' => 'соединение не удалось',
-            _ => 'собеседник завершил звонок',
+            'answered_elsewhere' => tr('отвечено на другом устройстве', 'answered on another device'),
+            'failed' => tr('соединение не удалось', 'connection failed'),
+            _ => tr('собеседник завершил звонок', 'the other side hung up'),
           });
         }
     }
@@ -686,7 +687,7 @@ class CallService extends ChangeNotifier {
           return await navigator.mediaDevices.getUserMedia(constraints(null));
         } catch (_) {}
       }
-      _toast('камера недоступна');
+      _toast(tr('камера недоступна', 'camera unavailable'));
       return null;
     }
   }
@@ -815,7 +816,7 @@ class CallService extends ChangeNotifier {
     try {
       _audioTrack = await _openMicrophone();
     } catch (_) {
-      throw 'нет доступа к микрофону';
+      throw tr('нет доступа к микрофону', 'no access to the microphone');
     }
     if (camera) {
       _cameraStream = await _openCamera();
@@ -1027,7 +1028,7 @@ class CallService extends ChangeNotifier {
       if (_peerDevice != null) {
         relay.signal(_peerDevice!, {'type': 'hangup', 'call': _callId, 'reason': 'failed'});
       }
-      _end('соединение потеряно');
+      _end(tr('соединение потеряно', 'connection lost'));
     });
     if (!_isCaller) {
       // The callee only waits for a reoffer; ask now and then whether the caller is still
@@ -1180,11 +1181,11 @@ class CallService extends ChangeNotifier {
   void _updateNotification() {
     if (phase == CallPhase.idle || phase == CallPhase.ended) return;
     final status = reconnecting
-        ? 'переподключение…'
+        ? tr('переподключение…', 'reconnecting…')
         : switch (phase) {
-            CallPhase.active => 'идёт звонок',
-            CallPhase.outgoing => 'вызов…',
-            _ => 'соединение…',
+            CallPhase.active => tr('идёт звонок', 'call in progress'),
+            CallPhase.outgoing => tr('вызов…', 'calling…'),
+            _ => tr('соединение…', 'connecting…'),
           };
     notifier.show(peerName, status, muted: muted);
   }

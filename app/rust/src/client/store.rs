@@ -8,6 +8,7 @@ use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use proto::Id;
 use rusqlite::{Connection, OptionalExtension, params};
+use crate::lang::tr;
 
 /// Outgoing message states.
 pub const SENDING: i64 = 0; // in the outbox, not yet accepted by a relay
@@ -204,7 +205,7 @@ impl Store {
         }
         self.unseal_bytes(&msg_id.0, body)
             .and_then(|p| String::from_utf8(p).ok())
-            .unwrap_or_else(|| "⚠ не удалось расшифровать".into())
+            .unwrap_or_else(|| tr("⚠ не удалось расшифровать", "⚠ couldn't decrypt").into())
     }
 
     /// `aad` ties the ciphertext to its row and column.

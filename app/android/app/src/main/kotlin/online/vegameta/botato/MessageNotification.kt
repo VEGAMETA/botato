@@ -21,10 +21,11 @@ object MessageNotification {
 
     fun show(ctx: Context, peer: String, name: String, text: String) {
         val manager = ctx.getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL_ID) == null) {
-            manager.deleteNotificationChannel(OLD_CHANNEL_ID)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (manager.getNotificationChannel(CHANNEL_ID) == null) manager.deleteNotificationChannel(OLD_CHANNEL_ID)
+            // Every time: for an existing channel this only renames it (the UI language may change).
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Сообщения", NotificationManager.IMPORTANCE_HIGH).apply {
+                NotificationChannel(CHANNEL_ID, Lang.tr(ctx, "Сообщения", "Messages"), NotificationManager.IMPORTANCE_HIGH).apply {
                     setSound(
                         Sounds.uri(ctx, "message"),
                         AudioAttributes.Builder()
@@ -59,7 +60,7 @@ object MessageNotification {
                 NotificationCompat.Builder(ctx, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_stat_message)
                     .setContentTitle("botato")
-                    .setContentText("Новое сообщение")
+                    .setContentText(Lang.tr(ctx, "Новое сообщение", "New message"))
                     .build(),
             )
             .build()

@@ -6,6 +6,7 @@ use proto::device::DeviceSecret;
 use proto::enroll;
 
 use crate::config;
+use crate::lang::tr;
 
 pub struct DeviceInfo {
     pub device_id: String,
@@ -48,11 +49,11 @@ pub fn enrollment_request(secret: Vec<u8>, name: String) -> anyhow::Result<Strin
 #[flutter_rust_bridge::frb(sync)]
 pub fn cert_import(secret: Vec<u8>, text: String) -> anyhow::Result<(String, CertInfo)> {
     let d = load(&secret)?;
-    let raw = enroll::from_text(enroll::CERT_PREFIX, &text).map_err(|_| anyhow::anyhow!("это не сертификат botato"))?;
-    let c = Cert::verify(&config::root_pub(), &raw, config::now()).map_err(|e| anyhow::anyhow!("сертификат не принят: {e}"))?;
-    let me = c.device(&d.device_id).ok_or_else(|| anyhow::anyhow!("сертификат выписан для другого устройства"))?;
+    let raw = enroll::from_text(enroll::CERT_PREFIX, &text).map_err(|_| anyhow::anyhow!(tr("это не сертификат botato", "this is not a botato certificate")))?;
+    let c = Cert::verify(&config::root_pub(), &raw, config::now()).map_err(|e| anyhow::anyhow!("{}: {e}", tr("сертификат не принят", "certificate rejected")))?;
+    let me = c.device(&d.device_id).ok_or_else(|| anyhow::anyhow!(tr("сертификат выписан для другого устройства", "the certificate was issued for another device")))?;
     if me.sign_pub != d.sign_pub() || me.enc_pub != d.enc_pub() {
-        return Err(anyhow::anyhow!("ключи в сертификате не совпадают с ключами устройства"));
+        return Err(anyhow::anyhow!(tr("ключи в сертификате не совпадают с ключами устройства", "the certificate's keys don't match this device")));
     }
     Ok((enroll::to_text(enroll::CERT_PREFIX, &raw), cert_info(&c)))
 }

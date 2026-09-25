@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'call/media_settings.dart';
 import 'src/rust/api/client.dart' as core;
+import 'l10n.dart';
 
 enum ConnState { connecting, online, offline }
 
@@ -283,7 +284,7 @@ class RelayService extends ChangeNotifier {
       case core.ClientEvent_NewMessage(:final peerUser, :final text):
         add(peerUser); // whoever writes to us shows up in the list
         if (!foreground || activeChat != peerUser) {
-          final name = contacts.where((c) => c.userId == peerUser).firstOrNull?.name ?? 'сообщение';
+          final name = contacts.where((c) => c.userId == peerUser).firstOrNull?.name ?? tr('сообщение', 'message');
           onNewMessage?.call(peerUser, name, text);
         }
         return;

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'desktop.dart';
 import 'src/rust/api/update.dart' as upd;
+import 'l10n.dart';
 
 /// Offers app updates published on the relay host. The release list and the files come from
 /// an untrusted server; Rust checks the admin signature and the file's SHA-256 before anything
@@ -87,7 +88,10 @@ class UpdateService extends ChangeNotifier {
       await _download(Uri.parse(info.url), File(path), info.size.toInt());
       if (!await upd.updateVerify(path: path, size: info.size, sha256: info.sha256)) {
         File(path).deleteSync();
-        throw 'файл не совпал с подписанным релизом — установка отменена';
+        throw tr(
+          'файл не совпал с подписанным релизом — установка отменена',
+          'the file doesn\'t match the signed release — installation cancelled',
+        );
       }
       if (Platform.isAndroid) {
         await _channel.invokeMethod('installApk', {'path': path});
@@ -114,7 +118,7 @@ class UpdateService extends ChangeNotifier {
       await for (final chunk in res) {
         sink.add(chunk);
         got += chunk.length;
-        if (got > size) throw 'файл больше подписанного';
+        if (got > size) throw tr('файл больше подписанного', 'the file is larger than the signed one');
         progress = size == 0 ? null : got / size;
         notifyListeners();
       }

@@ -29,10 +29,11 @@ object IncomingCallNotification {
 
     fun show(ctx: Context, peer: String, video: Boolean) {
         val manager = ctx.getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL_ID) == null) {
-            manager.deleteNotificationChannel(OLD_CHANNEL_ID)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (manager.getNotificationChannel(CHANNEL_ID) == null) manager.deleteNotificationChannel(OLD_CHANNEL_ID)
+            // Every time: for an existing channel this only renames it (the UI language may change).
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Входящие звонки", NotificationManager.IMPORTANCE_HIGH).apply {
+                NotificationChannel(CHANNEL_ID, Lang.tr(ctx, "Входящие звонки", "Incoming calls"), NotificationManager.IMPORTANCE_HIGH).apply {
                     setSound(
                         Sounds.uri(ctx, "ring"),
                         AudioAttributes.Builder()
@@ -65,7 +66,7 @@ object IncomingCallNotification {
         val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle(peer)
-            .setContentText(if (video) "Входящий видеозвонок" else "Входящий звонок")
+            .setContentText(if (video) Lang.tr(ctx, "Входящий видеозвонок", "Incoming video call") else Lang.tr(ctx, "Входящий звонок", "Incoming call"))
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
