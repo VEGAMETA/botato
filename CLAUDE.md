@@ -357,9 +357,9 @@ nftables: входящие по умолчанию `drop` (молча, без re
 
 **Сделано (код, тесты):** `protocol/README.md` §7 + `vectors/nostr.json`; `proto::nostr` (метки пары, события NIP-01, BIP-340 через `k256`); клиент `app/rust/src/client/nostr.rs` (подписка на свои метки, пока приложение активно; сигнал идёт в Nostr, если relay не подключён или ответил `signaled online:false`; дедупликация по хешу конверта на обоих путях; через минуту без сервера — поиск манифеста в Nostr); e2e-тесты с Nostr-релеем в процессе (`client/nostr_tests.rs`); баннер «Сервер недоступен» (Dart); `admin manifest publish-nostr`, botatoadmin публикует манифест в Nostr после каждой выкатки манифеста (ключ Nostr админа — `nostr.key` в папке админа). Пробник релеев: `cargo run -p relay --example nostr_probe -- wss://…` (проверено 2026-09-25: relay.primal.net, nostr.mom, relay.snort.social, offchain.pub, nostr.oxtr.dev, nostr-pub.wellorder.net, nostr.bitcoiner.social — сигналы и манифест ок; relay.damus.io, nos.lol, relay.nostr.band — недоступны отсюда; purplepag.es — запрещает наш kind).
 
-**Проверено вживую (2026-09-25):** манифест v3 с релеями (primal, nostr.mom, snort, offchain, oxtr) выкачен и опубликован в Nostr; ПК отрезан от сервера файрволом — звонки в обе стороны через Nostr, медиа P2P; в том числе когда relay ещё считает ПК онлайн (управляющие сигналы `offer`/`answer`/`hangup`/`reoffer`/`reanswer` всегда дублируются в Nostr). Idle timeout relay снижен до 35 с (нужна выкатка relay). Баннер «Сервер недоступен» — через 20 с без связи.
+**Проверено вживую (2026-09-25):** манифест v3 с релеями (primal, nostr.mom, snort, offchain, oxtr) выкачен и опубликован в Nostr; ПК отрезан от сервера файрволом — звонки в обе стороны через Nostr, медиа P2P; в том числе когда relay ещё считает ПК онлайн (управляющие сигналы `offer`/`answer`/`hangup`/`reoffer`/`reanswer` всегда дублируются в Nostr). Idle timeout relay снижен до 35 с (выкачено). Баннер «Сервер недоступен» — через 20 с без связи.
 
-**Осталось:** выкатить relay с новым idle timeout; релиз клиента с Nostr; прогон процедуры замены сервера (§11); текст через Nostr — вторым шагом.
+**Осталось:** релиз клиента с Nostr; прогон процедуры замены сервера (§11); текст через Nostr — вторым шагом.
 
 План (исходный):
 
