@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: Avatar(c.name, size: 36),
               title: Text(c.name),
               subtitle: Text(
-                '${h.fromMe ? 'Вы: ' : ''}${h.text.replaceAll('\n', ' ')}',
+                '${h.fromMe ? tr('Вы: ', 'You: ') : ''}${h.text.replaceAll('\n', ' ')}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -695,7 +695,7 @@ class _ContactCard extends StatelessWidget {
     final unread = conv?.unread.toInt() ?? 0;
     final subtitle = conv == null
         ? (peerOnline ? tr('в сети', 'online') : tr('нет сообщений', 'no messages'))
-        : '${conv.lastFromMe ? 'Вы: ' : ''}${conv.lastText.replaceAll('\n', ' ')}';
+        : '${conv.lastFromMe ? tr('Вы: ', 'You: ') : ''}${conv.lastText.replaceAll('\n', ' ')}';
     final theme = Theme.of(context);
     return Card(
       clipBehavior: Clip.antiAlias,

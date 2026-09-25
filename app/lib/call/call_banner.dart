@@ -50,7 +50,7 @@ class CallBanner extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '${calls.peerName} · ${calls.reconnecting ? 'переподключение…' : 'идёт звонок'}',
+                    '${calls.peerName} · ${calls.reconnecting ? tr('переподключение…', 'reconnecting…') : tr('идёт звонок', 'call in progress')}',
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                   ),

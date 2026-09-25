@@ -91,7 +91,7 @@ class CallStatsSampler {
           final local = byId[v['localCandidateId']]?.values['candidateType'];
           final remote = byId[v['remoteCandidateId']]?.values['candidateType'];
           final relayed = local == 'relay' || remote == 'relay';
-          s.route = '${relayed ? 'через TURN' : tr('напрямую', 'direct')} ($local↔$remote)';
+          s.route = '${relayed ? tr('через TURN', 'via TURN') : tr('напрямую', 'direct')} ($local↔$remote)';
           final rtt = v['currentRoundTripTime'];
           if (rtt is num) s.rttMs = rtt * 1000;
         case 'outbound-rtp':
