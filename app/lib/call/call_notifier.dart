@@ -63,6 +63,19 @@ class CallNotifier {
     }
   }
 
+  /// Android 14+: may incoming calls take the full screen on a locked phone?
+  Future<bool> fullScreenAllowed() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _channel.invokeMethod<bool>('fullScreenAllowed') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens the system page where the user allows full-screen notifications for botato.
+  Future<void> openFullScreenSettings() => _invoke('openFullScreenSettings', null);
+
   /// Android: FLAG_SECURE on the app window (recent-apps preview hidden, no screenshots).
   Future<void> secureScreen(bool on) => _invoke('secureScreen', on);
 

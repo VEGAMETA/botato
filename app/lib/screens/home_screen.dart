@@ -46,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (peer != null) widget.calls.notifier.onOpenChat?.call(peer);
       final shared = await widget.calls.notifier.pendingShare();
       if (shared != null) _handleShare(shared);
+      await _checkFullScreen();
     });
   }
 
@@ -153,6 +154,29 @@ class _HomeScreenState extends State<HomeScreen> {
     _toast(added.length == 1 ? 'Добавлен: ${added.first.name}' : 'Добавлено: ${added.length}');
   }
 
+  /// Android 14+ ships full-screen notifications switched off for sideloaded apps: without them
+  /// an incoming call on a locked phone is only a notification. Ask once per app start.
+  Future<void> _checkFullScreen() async {
+    final n = widget.calls.notifier;
+    if (!mounted || await n.fullScreenAllowed()) return;
+    if (!mounted) return;
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Звонки на весь экран'),
+        content: const Text(
+          'Сейчас на заблокированном телефоне входящий звонок приходит только уведомлением. '
+          'Разрешите botato полноэкранные уведомления — тогда звонок откроется поверх экрана блокировки.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Не сейчас')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Разрешить')),
+        ],
+      ),
+    );
+    if (open == true) await n.openFullScreenSettings();
+  }
+
   Future<void> _showErrorLog(BuildContext context) async {
     final text = ErrorLog.read();
     await showDialog<void>(
@@ -247,6 +271,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+            if (Platform.isAndroid)
+              FutureBuilder<bool>(
+                future: widget.calls.notifier.fullScreenAllowed(),
+                builder: (ctx, snap) => snap.data == false
+                    ? ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.warning_amber, color: Colors.orange),
+                        title: const Text('Звонки на весь экран выключены'),
+                        subtitle: const Text('На заблокированном телефоне звонок придёт только уведомлением'),
+                        trailing: TextButton(
+                          onPressed: widget.calls.notifier.openFullScreenSettings,
+                          child: const Text('Разрешить'),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.bug_report_outlined),

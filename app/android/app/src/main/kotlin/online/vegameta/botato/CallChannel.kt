@@ -132,6 +132,25 @@ object CallChannel {
                     activity?.applySecure()
                     result.success(null)
                 }
+                // Android 14+: full-screen notifications need a special permission, off by
+                // default for apps not installed from Google Play. Without it an incoming call on
+                // a locked phone is only a notification.
+                "fullScreenAllowed" -> {
+                    val allowed = android.os.Build.VERSION.SDK_INT < 34 ||
+                        ctx.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
+                    result.success(allowed)
+                }
+                "openFullScreenSettings" -> {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                android.net.Uri.parse("package:${ctx.packageName}"),
+                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                    result.success(null)
+                }
                 "pendingShare" -> {
                     result.success(pendingShare)
                     pendingShare = null
