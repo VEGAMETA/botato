@@ -44,6 +44,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PhotoInfo dco_decode_box_autoadd_photo_info(dynamic raw);
 
   @protected
+  ReplyInfo dco_decode_box_autoadd_reply_info(dynamic raw);
+
+  @protected
   CertInfo dco_decode_cert_info(dynamic raw);
 
   @protected
@@ -83,6 +86,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<ReactionInfo> dco_decode_list_reaction_info(dynamic raw);
+
+  @protected
   MessageInfo dco_decode_message_info(dynamic raw);
 
   @protected
@@ -95,13 +101,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PhotoInfo? dco_decode_opt_box_autoadd_photo_info(dynamic raw);
 
   @protected
+  ReplyInfo? dco_decode_opt_box_autoadd_reply_info(dynamic raw);
+
+  @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
   PhotoInfo dco_decode_photo_info(dynamic raw);
 
   @protected
+  ReactionInfo dco_decode_reaction_info(dynamic raw);
+
+  @protected
   (String, CertInfo) dco_decode_record_string_cert_info(dynamic raw);
+
+  @protected
+  ReplyInfo dco_decode_reply_info(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -134,6 +149,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PhotoInfo sse_decode_box_autoadd_photo_info(SseDeserializer deserializer);
+
+  @protected
+  ReplyInfo sse_decode_box_autoadd_reply_info(SseDeserializer deserializer);
 
   @protected
   CertInfo sse_decode_cert_info(SseDeserializer deserializer);
@@ -177,6 +195,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<ReactionInfo> sse_decode_list_reaction_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MessageInfo sse_decode_message_info(SseDeserializer deserializer);
 
   @protected
@@ -191,15 +214,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ReplyInfo? sse_decode_opt_box_autoadd_reply_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   PhotoInfo sse_decode_photo_info(SseDeserializer deserializer);
 
   @protected
+  ReactionInfo sse_decode_reaction_info(SseDeserializer deserializer);
+
+  @protected
   (String, CertInfo) sse_decode_record_string_cert_info(
     SseDeserializer deserializer,
   );
+
+  @protected
+  ReplyInfo sse_decode_reply_info(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -243,6 +277,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_photo_info(
     PhotoInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_reply_info(
+    ReplyInfo self,
     SseSerializer serializer,
   );
 
@@ -301,6 +341,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_reaction_info(
+    List<ReactionInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_message_info(MessageInfo self, SseSerializer serializer);
 
   @protected
@@ -319,6 +365,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_reply_info(
+    ReplyInfo? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
     SseSerializer serializer,
@@ -328,10 +380,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_photo_info(PhotoInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_reaction_info(ReactionInfo self, SseSerializer serializer);
+
+  @protected
   void sse_encode_record_string_cert_info(
     (String, CertInfo) self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_reply_info(ReplyInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

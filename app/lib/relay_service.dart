@@ -235,7 +235,8 @@ class RelayService extends ChangeNotifier {
   }
 
   /// Throws with a readable message if the text can't be queued.
-  void sendText(String peerUser, String text) => core.clientSendText(peerUser: peerUser, text: text);
+  void sendText(String peerUser, String text, {String? replyTo}) =>
+      core.clientSendText(peerUser: peerUser, text: text, replyTo: replyTo);
 
   List<core.MessageInfo> messages(String peerUser, {int limit = 200}) =>
       core.clientMessages(peerUser: peerUser, limit: PlatformInt64Util.from(limit));

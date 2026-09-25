@@ -118,7 +118,7 @@ impl Client {
     }
 
     fn send(&self, peer: &Id, text: &str) -> Id {
-        let id = messaging::compose(&self.shared, peer, text).unwrap();
+        let id = messaging::compose(&self.shared, peer, text, None).unwrap();
         self.tx.send(Cmd::Flush).unwrap();
         id
     }
@@ -206,7 +206,7 @@ async fn photo_upload_download() {
     let img: image::RgbImage = image::ImageBuffer::from_fn(2400, 1800, |x, y| image::Rgb([(x / 10) as u8, (y / 10) as u8, 7]));
     let mut png = vec![];
     image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
-    let msg = messaging::compose_photo(&a.shared, &bob, &png, "закат").unwrap();
+    let msg = messaging::compose_photo(&a.shared, &bob, &png, "закат", None).unwrap();
     a.tx.send(Cmd::Flush).unwrap();
 
     let e = b.wait(|e| matches!(e, Event::NewMessage { .. })).await;
@@ -230,4 +230,71 @@ async fn photo_upload_download() {
     // Delivered: nothing left to re-upload.
     a.wait_status(&bob, store::DELIVERED).await;
     assert!(a.shared.store.lock().unwrap().uploads_due().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn replies_forwards_edits_deletes_reactions() {
+    use super::messaging::Update;
+    let net = net().await;
+    let (alice, mut a_devs, a_cert) = user(&net, "alice", 1);
+    let (bob, mut b_devs, b_cert) = user(&net, "bob", 1);
+    let (carol, mut c_devs, c_cert) = user(&net, "carol", 1);
+    let mut a = start(&net, a_devs.remove(0), alice, &a_cert);
+    let mut b = start(&net, b_devs.remove(0), bob, &b_cert);
+    let mut c = start(&net, c_devs.remove(0), carol, &c_cert);
+    for x in [&mut a, &mut b, &mut c] {
+        x.online().await;
+        for cert in [&a_cert, &b_cert, &c_cert] {
+            x.shared.contacts.lock().unwrap().merge(&[cert.clone()], config::now(), &net.manifest);
+        }
+    }
+    let msg = |cl: &Client, peer: &Id, id: &Id| {
+        cl.shared.store.lock().unwrap().messages(peer, None, 50).unwrap().into_iter().find(|m| m.msg_id == *id)
+    };
+    async fn until(mut f: impl FnMut() -> bool) {
+        for _ in 0..100 {
+            if f() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("condition not reached");
+    }
+
+    // Alice writes, Bob replies quoting it.
+    let first = a.send(&bob, "первое");
+    until(|| msg(&b, &alice, &first).is_some()).await;
+    let reply = messaging::compose(&b.shared, &alice, "ответ", Some(&first)).unwrap();
+    b.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&a, &bob, &reply).is_some()).await;
+    let r = msg(&a, &bob, &reply).unwrap().extra.reply.unwrap();
+    assert_eq!((r.msg, r.from, r.text.as_str()), (first, alice, "первое"));
+
+    // Bob reacts; Alice sees it. Then Bob changes it, then removes it.
+    messaging::update(&b.shared, &alice, &first, Update::React("👍".into())).unwrap();
+    b.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&a, &bob, &first).is_some_and(|m| m.reactions == vec![(bob, "👍".to_string())])).await;
+    messaging::update(&b.shared, &alice, &first, Update::React(String::new())).unwrap();
+    b.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&a, &bob, &first).is_some_and(|m| m.reactions.is_empty())).await;
+
+    // Alice edits her message; Bob can't edit it.
+    messaging::update(&a.shared, &bob, &first, Update::Edit("первое (исправлено)".into())).unwrap();
+    a.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&b, &alice, &first).is_some_and(|m| m.edited && m.text == "первое (исправлено)")).await;
+    assert!(messaging::update(&b.shared, &alice, &first, Update::Edit("чужое".into())).is_err());
+
+    // Bob forwards Alice's message to Carol.
+    let fwd = messaging::forward(&b.shared, &first, &carol, "alice").unwrap();
+    b.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&c, &bob, &fwd).is_some()).await;
+    let m = msg(&c, &bob, &fwd).unwrap();
+    assert_eq!((m.text.as_str(), m.extra.fwd.as_deref()), ("первое (исправлено)", Some("alice")));
+
+    // Alice deletes her message for everyone.
+    messaging::update(&a.shared, &bob, &first, Update::Delete).unwrap();
+    a.tx.send(Cmd::Flush).unwrap();
+    until(|| msg(&b, &alice, &first).is_some_and(|m| m.deleted && m.text.is_empty())).await;
+    // Updates are receipted and leave the outbox like messages.
+    until(|| a.shared.store.lock().unwrap().outbox().unwrap().is_empty()).await;
 }

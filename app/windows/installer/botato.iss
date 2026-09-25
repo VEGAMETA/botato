@@ -4,7 +4,7 @@
 ; Output: app\build\installer\botato-setup-<version>.exe
 
 #define AppName "botato"
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.3"
 #define Release "..\..\build\windows\x64\runner\Release"
 
 [Setup]

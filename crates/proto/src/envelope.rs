@@ -34,6 +34,7 @@ pub const MAX_PAYLOAD: usize = crate::frames::MAX_BLOB - 256;
 pub const KIND_SIGNAL: u8 = 1;
 pub const KIND_MESSAGE: u8 = 2;
 pub const KIND_RECEIPT: u8 = 3;
+pub const KIND_UPDATE: u8 = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Opened {

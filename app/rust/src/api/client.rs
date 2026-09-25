@@ -205,6 +205,25 @@ pub struct MessageInfo {
     /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
     pub status: i64,
     pub photo: Option<PhotoInfo>,
+    pub edited: bool,
+    /// Deleted for everyone: show a placeholder.
+    pub deleted: bool,
+    pub reply: Option<ReplyInfo>,
+    /// Display name of the original author, if forwarded.
+    pub forwarded_from: Option<String>,
+    pub reactions: Vec<ReactionInfo>,
+}
+
+pub struct ReplyInfo {
+    pub msg_id: String,
+    pub from_user: String,
+    /// Snapshot of the quoted text (≤ 200 chars).
+    pub text: String,
+}
+
+pub struct ReactionInfo {
+    pub user_id: String,
+    pub emoji: String,
 }
 
 pub struct PhotoInfo {
@@ -226,27 +245,77 @@ pub struct ConversationInfo {
     pub unread: i64,
 }
 
-/// Queues a text message to every device of `peer_user` (and our other devices).
+/// Queues a text message to every device of `peer_user` (and our other devices);
+/// `reply_to` quotes one of the conversation's messages.
 #[flutter_rust_bridge::frb(sync)]
-pub fn client_send_text(peer_user: String, text: String) -> anyhow::Result<String> {
+pub fn client_send_text(peer_user: String, text: String, reply_to: Option<String>) -> anyhow::Result<String> {
     let peer = parse_id(&peer_user)?;
+    let reply = reply_to.as_deref().map(parse_id).transpose()?;
     let guard = RUNNING.lock().unwrap();
     let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
-    let msg_id = client::messaging::compose(&r.shared, &peer, &text)?;
+    let msg_id = client::messaging::compose(&r.shared, &peer, &text, reply.as_ref())?;
     let _ = r.tx.send(Cmd::Flush);
     Ok(msg_id.to_hex())
 }
 
+/// Sends a copy of a stored message (text and/or photo) to `to_peer`, marked "forwarded from
+/// `from_name`". Photos are re-uploaded: call it off the UI isolate.
+pub fn client_forward(msg_id: String, to_peer: String, from_name: String) -> anyhow::Result<String> {
+    let (msg, to) = (parse_id(&msg_id)?, parse_id(&to_peer)?);
+    let (shared, tx) = running()?;
+    let id = client::messaging::forward(&shared, &msg, &to, &from_name)?;
+    let _ = tx.send(Cmd::Flush);
+    Ok(id.to_hex())
+}
+
+/// Replaces the text of one of our messages, here and on every device of the conversation.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_edit(peer_user: String, msg_id: String, text: String) -> anyhow::Result<()> {
+    send_update(&peer_user, &msg_id, client::messaging::Update::Edit(text))
+}
+
+/// Deletes a message: `for_all` (only our own) everywhere, otherwise on this device only.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_delete(peer_user: String, msg_id: String, for_all: bool) -> anyhow::Result<()> {
+    if for_all {
+        return send_update(&peer_user, &msg_id, client::messaging::Update::Delete);
+    }
+    let id = parse_id(&msg_id)?;
+    with(|r| r.shared.store.lock().unwrap().delete_local(&id).map(|_| ()))?
+}
+
+/// Sets our reaction on a message; an empty `emoji` removes it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn client_react(peer_user: String, msg_id: String, emoji: String) -> anyhow::Result<()> {
+    send_update(&peer_user, &msg_id, client::messaging::Update::React(emoji))
+}
+
+fn send_update(peer_user: &str, msg_id: &str, op: client::messaging::Update) -> anyhow::Result<()> {
+    let (peer, msg) = (parse_id(peer_user)?, parse_id(msg_id)?);
+    let (shared, tx) = running()?;
+    client::messaging::update(&shared, &peer, &msg, op)?;
+    let _ = tx.send(Cmd::Flush);
+    Ok(())
+}
+
+fn running() -> anyhow::Result<(Arc<Shared>, mpsc::UnboundedSender<Cmd>)> {
+    let guard = RUNNING.lock().unwrap();
+    let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
+    Ok((r.shared.clone(), r.tx.clone()))
+}
+
 /// Queues a photo (any common image format; re-encoded, metadata dropped) with an optional caption.
 /// Runs the image work on the caller's thread: call it off the UI isolate.
-pub fn client_send_photo(peer_user: String, image: Vec<u8>, caption: String) -> anyhow::Result<String> {
+pub fn client_send_photo(
+    peer_user: String,
+    image: Vec<u8>,
+    caption: String,
+    reply_to: Option<String>,
+) -> anyhow::Result<String> {
     let peer = parse_id(&peer_user)?;
-    let (shared, tx) = {
-        let guard = RUNNING.lock().unwrap();
-        let r = guard.as_ref().ok_or_else(|| anyhow::anyhow!("клиент не запущен"))?;
-        (r.shared.clone(), r.tx.clone())
-    };
-    let msg_id = client::messaging::compose_photo(&shared, &peer, &image, &caption)?;
+    let reply = reply_to.as_deref().map(parse_id).transpose()?;
+    let (shared, tx) = running()?;
+    let msg_id = client::messaging::compose_photo(&shared, &peer, &image, &caption, reply.as_ref())?;
     let _ = tx.send(Cmd::Flush);
     Ok(msg_id.to_hex())
 }
@@ -271,6 +340,15 @@ pub fn client_messages(peer_user: String, before: Option<i64>, limit: i64) -> an
                 sent_at: m.sent_at,
                 status: m.status,
                 photo: m.photo.map(|p| PhotoInfo { width: p.w, height: p.h, thumb: p.thumb, ready: p.ready, gone: p.gone }),
+                edited: m.edited,
+                deleted: m.deleted,
+                reply: m.extra.reply.map(|r| ReplyInfo { msg_id: r.msg.to_hex(), from_user: r.from.to_hex(), text: r.text }),
+                forwarded_from: m.extra.fwd,
+                reactions: m
+                    .reactions
+                    .into_iter()
+                    .map(|(u, e)| ReactionInfo { user_id: u.to_hex(), emoji: e })
+                    .collect(),
             })
         })
         .collect()
@@ -283,7 +361,11 @@ pub fn client_conversations() -> Vec<ConversationInfo> {
         .into_iter()
         .map(|c| ConversationInfo {
             peer_user: c.peer_user.to_hex(),
-            last_text: client::messaging::preview(&c.last_text, c.last_photo),
+            last_text: if c.last_deleted {
+                "сообщение удалено".into()
+            } else {
+                client::messaging::preview(&c.last_text, c.last_photo)
+            },
             last_at: c.last_at,
             last_from_me: c.last_from_me,
             unread: c.unread,

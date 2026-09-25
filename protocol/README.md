@@ -178,6 +178,7 @@ Payload ≤ 65280 bytes.
 | 1 | call signaling | JSON, see below |
 | 2 | message | JSON, see §6.2 |
 | 3 | E2E receipt | JSON, see §6.2 |
+| 4 | message update (edit, delete, reaction) | JSON, see §6.2 |
 
 ### 6.1 Call signaling payload (kind 1)
 
@@ -209,8 +210,12 @@ it, and WebRTC checks the peer's DTLS certificate against the fingerprint in tha
 Sent through the mailbox (`send`), never through `signal`.
 
 ```
-kind 2: {"msg": hex id, "to": hex user id, "text": string, "photo"?: Photo}   text ≤ 16 KiB after trimming
+kind 2: {"msg": hex id, "to": hex user id, "text": string, "photo"?: Photo, "reply"?: Reply, "fwd"?: string}
+        text ≤ 16 KiB after trimming; fwd = display name of the original author (≤ 64 chars)
 Photo:  {"file": hex id, "key": b64 32 bytes, "size": u32, "w": u32, "h": u32, "thumb": b64 JPEG ≤ 8 KiB}
+Reply:  {"msg": hex id, "from": hex user id, "text": string ≤ 200 chars}      quoted snapshot
+kind 4: {"id": hex id, "msg": hex id, "to": hex user id, "op": "edit" | "delete" | "react",
+         "text"?: string (edit), "emoji"?: string ≤ 32 bytes (react; "" removes)}
 kind 3: {"msg": hex id}
 ```
 
@@ -228,6 +233,12 @@ kind 3: {"msg": hex id}
   sender re-sends the message on its next connection and gets a new receipt.
 - Ordering: by the sender's `sent_at` (seconds), ties by local arrival order.
 - `text` may be empty only when `photo` is present (then it is the caption).
+- `reply` carries a snapshot of the quoted message, so it renders even where the original is gone.
+- kind 4 (`id` = its own logical id) travels exactly like kind 2: one copy per device of the partner and
+  per own other device, kept in the outbox until receipted (receipt `msg` = the update's `id`).
+  `edit` and `delete` are applied only when the sender's user wrote `msg`; `react` sets the sender user's
+  single reaction on `msg`. An update for a message this device doesn't have is receipted and dropped.
+  Edits apply in `sent_at` order (an older edit never overwrites a newer one); a delete is final.
 
 ### 6.3 Attachments
 

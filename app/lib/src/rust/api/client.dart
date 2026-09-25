@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'client.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `convert`, `parse_id`, `with`
+// These functions are ignored because they are not marked as `pub`: `convert`, `parse_id`, `running`, `send_update`, `with`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
 
 /// Starts (or restarts) the relay client. Events arrive on `sink` until `client_stop`.
@@ -58,12 +58,62 @@ String? clientMyDevice() => RustLib.instance.api.crateApiClientClientMyDevice();
 IceConfig clientIceConfig() =>
     RustLib.instance.api.crateApiClientClientIceConfig();
 
-/// Queues a text message to every device of `peer_user` (and our other devices).
-String clientSendText({required String peerUser, required String text}) =>
-    RustLib.instance.api.crateApiClientClientSendText(
-      peerUser: peerUser,
-      text: text,
-    );
+/// Queues a text message to every device of `peer_user` (and our other devices);
+/// `reply_to` quotes one of the conversation's messages.
+String clientSendText({
+  required String peerUser,
+  required String text,
+  String? replyTo,
+}) => RustLib.instance.api.crateApiClientClientSendText(
+  peerUser: peerUser,
+  text: text,
+  replyTo: replyTo,
+);
+
+/// Sends a copy of a stored message (text and/or photo) to `to_peer`, marked "forwarded from
+/// `from_name`". Photos are re-uploaded: call it off the UI isolate.
+Future<String> clientForward({
+  required String msgId,
+  required String toPeer,
+  required String fromName,
+}) => RustLib.instance.api.crateApiClientClientForward(
+  msgId: msgId,
+  toPeer: toPeer,
+  fromName: fromName,
+);
+
+/// Replaces the text of one of our messages, here and on every device of the conversation.
+void clientEdit({
+  required String peerUser,
+  required String msgId,
+  required String text,
+}) => RustLib.instance.api.crateApiClientClientEdit(
+  peerUser: peerUser,
+  msgId: msgId,
+  text: text,
+);
+
+/// Deletes a message: `for_all` (only our own) everywhere, otherwise on this device only.
+void clientDelete({
+  required String peerUser,
+  required String msgId,
+  required bool forAll,
+}) => RustLib.instance.api.crateApiClientClientDelete(
+  peerUser: peerUser,
+  msgId: msgId,
+  forAll: forAll,
+);
+
+/// Sets our reaction on a message; an empty `emoji` removes it.
+void clientReact({
+  required String peerUser,
+  required String msgId,
+  required String emoji,
+}) => RustLib.instance.api.crateApiClientClientReact(
+  peerUser: peerUser,
+  msgId: msgId,
+  emoji: emoji,
+);
 
 /// Queues a photo (any common image format; re-encoded, metadata dropped) with an optional caption.
 /// Runs the image work on the caller's thread: call it off the UI isolate.
@@ -71,10 +121,12 @@ Future<String> clientSendPhoto({
   required String peerUser,
   required List<int> image,
   required String caption,
+  String? replyTo,
 }) => RustLib.instance.api.crateApiClientClientSendPhoto(
   peerUser: peerUser,
   image: image,
   caption: caption,
+  replyTo: replyTo,
 );
 
 /// The full JPEG of a photo message, if downloaded.
@@ -237,6 +289,15 @@ class MessageInfo {
   /// 0 sending, 1 sent, 2 delivered, 3 failed, 10 received.
   final PlatformInt64 status;
   final PhotoInfo? photo;
+  final bool edited;
+
+  /// Deleted for everyone: show a placeholder.
+  final bool deleted;
+  final ReplyInfo? reply;
+
+  /// Display name of the original author, if forwarded.
+  final String? forwardedFrom;
+  final List<ReactionInfo> reactions;
 
   const MessageInfo({
     required this.msgId,
@@ -245,6 +306,11 @@ class MessageInfo {
     required this.sentAt,
     required this.status,
     this.photo,
+    required this.edited,
+    required this.deleted,
+    this.reply,
+    this.forwardedFrom,
+    required this.reactions,
   });
 
   @override
@@ -254,7 +320,12 @@ class MessageInfo {
       text.hashCode ^
       sentAt.hashCode ^
       status.hashCode ^
-      photo.hashCode;
+      photo.hashCode ^
+      edited.hashCode ^
+      deleted.hashCode ^
+      reply.hashCode ^
+      forwardedFrom.hashCode ^
+      reactions.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -266,7 +337,12 @@ class MessageInfo {
           text == other.text &&
           sentAt == other.sentAt &&
           status == other.status &&
-          photo == other.photo;
+          photo == other.photo &&
+          edited == other.edited &&
+          deleted == other.deleted &&
+          reply == other.reply &&
+          forwardedFrom == other.forwardedFrom &&
+          reactions == other.reactions;
 }
 
 class PhotoInfo {
@@ -308,4 +384,48 @@ class PhotoInfo {
           thumb == other.thumb &&
           ready == other.ready &&
           gone == other.gone;
+}
+
+class ReactionInfo {
+  final String userId;
+  final String emoji;
+
+  const ReactionInfo({required this.userId, required this.emoji});
+
+  @override
+  int get hashCode => userId.hashCode ^ emoji.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReactionInfo &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          emoji == other.emoji;
+}
+
+class ReplyInfo {
+  final String msgId;
+  final String fromUser;
+
+  /// Snapshot of the quoted text (≤ 200 chars).
+  final String text;
+
+  const ReplyInfo({
+    required this.msgId,
+    required this.fromUser,
+    required this.text,
+  });
+
+  @override
+  int get hashCode => msgId.hashCode ^ fromUser.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReplyInfo &&
+          runtimeType == other.runtimeType &&
+          msgId == other.msgId &&
+          fromUser == other.fromUser &&
+          text == other.text;
 }

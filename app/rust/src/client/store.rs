@@ -31,6 +31,37 @@ pub struct Message {
     pub sent_at: i64,
     pub status: i64,
     pub photo: Option<PhotoView>,
+    pub edited: bool,
+    /// Deleted for everyone: `text` is empty, the bubble says so.
+    pub deleted: bool,
+    pub extra: Extra,
+    /// (user, emoji), one per user.
+    pub reactions: Vec<(Id, String)>,
+}
+
+/// Reply and forward info of a message (protocol/README.md §6.2), kept encrypted.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Extra {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<ReplyRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fwd: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReplyRef {
+    pub msg: Id,
+    pub from: Id,
+    pub text: String,
+}
+
+/// What a message is, for quoting and forwarding.
+pub struct Original {
+    pub peer: Id,
+    pub from_me: bool,
+    pub text: String,
+    pub deleted: bool,
+    pub photo: Option<(PhotoMeta, Option<Vec<u8>>)>,
 }
 
 /// What the E2E message says about an attached photo (protocol/README.md §6.3).
@@ -64,6 +95,7 @@ pub struct Conversation {
     pub peer_user: Id,
     pub last_text: String,
     pub last_photo: bool,
+    pub last_deleted: bool,
     pub last_at: i64,
     pub last_from_me: bool,
     pub unread: i64,
@@ -107,7 +139,28 @@ CREATE TABLE IF NOT EXISTS uploads (
     file_id     BLOB PRIMARY KEY,
     msg_id      BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS reactions (
+    msg_id      BLOB NOT NULL,
+    user_id     BLOB NOT NULL,
+    emoji       BLOB NOT NULL,
+    at          INTEGER NOT NULL,
+    PRIMARY KEY (msg_id, user_id)
+);
 ";
+
+/// Columns added after the first release; `ALTER TABLE` keeps existing history.
+fn migrate(db: &Connection) -> anyhow::Result<()> {
+    let cols: Vec<String> = db
+        .prepare("PRAGMA table_info(messages)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<Result<_, _>>()?;
+    for (name, ddl) in [("edited_at", "INTEGER"), ("deleted", "INTEGER NOT NULL DEFAULT 0"), ("extra", "BLOB")] {
+        if !cols.iter().any(|c| c == name) {
+            db.execute(&format!("ALTER TABLE messages ADD COLUMN {name} {ddl}"), [])?;
+        }
+    }
+    Ok(())
+}
 
 fn id(b: Vec<u8>) -> Id {
     Id(b.try_into().unwrap_or([0; 16]))
@@ -119,6 +172,7 @@ impl Store {
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "secure_delete", "ON")?;
         db.execute_batch(SCHEMA)?;
+        migrate(&db)?;
         Ok(Store { db, key })
     }
 
@@ -347,13 +401,167 @@ impl Store {
             .optional()?)
     }
 
+    pub fn set_extra(&self, msg_id: &Id, extra: &Extra) -> anyhow::Result<()> {
+        let json = serde_json::to_vec(extra)?;
+        self.db.execute(
+            "UPDATE messages SET extra = ?1 WHERE msg_id = ?2",
+            params![self.seal_bytes(&Self::photo_aad(msg_id, b"extra"), &json), &msg_id.0[..]],
+        )?;
+        Ok(())
+    }
+
+    fn unseal_extra(&self, msg_id: &Id, sealed: Option<Vec<u8>>) -> Extra {
+        sealed
+            .and_then(|b| self.unseal_bytes(&Self::photo_aad(msg_id, b"extra"), &b))
+            .and_then(|j| serde_json::from_slice(&j).ok())
+            .unwrap_or_default()
+    }
+
+    /// Author of a message as a user id, with its conversation: (author, peer, deleted).
+    fn author(&self, msg_id: &Id, my_user: &Id) -> anyhow::Result<Option<(Id, Id, bool)>> {
+        let row: Option<(Vec<u8>, bool, bool)> = self
+            .db
+            .query_row(
+                "SELECT peer_user, from_me, deleted FROM messages WHERE msg_id = ?1",
+                [&msg_id.0[..]],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        Ok(row.map(|(peer, from_me, deleted)| {
+            let peer = id(peer);
+            (if from_me { *my_user } else { peer }, peer, deleted)
+        }))
+    }
+
+    /// Applies an edit from `editor` if it wrote the message and the edit is newer than the
+    /// last one. Returns the conversation to refresh.
+    pub fn apply_edit(&self, msg_id: &Id, editor: &Id, my_user: &Id, text: &str, at: i64) -> anyhow::Result<Option<Id>> {
+        let Some((author, peer, deleted)) = self.author(msg_id, my_user)? else { return Ok(None) };
+        if author != *editor || deleted {
+            return Ok(None);
+        }
+        let n = self.db.execute(
+            "UPDATE messages SET body = ?1, edited_at = ?2 WHERE msg_id = ?3 AND (edited_at IS NULL OR edited_at <= ?2)",
+            params![self.seal(msg_id, text), at, &msg_id.0[..]],
+        )?;
+        Ok((n > 0).then_some(peer))
+    }
+
+    /// Deletes a message for everyone, if `editor` wrote it: the text and photo are wiped,
+    /// a "deleted" placeholder stays.
+    pub fn apply_delete(&self, msg_id: &Id, editor: &Id, my_user: &Id) -> anyhow::Result<Option<Id>> {
+        let Some((author, peer, deleted)) = self.author(msg_id, my_user)? else { return Ok(None) };
+        if author != *editor || deleted {
+            return Ok(None);
+        }
+        let tx = self.db.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE messages SET body = ?1, deleted = 1, extra = NULL WHERE msg_id = ?2",
+            params![self.seal(msg_id, ""), &msg_id.0[..]],
+        )?;
+        for table in ["photos", "uploads", "reactions"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE msg_id = ?1"), [&msg_id.0[..]])?;
+        }
+        tx.commit()?;
+        Ok(Some(peer))
+    }
+
+    /// Sets `user`'s reaction (empty = none); newer wins.
+    pub fn apply_react(&self, msg_id: &Id, user: &Id, my_user: &Id, emoji: &str, at: i64) -> anyhow::Result<Option<Id>> {
+        let Some((_, peer, deleted)) = self.author(msg_id, my_user)? else { return Ok(None) };
+        if deleted {
+            return Ok(None);
+        }
+        let prev: Option<i64> = self
+            .db
+            .query_row(
+                "SELECT at FROM reactions WHERE msg_id = ?1 AND user_id = ?2",
+                params![&msg_id.0[..], &user.0[..]],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if prev.is_some_and(|p| p > at) {
+            return Ok(None);
+        }
+        if emoji.is_empty() {
+            self.db.execute(
+                "DELETE FROM reactions WHERE msg_id = ?1 AND user_id = ?2",
+                params![&msg_id.0[..], &user.0[..]],
+            )?;
+        } else {
+            let sealed = self.seal_bytes(&[&msg_id.0[..], &user.0[..], b"react"].concat(), emoji.as_bytes());
+            self.db.execute(
+                "INSERT OR REPLACE INTO reactions (msg_id, user_id, emoji, at) VALUES (?1, ?2, ?3, ?4)",
+                params![&msg_id.0[..], &user.0[..], sealed, at],
+            )?;
+        }
+        Ok(Some(peer))
+    }
+
+    /// Removes a message from this device only.
+    pub fn delete_local(&self, msg_id: &Id) -> anyhow::Result<Option<Id>> {
+        let peer = self.peer_of(msg_id)?;
+        let tx = self.db.unchecked_transaction()?;
+        for table in ["photos", "uploads", "reactions", "outbox", "messages"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE msg_id = ?1"), [&msg_id.0[..]])?;
+        }
+        tx.commit()?;
+        Ok(peer)
+    }
+
+    /// The message as stored, for quoting and forwarding.
+    pub fn original(&self, msg_id: &Id) -> anyhow::Result<Option<Original>> {
+        let row: Option<(Vec<u8>, bool, Vec<u8>, bool)> = self
+            .db
+            .query_row(
+                "SELECT peer_user, from_me, body, deleted FROM messages WHERE msg_id = ?1",
+                [&msg_id.0[..]],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        let Some((peer, from_me, body, deleted)) = row else { return Ok(None) };
+        let photo: Option<(Vec<u8>, Vec<u8>, Option<Vec<u8>>)> = self
+            .db
+            .query_row("SELECT file_id, meta, data FROM photos WHERE msg_id = ?1", [&msg_id.0[..]], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .optional()?;
+        let photo = photo.and_then(|(file, meta, data)| {
+            let meta = self.unseal_meta(msg_id, id(file), &meta)?;
+            let data = data.and_then(|d| self.unseal_bytes(&Self::photo_aad(msg_id, b"data"), &d));
+            Some((meta, data))
+        });
+        Ok(Some(Original { peer: id(peer), from_me, text: self.unseal(msg_id, &body), deleted, photo }))
+    }
+
+    fn reactions_of(&self, peer_user: &Id) -> anyhow::Result<std::collections::HashMap<Id, Vec<(Id, String)>>> {
+        let mut st = self.db.prepare(
+            "SELECT r.msg_id, r.user_id, r.emoji FROM reactions r JOIN messages m ON m.msg_id = r.msg_id
+             WHERE m.peer_user = ?1 ORDER BY r.at",
+        )?;
+        let rows = st.query_map([&peer_user.0[..]], |r| {
+            Ok((id(r.get(0)?), id(r.get(1)?), r.get::<_, Vec<u8>>(2)?))
+        })?;
+        let mut out: std::collections::HashMap<Id, Vec<(Id, String)>> = Default::default();
+        for row in rows {
+            let (msg, user, sealed) = row?;
+            let aad = [&msg.0[..], &user.0[..], b"react"].concat();
+            if let Some(e) = self.unseal_bytes(&aad, &sealed).and_then(|b| String::from_utf8(b).ok()) {
+                out.entry(msg).or_default().push((user, e));
+            }
+        }
+        Ok(out)
+    }
+
     /// Newest last. `before` = sent_at bound for paging.
     pub fn messages(&self, peer_user: &Id, before: Option<i64>, limit: i64) -> anyhow::Result<Vec<Message>> {
         let mut st = self.db.prepare(
-            "SELECT m.msg_id, m.from_me, m.sent_at, m.body, m.status, p.file_id, p.meta, p.data IS NOT NULL, p.gone
+            "SELECT m.msg_id, m.from_me, m.sent_at, m.body, m.status, p.file_id, p.meta, p.data IS NOT NULL, p.gone,
+                    m.edited_at IS NOT NULL, m.deleted, m.extra
              FROM messages m LEFT JOIN photos p ON p.msg_id = m.msg_id
              WHERE m.peer_user = ?1 AND m.sent_at < ?2 ORDER BY m.sent_at DESC, m.rowid DESC LIMIT ?3",
         )?;
+        let mut reactions = self.reactions_of(peer_user)?;
         let rows = st.query_map(params![&peer_user.0[..], before.unwrap_or(i64::MAX), limit], |r| {
             let msg_id = id(r.get(0)?);
             let photo = match r.get::<_, Option<Vec<u8>>>(5)? {
@@ -374,6 +582,10 @@ impl Store {
                 sent_at: r.get(2)?,
                 status: r.get(4)?,
                 photo,
+                edited: r.get(9)?,
+                deleted: r.get(10)?,
+                extra: self.unseal_extra(&msg_id, r.get(11)?),
+                reactions: reactions.remove(&msg_id).unwrap_or_default(),
             })
         })?;
         let mut out: Vec<Message> = rows.collect::<Result<_, _>>()?;
@@ -385,7 +597,7 @@ impl Store {
         let mut st = self.db.prepare(
             "SELECT m.peer_user, m.msg_id, m.body, m.sent_at, m.from_me,
                     (SELECT COUNT(*) FROM messages u WHERE u.peer_user = m.peer_user AND u.read = 0),
-                    EXISTS (SELECT 1 FROM photos p WHERE p.msg_id = m.msg_id)
+                    EXISTS (SELECT 1 FROM photos p WHERE p.msg_id = m.msg_id), m.deleted
              FROM messages m
              WHERE m.rowid = (SELECT x.rowid FROM messages x WHERE x.peer_user = m.peer_user
                               ORDER BY x.sent_at DESC, x.rowid DESC LIMIT 1)
@@ -400,6 +612,7 @@ impl Store {
                 last_from_me: r.get(4)?,
                 unread: r.get(5)?,
                 last_photo: r.get(6)?,
+                last_deleted: r.get(7)?,
             })
         })?;
         rows.map(|r| Ok(r?))
