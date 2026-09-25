@@ -534,7 +534,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(widget.info.name, style: theme.textTheme.titleMedium),
                         Tooltip(
-                          message: r.detail,
+                          // The raw reason (OS error codes) is in the profile; here plain words.
+                          message: switch (r.state) {
+                            ConnState.online => r.detail,
+                            ConnState.connecting => '${tr('Подключение к', 'Connecting to')} ${r.detail}',
+                            ConnState.offline =>
+                              tr('Нет связи с сервером', 'No connection to the server') +
+                                  (r.canCall
+                                      ? tr(' — звонки через резервный канал', ' — calls use the backup channel')
+                                      : ''),
+                          },
                           child: Row(
                             children: [
                               Icon(Icons.circle, color: color, size: 8),

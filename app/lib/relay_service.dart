@@ -163,7 +163,7 @@ class RelayService extends ChangeNotifier {
 
   /// No server for a minute: calls go over the Nostr fallback, messages wait in the outbox.
   bool get serverDown => _offlineSince != null && DateTime.now().difference(_offlineSince!) >= _downAfter;
-  static const _downAfter = Duration(minutes: 1);
+  static const _downAfter = Duration(seconds: 20);
 
   void _trackOnline(bool online) {
     if (online) {
