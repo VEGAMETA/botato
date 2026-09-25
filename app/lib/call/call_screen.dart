@@ -540,6 +540,22 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 setState(() {});
               },
             ),
+            if (Platform.isAndroid)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s.rawMic,
+                onChanged: (v) => setState(() => s.rawMic = v),
+                title: Text(tr('Микрофон без обработки системы', 'Microphone without system processing')),
+                subtitle: Text(tr('после перезапуска', 'after a restart')),
+              ),
+            if (Platform.isAndroid)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s.hwAudioProcessing,
+                onChanged: (v) => setState(() => s.hwAudioProcessing = v),
+                title: Text(tr('Шумоподавление телефона', 'Phone noise suppression')),
+                subtitle: Text(tr('после перезапуска', 'after a restart')),
+              ),
             if (c.isDesktop) ...[
               _picker(tr('Микрофон', 'Microphone'), 'audioinput', s.micId, c.setMicrophone),
               _picker(tr('Вывод звука', 'Audio output'), 'audiooutput', s.outputId, c.setOutput),
@@ -579,22 +595,6 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                   ],
                   onChanged: (v) => setState(() => s.videoCodec = v),
                 ),
-              ),
-            if (Platform.isAndroid)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: s.rawMic,
-                onChanged: (v) => setState(() => s.rawMic = v),
-                title: Text(tr('Микрофон без обработки системы', 'Microphone without system processing')),
-                subtitle: Text(tr('после перезапуска', 'after a restart')),
-              ),
-            if (Platform.isAndroid)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: s.hwAudioProcessing,
-                onChanged: (v) => setState(() => s.hwAudioProcessing = v),
-                title: Text(tr('Шумоподавление телефона', 'Phone noise suppression')),
-                subtitle: Text(tr('после перезапуска', 'after a restart')),
               ),
           ],
         ),
