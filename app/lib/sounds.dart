@@ -24,25 +24,32 @@ class Sounds {
     await _guard(() => p.play(AssetSource('sounds/$name.wav'), volume: 0.8));
   }
 
+  // State changes happen before any await: CallService notifies several times in a row, and
+  // a second loop() must not start a second player that nobody will stop.
   static Future<void> loop(String name) async {
     if (_loopName == name) return;
-    await stopLoop();
+    final old = _loopPlayer;
+    _loopPlayer = null;
     _loopName = name;
     if (Platform.isAndroid) return _invoke('sound', {'name': name, 'loop': true});
     if (!isDesktop) return;
     final p = _loopPlayer = AudioPlayer();
+    if (old != null) await _guard(() => old.dispose());
     await _guard(() async {
       await p.setReleaseMode(ReleaseMode.loop);
+      if (_loopPlayer != p) return; // stopped or replaced meanwhile
       await p.play(AssetSource('sounds/$name.wav'), volume: 0.8);
     });
+    // Stopped while starting: play() may have begun after dispose was requested.
+    if (_loopPlayer != p) await _guard(() => p.dispose());
   }
 
   static Future<void> stopLoop() async {
     if (_loopName == null) return;
     _loopName = null;
-    if (Platform.isAndroid) return _invoke('stopSound', null);
     final p = _loopPlayer;
     _loopPlayer = null;
+    if (Platform.isAndroid) return _invoke('stopSound', null);
     if (p != null) await _guard(() => p.dispose());
   }
 
