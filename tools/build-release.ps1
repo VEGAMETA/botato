@@ -11,6 +11,9 @@ $adminDir = if ($env:BOTATO_ADMIN_DIR) { $env:BOTATO_ADMIN_DIR } else { Join-Pat
 $flutter = if ($env:FLUTTER) { $env:FLUTTER } else { 'D:\Utils\flutter\bin\flutter.bat' }
 $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
 
+$running = Get-Process botato -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$app\build\*" }
+if ($running) { throw "botato is running from the build folder ($($running[0].Path)); quit it (tray -> Выход) and retry" }
+
 $line = Select-String -Path (Join-Path $app 'pubspec.yaml') -Pattern '^version:\s*(\S+)\+(\d+)' | Select-Object -First 1
 if (-not $line) { throw 'pubspec.yaml: version must be x.y.z+build' }
 $version = $line.Matches[0].Groups[1].Value

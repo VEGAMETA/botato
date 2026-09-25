@@ -59,6 +59,58 @@ impl ReleasePanel {
         })
     }
 
+    /// Runs `tools\build-release.ps1` (APK + Windows installer), streaming its output.
+    pub fn build(&self, ctx: &egui::Context) {
+        use std::io::{BufRead, BufReader};
+        let mut d = self.deploy.lock().unwrap();
+        if d.running {
+            return;
+        }
+        d.running = true;
+        d.log = "Сборка релиза (несколько минут)…\n".into();
+        drop(d);
+        let script = self.repo.join(r"tools\build-release.ps1");
+        let (state, ctx) = (self.deploy.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let mut cmd = std::process::Command::new("powershell.exe");
+            cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
+                .arg(format!("& '{}' 2>&1 | ForEach-Object {{ \"$_\" }}", script.display()))
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+            let ok = match cmd.spawn() {
+                Ok(mut child) => {
+                    if let Some(out) = child.stdout.take() {
+                        for line in BufReader::new(out).lines().map_while(Result::ok) {
+                            // Gradle/flutter progress lines are noise here.
+                            if line.trim().is_empty() || line.contains("Built-in Kotlin") {
+                                continue;
+                            }
+                            let mut d = state.lock().unwrap();
+                            d.log.push_str(&line);
+                            d.log.push('\n');
+                            drop(d);
+                            ctx.request_repaint();
+                        }
+                    }
+                    child.wait().is_ok_and(|s| s.success())
+                }
+                Err(e) => {
+                    state.lock().unwrap().log.push_str(&format!("не запустился powershell: {e}\n"));
+                    false
+                }
+            };
+            let mut d = state.lock().unwrap();
+            d.log.push_str(if ok { "\nСобрано. Теперь «Подписать релиз и выкатить»." } else { "\nОШИБКА сборки, см. вывод выше." });
+            d.running = false;
+            ctx.request_repaint();
+        });
+    }
+
     /// Runs `deploy.yml --tags <tags>` in WSL on a background thread.
     pub fn publish(&self, ctx: &egui::Context, tags: &str) {
         let mut d = self.deploy.lock().unwrap();
@@ -124,6 +176,13 @@ impl ReleasePanel {
             let ready = !running
                 && !self.password.is_empty()
                 && arts.as_ref().is_ok_and(|a| a.apk.exists() && a.exe.exists());
+            if ui
+                .add_enabled(!running, egui::Button::new("Собрать релиз"))
+                .on_hover_text("tools\\build-release.ps1: APK + установщик, версия из pubspec.yaml")
+                .clicked()
+            {
+                self.build(&ctx);
+            }
             if ui.add_enabled(ready, egui::Button::new("Подписать релиз и выкатить")).clicked() {
                 self.sign_and_publish(&ctx, admin, arts.as_ref().ok());
             }
@@ -144,12 +203,18 @@ impl ReleasePanel {
         let log = self.deploy.lock().unwrap().log.clone();
         if !log.is_empty() {
             let mut shown = log;
-            ui.add(
-                egui::TextEdit::multiline(&mut shown)
-                    .desired_rows(8)
-                    .desired_width(f32::INFINITY)
-                    .font(egui::TextStyle::Monospace),
-            );
+            egui::ScrollArea::vertical()
+                .id_salt("release-log")
+                .max_height(260.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(&mut shown)
+                            .desired_rows(8)
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                });
         }
     }
 
