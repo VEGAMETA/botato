@@ -104,6 +104,14 @@ object CallChannel {
                     MessageNotification.cancel(ctx, call.argument<String>("peer") ?: "")
                     result.success(null)
                 }
+                "sound" -> {
+                    Sounds.play(ctx, call.argument<String>("name") ?: "", call.argument<Boolean>("loop") == true)
+                    result.success(null)
+                }
+                "stopSound" -> {
+                    Sounds.stopLoop()
+                    result.success(null)
+                }
                 "audioMode" -> {
                     // flutter_webrtc stores a new audio mode but applies it only when the next call
                     // activates the session; a switch during a call is applied here.

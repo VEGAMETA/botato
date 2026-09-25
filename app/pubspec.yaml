@@ -42,6 +42,7 @@ flutter:
   assets:
     - assets/icon/potato.png
     - assets/icon/tray.ico
+    - assets/sounds/
 
 flutter_launcher_icons:
   android: true

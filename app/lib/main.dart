@@ -14,6 +14,7 @@ import 'relay_service.dart';
 import 'update_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/setup_screen.dart';
+import 'sounds.dart';
 import 'src/rust/api/client.dart' as client;
 import 'src/rust/api/identity.dart' as core;
 import 'src/rust/frb_generated.dart';
@@ -46,6 +47,7 @@ class Services {
     final relay = RelayService(media);
     final navigator = GlobalKey<NavigatorState>();
     final calls = CallService(relay, navigator, media);
+    CallSounds(calls);
     final s = Services._(store, media, secret, relay, calls, navigator);
     relay.onNewMessage = (peer, name, text) => media.notifyPreview
         ? calls.notifier.showMessage(peer, name, text)

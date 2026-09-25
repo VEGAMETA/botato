@@ -8,7 +8,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
@@ -19,7 +18,9 @@ import androidx.core.app.Person
  * waking a killed app needs push (later).
  */
 object IncomingCallNotification {
-    private const val CHANNEL_ID = "incoming_calls"
+    // v2: our own ring (res/raw/ring); a channel's sound can't change after creation.
+    private const val CHANNEL_ID = "incoming_calls_v2"
+    private const val OLD_CHANNEL_ID = "incoming_calls"
     private const val NOTIFICATION_ID = 2
     private const val RING_TIMEOUT_MS = 45_000L
     const val ACTION_ANSWER = "online.vegameta.botato.ANSWER"
@@ -29,10 +30,11 @@ object IncomingCallNotification {
     fun show(ctx: Context, peer: String, video: Boolean) {
         val manager = ctx.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL_ID) == null) {
+            manager.deleteNotificationChannel(OLD_CHANNEL_ID)
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Входящие звонки", NotificationManager.IMPORTANCE_HIGH).apply {
                     setSound(
-                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                        Sounds.uri(ctx, "ring"),
                         AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

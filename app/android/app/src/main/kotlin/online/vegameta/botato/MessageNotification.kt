@@ -5,12 +5,15 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.os.Build
 import androidx.core.app.NotificationCompat
 
 /** New-message notification, one per conversation; tapping it opens that chat. */
 object MessageNotification {
-    private const val CHANNEL_ID = "messages"
+    // v2: our own sound (res/raw/message); a channel's sound can't change after creation.
+    private const val CHANNEL_ID = "messages_v2"
+    private const val OLD_CHANNEL_ID = "messages"
     const val ACTION_OPEN_CHAT = "online.vegameta.botato.OPEN_CHAT"
     const val EXTRA_PEER = "peer"
 
@@ -19,8 +22,17 @@ object MessageNotification {
     fun show(ctx: Context, peer: String, name: String, text: String) {
         val manager = ctx.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL_ID) == null) {
+            manager.deleteNotificationChannel(OLD_CHANNEL_ID)
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Сообщения", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CHANNEL_ID, "Сообщения", NotificationManager.IMPORTANCE_HIGH).apply {
+                    setSound(
+                        Sounds.uri(ctx, "message"),
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build(),
+                    )
+                },
             )
         }
         val open = PendingIntent.getActivity(

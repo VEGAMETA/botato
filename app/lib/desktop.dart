@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'sounds.dart';
 import 'theme.dart';
 
 bool get isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -118,7 +119,8 @@ class Desktop with TrayListener, WindowListener {
   Future<void> showMessage(String peerUser, String name, String text) async {
     if (_dnd) return;
     await _messages.remove(peerUser)?.close();
-    final n = LocalNotification(identifier: 'msg-$peerUser', title: name, body: text);
+    // Our own sound instead of the Windows one.
+    final n = LocalNotification(identifier: 'msg-$peerUser', title: name, body: text, silent: true);
     n.onClick = () {
       _messages.remove(peerUser);
       showWindow();
@@ -126,6 +128,7 @@ class Desktop with TrayListener, WindowListener {
     };
     _messages[peerUser] = n;
     await n.show();
+    await Sounds.play('message');
   }
 
   Future<void> clearMessages(String peerUser) async => _messages.remove(peerUser)?.close();
@@ -135,6 +138,7 @@ class Desktop with TrayListener, WindowListener {
     await _call?.close();
     final n = LocalNotification(
       identifier: 'call',
+      silent: true, // the app rings itself (CallSounds)
       title: peer,
       body: video ? 'Видеозвонок' : 'Звонок',
       actions: [
