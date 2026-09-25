@@ -67,6 +67,10 @@ object CallChannel {
                 }
                 "incoming" -> {
                     activity?.requestNotificationPermission()
+                    // The single activity already exists: it must be allowed over the lock screen
+                    // before the full-screen intent brings it up (set in onNewIntent it is too
+                    // late, the keyguard stays on top). Cleared by "hide" when the call ends.
+                    activity?.showOverLockScreen(true)
                     IncomingCallNotification.show(
                         ctx,
                         call.argument<String>("peer") ?: "",
