@@ -458,8 +458,8 @@ class CallService extends ChangeNotifier {
     final endedCall =
         _endedCalls.contains(call) && (call != _callId || phase == CallPhase.ended || phase == CallPhase.idle);
     if (!endedCall && call != _callId) return;
-    if (!endedCall && _peerDevice != null && s.fromDevice != _peerDevice && type != 'answer' && type != 'hangup')
-      return;
+    final otherDevice = _peerDevice != null && s.fromDevice != _peerDevice;
+    if (!endedCall && otherDevice && type != 'answer' && type != 'hangup') return;
     if (endedCall || phase == CallPhase.ended || phase == CallPhase.idle) {
       // The peer still talks about a call we ended: our hangup was lost (typically while its
       // relay connection was being replaced). Tell it again instead of letting it reconnect.
