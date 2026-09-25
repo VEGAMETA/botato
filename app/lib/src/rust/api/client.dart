@@ -142,6 +142,18 @@ Future<String> clientSendPhoto({
   keepPng: keepPng,
 );
 
+/// Messages containing `query` (case-insensitive), newest first: in one conversation, or in
+/// all when `peer_user` is None. At most `limit` hits.
+Future<List<SearchHit>> clientSearch({
+  String? peerUser,
+  required String query,
+  required int limit,
+}) => RustLib.instance.api.crateApiClientClientSearch(
+  peerUser: peerUser,
+  query: query,
+  limit: limit,
+);
+
 /// The full JPEG of a photo message, if downloaded.
 Future<Uint8List?> clientPhoto({required String msgId}) =>
     RustLib.instance.api.crateApiClientClientPhoto(msgId: msgId);
@@ -441,4 +453,39 @@ class ReplyInfo {
           msgId == other.msgId &&
           fromUser == other.fromUser &&
           text == other.text;
+}
+
+class SearchHit {
+  final String peerUser;
+  final String msgId;
+  final String text;
+  final PlatformInt64 sentAt;
+  final bool fromMe;
+
+  const SearchHit({
+    required this.peerUser,
+    required this.msgId,
+    required this.text,
+    required this.sentAt,
+    required this.fromMe,
+  });
+
+  @override
+  int get hashCode =>
+      peerUser.hashCode ^
+      msgId.hashCode ^
+      text.hashCode ^
+      sentAt.hashCode ^
+      fromMe.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchHit &&
+          runtimeType == other.runtimeType &&
+          peerUser == other.peerUser &&
+          msgId == other.msgId &&
+          text == other.text &&
+          sentAt == other.sentAt &&
+          fromMe == other.fromMe;
 }

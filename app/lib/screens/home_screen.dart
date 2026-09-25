@@ -31,6 +31,94 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<IncomingSignal>? _sub;
   final _pingSent = <String, DateTime>{};
 
+  // Search: contacts by shown name, certificate name or id; messages in all chats.
+  bool _searching = false;
+  final _query = TextEditingController();
+  List<core.SearchHit> _msgHits = [];
+  Timer? _searchDebounce;
+
+  void _search(String q) {
+    setState(() {}); // contacts filter at once
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      final hits = q.trim().isEmpty ? <core.SearchHit>[] : await core.clientSearch(query: q, limit: 100);
+      if (mounted && _query.text == q) setState(() => _msgHits = hits);
+    });
+  }
+
+  void _closeSearch() {
+    _searchDebounce?.cancel();
+    setState(() {
+      _searching = false;
+      _msgHits = [];
+      _query.clear();
+    });
+  }
+
+  List<core.ContactInfo> _matchingContacts(String q) {
+    final s = q.trim().toLowerCase();
+    if (s.isEmpty) return const [];
+    final r = widget.relay;
+    return [
+      for (final c in r.contacts)
+        if (!c.isMe &&
+            (c.name.toLowerCase().contains(s) ||
+                r.certName(c.userId).toLowerCase().contains(s) ||
+                c.userId.contains(s)))
+          c,
+    ];
+  }
+
+  Widget _searchResults() {
+    final q = _query.text.trim();
+    if (q.isEmpty) return const SizedBox.shrink();
+    final r = widget.relay;
+    final contacts = _matchingContacts(q);
+    if (contacts.isEmpty && _msgHits.isEmpty) {
+      return const Center(
+        child: Text('Ничего не найдено', style: TextStyle(color: BotatoColors.smoke)),
+      );
+    }
+    return ListView(
+      children: [
+        if (contacts.isNotEmpty) const _SectionLabel('Контакты'),
+        for (final c in contacts)
+          ListTile(
+            leading: Avatar(c.name),
+            title: Text(c.name),
+            subtitle: Text(
+              [
+                if (r.certName(c.userId) != c.name) r.certName(c.userId),
+                if (!r.isAdded(c.userId)) 'не в списке — нажмите, чтобы открыть чат',
+              ].join(' · '),
+              style: const TextStyle(color: BotatoColors.smoke, fontSize: 12),
+            ),
+            onTap: () {
+              r.add(c.userId);
+              _closeSearch();
+              openChat(context, c);
+            },
+          ),
+        if (_msgHits.isNotEmpty) const _SectionLabel('Сообщения'),
+        for (final h in _msgHits)
+          if (r.contacts.where((c) => c.userId == h.peerUser).firstOrNull case final c?)
+            ListTile(
+              leading: Avatar(c.name, size: 36),
+              title: Text(c.name),
+              subtitle: Text(
+                '${h.fromMe ? 'Вы: ' : ''}${h.text.replaceAll('\n', ' ')}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () {
+                _closeSearch();
+                openChat(context, c, jumpTo: h.msgId);
+              },
+            ),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +143,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _sub?.cancel();
+    _query.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -76,11 +166,12 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  void openChat(BuildContext context, core.ContactInfo c, {SharedContent? shared}) {
+  void openChat(BuildContext context, core.ContactInfo c, {SharedContent? shared, String? jumpTo}) {
     Navigator.of(context).popUntil((r) => r.isFirst);
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ChatScreen(contact: c, relay: widget.relay, calls: widget.calls, shared: shared),
+        builder: (_) =>
+            ChatScreen(contact: c, relay: widget.relay, calls: widget.calls, shared: shared, jumpTo: jumpTo),
       ),
     );
   }
@@ -348,6 +439,29 @@ class _HomeScreenState extends State<HomeScreen> {
             final ta = r.recency(a.userId), tb = r.recency(b.userId);
             return ta != tb ? tb.compareTo(ta) : a.name.compareTo(b.name);
           });
+        if (_searching) {
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _closeSearch();
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _closeSearch),
+                title: TextField(
+                  controller: _query,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Имя, ник, ID или текст сообщения',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: _search,
+                ),
+              ),
+              body: _searchResults(),
+            ),
+          );
+        }
         return Scaffold(
           appBar: AppBar(
             titleSpacing: 12,
@@ -380,6 +494,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             actions: [
+              IconButton(
+                tooltip: 'Поиск',
+                icon: const Icon(Icons.search),
+                onPressed: () => setState(() => _searching = true),
+              ),
               IconButton(
                 tooltip: 'Добавить контакт',
                 icon: const Icon(Icons.person_add_alt),
@@ -728,4 +847,19 @@ class _RenameDialogState extends State<_RenameDialog> {
       ],
     );
   }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+    child: Text(
+      text,
+      style: const TextStyle(color: BotatoColors.smoke, fontSize: 12, fontWeight: FontWeight.w600),
+    ),
+  );
 }

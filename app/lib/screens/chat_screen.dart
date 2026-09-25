@@ -21,7 +21,17 @@ abstract final class MsgStatus {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.contact, required this.relay, required this.calls, this.shared});
+  const ChatScreen({
+    super.key,
+    required this.contact,
+    required this.relay,
+    required this.calls,
+    this.shared,
+    this.jumpTo,
+  });
+
+  /// Message to scroll to and highlight on open (a search hit).
+  final String? jumpTo;
 
   final core.ContactInfo contact;
   final RelayService relay;
@@ -41,6 +51,68 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription<String>? _sub;
   bool _sendingPhoto = false;
 
+  /// How many of the newest messages are loaded (grows to reach a search hit).
+  int _limit = 200;
+  final _scroll = ScrollController();
+
+  // Search in this chat: hits replace the message list while the query is non-empty.
+  bool _searching = false;
+  final _searchField = TextEditingController();
+  List<core.SearchHit> _hits = [];
+  Timer? _searchDebounce;
+
+  /// A search hit being shown: scrolled to and highlighted for a moment.
+  String? _highlight;
+  final _highlightKey = GlobalKey();
+
+  void _search(String q) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      final hits = q.trim().isEmpty
+          ? <core.SearchHit>[]
+          : await core.clientSearch(peerUser: _peer, query: q, limit: 200);
+      if (mounted && _searchField.text == q) setState(() => _hits = hits);
+    });
+  }
+
+  void _closeSearch() {
+    _searchDebounce?.cancel();
+    setState(() {
+      _searching = false;
+      _hits = [];
+      _searchField.clear();
+    });
+  }
+
+  /// Loads back far enough to contain [msgId], scrolls to it and highlights it.
+  Future<void> _jumpTo(String msgId) async {
+    while (!_messages.any((m) => m.msgId == msgId) && _limit < 100000) {
+      _limit *= 4;
+      _messages = widget.relay.messages(_peer, limit: _limit);
+      if (_messages.length < _limit) break; // everything is loaded
+    }
+    final idx = _messages.indexWhere((m) => m.msgId == msgId);
+    if (idx < 0 || !mounted) return;
+    setState(() => _highlight = msgId);
+    // The list is reversed: item 0 is the newest. Jump near it, then let the frame place it.
+    final fromBottom = _messages.length - 1 - idx;
+    for (var attempt = 0; attempt < 6; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      final ctx = _highlightKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        await Scrollable.ensureVisible(ctx, alignment: 0.5, duration: const Duration(milliseconds: 250));
+        break;
+      }
+      if (_scroll.hasClients) {
+        final target = (fromBottom * 72.0).clamp(0.0, _scroll.position.maxScrollExtent);
+        _scroll.jumpTo(target);
+      }
+    }
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && _highlight == msgId) setState(() => _highlight = null);
+    });
+  }
+
   /// The message being answered, or edited, above the input.
   core.MessageInfo? _replyTo;
   core.MessageInfo? _editing;
@@ -59,12 +131,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     widget.relay.activeChat = _peer;
-    _messages = widget.relay.messages(_peer);
+    _messages = widget.relay.messages(_peer, limit: _limit);
     // markRead notifies listeners; not allowed while the route is being built.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _reload();
       if (widget.shared case final s?) _takeShared(s);
+      if (widget.jumpTo case final id?) _jumpTo(id);
     });
     _sub = widget.relay.messageUpdates.where((p) => p == _peer).listen((_) => _reload());
   }
@@ -74,12 +147,15 @@ class _ChatScreenState extends State<ChatScreen> {
     if (widget.relay.activeChat == _peer) widget.relay.activeChat = null;
     _sub?.cancel();
     _input.dispose();
+    _scroll.dispose();
+    _searchField.dispose();
+    _searchDebounce?.cancel();
     _focus.dispose();
     super.dispose();
   }
 
   void _reload() {
-    setState(() => _messages = widget.relay.messages(_peer));
+    setState(() => _messages = widget.relay.messages(_peer, limit: _limit));
     widget.relay.markRead(_peer);
     widget.calls.notifier.clearMessages(_peer);
   }
@@ -399,6 +475,52 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Widget _searchScaffold() {
+    final q = _searchField.text.trim();
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _closeSearch();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _closeSearch),
+          title: TextField(
+            controller: _searchField,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Поиск в чате', border: InputBorder.none),
+            onChanged: _search,
+          ),
+        ),
+        body: q.isEmpty
+            ? const SizedBox.shrink()
+            : _hits.isEmpty
+            ? const Center(
+                child: Text('Ничего не найдено', style: TextStyle(color: BotatoColors.smoke)),
+              )
+            : ListView.separated(
+                itemCount: _hits.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (_, i) {
+                  final h = _hits[i];
+                  return ListTile(
+                    title: Text(h.fromMe ? 'Вы' : widget.contact.name, style: const TextStyle(fontSize: 13)),
+                    subtitle: _Snippet(text: h.text, query: q),
+                    trailing: Text(
+                      _dateTime(h.sentAt.toInt()),
+                      style: const TextStyle(color: BotatoColors.smoke, fontSize: 12),
+                    ),
+                    onTap: () {
+                      _closeSearch();
+                      _jumpTo(h.msgId);
+                    },
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
   List<String> _gallery() => [
     for (final m in _messages)
       if (m.photo?.ready ?? false) m.msgId,
@@ -412,6 +534,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final online = widget.relay.state == ConnState.online;
+    if (_searching) return _searchScaffold();
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
@@ -441,6 +564,11 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Поиск в чате',
+            icon: const Icon(Icons.search),
+            onPressed: () => setState(() => _searching = true),
+          ),
+          IconButton(
             tooltip: 'Позвонить',
             icon: const Icon(Icons.call),
             onPressed: online ? () => widget.calls.startCall(widget.contact) : null,
@@ -460,6 +588,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Text('Сообщений пока нет', style: TextStyle(color: BotatoColors.smoke)),
                   )
                 : ListView.builder(
+                    controller: _scroll,
                     reverse: true,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     itemCount: _messages.length,
@@ -470,14 +599,24 @@ class _ChatScreenState extends State<ChatScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (prev == null || !_sameDay(prev.sentAt, m.sentAt)) _DayLabel(m.sentAt),
-                          _Bubble(
-                            m,
-                            key: ValueKey(m.msgId),
-                            gallery: _gallery,
-                            me: _me,
-                            nameOf: _nameOf,
-                            onMenu: _menu,
-                            onReact: _react,
+                          AnimatedContainer(
+                            key: m.msgId == _highlight ? _highlightKey : null,
+                            duration: const Duration(milliseconds: 300),
+                            decoration: BoxDecoration(
+                              color: m.msgId == _highlight
+                                  ? BotatoColors.potato.withValues(alpha: 0.18)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: _Bubble(
+                              m,
+                              key: ValueKey(m.msgId),
+                              gallery: _gallery,
+                              me: _me,
+                              nameOf: _nameOf,
+                              onMenu: _menu,
+                              onReact: _react,
+                            ),
                           ),
                         ],
                       );
@@ -845,6 +984,45 @@ class _EmojiDialogState extends State<_EmojiDialog> {
           child: const Text('Поставить'),
         ),
       ],
+    );
+  }
+}
+
+String _dateTime(int t) {
+  final d = DateTime.fromMillisecondsSinceEpoch(t * 1000);
+  final now = DateTime.now();
+  String two(int v) => v.toString().padLeft(2, '0');
+  final time = '${two(d.hour)}:${two(d.minute)}';
+  if (d.year == now.year && d.month == now.month && d.day == now.day) return time;
+  return '${two(d.day)}.${two(d.month)}${d.year == now.year ? '' : '.${d.year % 100}'}';
+}
+
+/// A search hit: the text around the first match, the match in bold.
+class _Snippet extends StatelessWidget {
+  const _Snippet({required this.text, required this.query});
+
+  final String text;
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final flat = text.replaceAll('\n', ' ');
+    final at = flat.toLowerCase().indexOf(query.toLowerCase());
+    if (at < 0) return Text(flat, maxLines: 2, overflow: TextOverflow.ellipsis);
+    final start = at > 40 ? at - 30 : 0;
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: '${start > 0 ? '…' : ''}${flat.substring(start, at)}'),
+          TextSpan(
+            text: flat.substring(at, at + query.length),
+            style: const TextStyle(fontWeight: FontWeight.bold, color: BotatoColors.potato),
+          ),
+          TextSpan(text: flat.substring(at + query.length)),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

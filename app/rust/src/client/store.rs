@@ -615,6 +615,49 @@ impl Store {
         .collect()
     }
 
+    /// Messages containing `query` (case-insensitive), newest first, in one conversation or in
+    /// all. Bodies are decrypted on the fly: no plaintext index ever touches the disk.
+    pub fn search(&self, peer_user: Option<&Id>, query: &str, limit: usize) -> anyhow::Result<Vec<(Id, Message)>> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut st = self.db.prepare(
+            "SELECT msg_id, peer_user, from_me, sent_at, body, status FROM messages
+             WHERE deleted = 0 AND (?1 IS NULL OR peer_user = ?1)
+             ORDER BY sent_at DESC, rowid DESC LIMIT 50000",
+        )?;
+        let peer = peer_user.map(|p| p.0.to_vec());
+        let rows = st.query_map(params![peer], |r| {
+            Ok((id(r.get(0)?), id(r.get(1)?), r.get::<_, bool>(2)?, r.get::<_, i64>(3)?, r.get::<_, Vec<u8>>(4)?, r.get::<_, i64>(5)?))
+        })?;
+        let mut out = vec![];
+        for row in rows {
+            let (msg_id, peer, from_me, sent_at, body, status) = row?;
+            let text = self.unseal(&msg_id, &body);
+            if !text.to_lowercase().contains(&q) {
+                continue;
+            }
+            let m = Message {
+                msg_id,
+                from_me,
+                text,
+                sent_at,
+                status,
+                photo: None,
+                edited: false,
+                deleted: false,
+                extra: Extra::default(),
+                reactions: vec![],
+            };
+            out.push((peer, m));
+            if out.len() >= limit {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
     pub fn mark_read(&self, peer_user: &Id) -> anyhow::Result<()> {
         self.db.execute("UPDATE messages SET read = 1 WHERE peer_user = ?1 AND read = 0", [&peer_user.0[..]])?;
         Ok(())
@@ -717,6 +760,20 @@ mod tests {
 
         s.delete_conversation(&peer).unwrap();
         assert!(s.photo_data(&msg).unwrap().is_none());
+    }
+
+    #[test]
+    fn search_decrypts_and_filters() {
+        let (_d, s) = store();
+        let (a, b) = (Id([1; 16]), Id([5; 16]));
+        s.insert_message(&Id([2; 16]), &a, false, "Привет, Мир", 10, RECEIVED).unwrap();
+        s.insert_message(&Id([3; 16]), &a, true, "другое", 20, SENT).unwrap();
+        s.insert_message(&Id([4; 16]), &b, false, "мир тесен", 30, RECEIVED).unwrap();
+        let all = s.search(None, "МИР", 10).unwrap();
+        assert_eq!(all.iter().map(|(p, m)| (*p, m.sent_at)).collect::<Vec<_>>(), vec![(b, 30), (a, 10)]);
+        assert_eq!(s.search(Some(&a), "мир", 10).unwrap().len(), 1);
+        assert!(s.search(None, "  ", 10).unwrap().is_empty());
+        assert_eq!(s.search(None, "мир", 1).unwrap().len(), 1);
     }
 
     #[test]

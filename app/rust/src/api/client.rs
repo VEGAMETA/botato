@@ -378,6 +378,25 @@ pub fn client_send_photo(
     Ok(msg_id.to_hex())
 }
 
+pub struct SearchHit {
+    pub peer_user: String,
+    pub msg_id: String,
+    pub text: String,
+    pub sent_at: i64,
+    pub from_me: bool,
+}
+
+/// Messages containing `query` (case-insensitive), newest first: in one conversation, or in
+/// all when `peer_user` is None. At most `limit` hits.
+pub fn client_search(peer_user: Option<String>, query: String, limit: u32) -> anyhow::Result<Vec<SearchHit>> {
+    let peer = peer_user.as_deref().map(parse_id).transpose()?;
+    let hits = with(|r| r.shared.store.lock().unwrap().search(peer.as_ref(), &query, limit as usize))??;
+    Ok(hits
+        .into_iter()
+        .map(|(p, m)| SearchHit { peer_user: p.to_hex(), msg_id: m.msg_id.to_hex(), text: m.text, sent_at: m.sent_at, from_me: m.from_me })
+        .collect())
+}
+
 /// The full JPEG of a photo message, if downloaded.
 pub fn client_photo(msg_id: String) -> anyhow::Result<Option<Vec<u8>>> {
     let id = parse_id(&msg_id)?;

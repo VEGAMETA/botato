@@ -163,7 +163,6 @@ class RelayService extends ChangeNotifier {
 
   /// Peer user whose chat is on screen (no notifications for it while in foreground).
   String? activeChat;
-  bool foreground = true;
 
   /// Called for a new incoming message that the user isn't looking at.
   void Function(String peerUser, String name, String text)? onNewMessage;
@@ -222,6 +221,22 @@ class RelayService extends ChangeNotifier {
 
   void _loadConversations() {
     conversations = {for (final c in core.clientConversations()) c.peerUser: c};
+  }
+
+  bool _foreground = true;
+
+  /// The UI is in front (Android: resumed; desktop: window focused). Coming back re-reads the
+  /// conversation list from the store: while the app was away it may have missed a rebuild.
+  bool get foreground => _foreground;
+  set foreground(bool v) {
+    final back = v && !_foreground;
+    _foreground = v;
+    if (back) {
+      _loadConversations();
+      contacts = _loadContacts();
+      _queryPresence();
+      notifyListeners();
+    }
   }
 
   void _onEvent(core.ClientEvent e) {
