@@ -74,6 +74,9 @@ class CallNotifier {
     }
   }
 
+  /// Android 12+: asks for the Bluetooth permission (call audio through headsets) if missing.
+  Future<void> requestBluetooth() => _invoke('requestBluetooth', null);
+
   /// Android 14+: may incoming calls take the full screen on a locked phone?
   Future<bool> fullScreenAllowed() async {
     if (!Platform.isAndroid) return true;

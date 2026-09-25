@@ -324,9 +324,47 @@ class _CallScreenState extends State<CallScreen> {
         if (live) _toggle(Icons.screen_share, c.screenOn, () => _shareScreen(c), 'Экран'),
         _round(Icons.call_end, Colors.red, () => c.hangup(), 'Завершить'),
         if (Platform.isAndroid)
-          _toggle(c.speaker ? Icons.volume_up : Icons.hearing, c.speaker, c.toggleSpeaker, 'Динамик'),
+          _toggle(_routeIcon(c.audioRoute), c.audioRoute != 'earpiece', () => _pickRoute(c), 'Звук'),
       ],
     );
+  }
+
+  static IconData _routeIcon(String id) => switch (id) {
+    'bluetooth' => Icons.bluetooth_audio,
+    'wired-headset' => Icons.headset,
+    'speaker' => Icons.volume_up,
+    _ => Icons.phone_in_talk,
+  };
+
+  static String _routeName(String id) => switch (id) {
+    'bluetooth' => 'Bluetooth',
+    'wired-headset' => 'Наушники',
+    'speaker' => 'Громкая связь',
+    _ => 'Телефон',
+  };
+
+  /// Only earpiece and loudspeaker: a toggle. With a headset around: pick from the list.
+  Future<void> _pickRoute(CallService c) async {
+    final outs = c.audioOutputs;
+    if (!outs.contains('bluetooth') && !outs.contains('wired-headset')) return c.toggleSpeaker();
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final o in outs)
+              ListTile(
+                leading: Icon(_routeIcon(o)),
+                title: Text(_routeName(o)),
+                trailing: o == c.audioRoute ? const Icon(Icons.check, color: BotatoColors.potato) : null,
+                onTap: () => Navigator.pop(ctx, o),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (id != null) await c.setAudioRoute(id);
   }
 
   Widget _toggle(IconData icon, bool on, VoidCallback onTap, String label) =>

@@ -137,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final shared = await widget.calls.notifier.pendingShare();
       if (shared != null) _handleShare(shared);
       await _checkFullScreen();
+      await widget.calls.notifier.requestBluetooth();
     });
   }
 

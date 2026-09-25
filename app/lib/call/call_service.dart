@@ -232,10 +232,61 @@ class CallService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleSpeaker() async {
-    speaker = !speaker;
-    if (Platform.isAndroid) await Helper.setSpeakerphoneOn(speaker);
+  // ---- audio output (Android): earpiece, loudspeaker, Bluetooth, wired headset
+
+  /// Output ids from flutter_webrtc: `earpiece`, `speaker`, `bluetooth`, `wired-headset`.
+  List<String> audioOutputs = const [];
+
+  /// The output in use (as far as we routed it; the OS falls back by itself on unplug).
+  String audioRoute = 'earpiece';
+
+  static const _routeOrder = ['bluetooth', 'wired-headset', 'earpiece', 'speaker'];
+
+  Future<List<String>> _outputs() async {
+    try {
+      final devices = await navigator.mediaDevices.enumerateDevices();
+      final ids = {
+        for (final d in devices)
+          if (d.kind == 'audiooutput') d.deviceId,
+      };
+      return [
+        for (final id in _routeOrder)
+          if (ids.contains(id)) id,
+      ];
+    } catch (_) {
+      return const ['earpiece', 'speaker'];
+    }
+  }
+
+  Future<void> setAudioRoute(String id) async {
+    if (!Platform.isAndroid) return;
+    audioRoute = id;
+    speaker = id == 'speaker';
+    // setSpeakerphoneOn also reorders the OS preference list (headsets first, then the chosen
+    // built-in output), so a later plug/unplug lands somewhere sensible.
+    await Helper.setSpeakerphoneOn(speaker);
+    if (!speaker) await Helper.selectAudioOutput(id);
     notifyListeners();
+  }
+
+  /// Toggle kept for the loudspeaker button when no headset is around.
+  Future<void> toggleSpeaker() => setAudioRoute(speaker ? 'earpiece' : 'speaker');
+
+  /// At call start and whenever devices change: a new headset takes over, a vanished one
+  /// gives way to the earpiece (or the loudspeaker in a video call).
+  Future<void> _refreshAudioRoute({bool video = false, bool initial = false}) async {
+    if (!Platform.isAndroid) return;
+    final before = audioOutputs;
+    audioOutputs = await _outputs();
+    final headset = audioOutputs.where((o) => o == 'bluetooth' || o == 'wired-headset').firstOrNull;
+    final appeared = headset != null && !before.contains(headset);
+    if (initial || appeared) {
+      await setAudioRoute(headset ?? (video ? 'speaker' : 'earpiece'));
+    } else if (!audioOutputs.contains(audioRoute)) {
+      await setAudioRoute(headset ?? 'earpiece');
+    } else {
+      notifyListeners();
+    }
   }
 
   Future<void> toggleCamera() async {
@@ -736,8 +787,8 @@ class CallService extends ChangeNotifier {
       }
     };
     _startStats();
-    speaker = camera;
-    if (Platform.isAndroid) await Helper.setSpeakerphoneOn(speaker);
+    navigator.mediaDevices.ondevicechange = (_) => _refreshAudioRoute(video: cameraOn);
+    await _refreshAudioRoute(video: camera, initial: true);
   }
 
   void _startStats() {
@@ -910,6 +961,7 @@ class CallService extends ChangeNotifier {
   }
 
   Future<void> _teardown() async {
+    navigator.mediaDevices.ondevicechange = null;
     _statsTimer?.cancel();
     _statsTimer = null;
     stats = null;

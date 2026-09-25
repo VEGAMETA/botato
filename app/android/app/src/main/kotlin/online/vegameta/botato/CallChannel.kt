@@ -154,6 +154,10 @@ object CallChannel {
                         )
                     }
                 }
+                "requestBluetooth" -> {
+                    activity?.requestBluetoothPermission()
+                    result.success(null)
+                }
                 "fullScreenAllowed" -> {
                     val allowed = android.os.Build.VERSION.SDK_INT < 34 ||
                         ctx.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
