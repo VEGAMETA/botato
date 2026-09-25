@@ -157,6 +157,11 @@
         dest: "{{ botato_dir }}/releases/"
         mode: "0644"
 
+    - name: Current release file names
+      ansible.builtin.set_fact:
+        release_names: "{{ lookup('ansible.builtin.fileglob', admin_releases + '/*', wantlist=True) | map('basename') | list }}"
+
+    # Only the current release stays on the server (find skips the "latest" symlinks).
     - name: List published release files
       ansible.builtin.find:
         paths: "{{ botato_dir }}/releases"
@@ -169,7 +174,21 @@
       loop: "{{ published.files }}"
       loop_control:
         label: "{{ item.path | basename }}"
-      when: (item.path | basename) not in (lookup('ansible.builtin.fileglob', admin_releases + '/*', wantlist=True) | map('basename') | list)
+      when: (item.path | basename) not in release_names
+
+    # Stable download links for people: /releases/botato-latest.apk and .exe.
+    - name: Stable "latest" links to the current files
+      ansible.builtin.file:
+        src: "{{ item.target }}"
+        dest: "{{ botato_dir }}/releases/{{ item.link }}"
+        state: link
+        force: true
+      loop:
+        - { link: botato-latest.apk, target: "{{ release_names | select('match', '^botato-.*\\.apk$') | first | default('') }}" }
+        - { link: botato-latest.exe, target: "{{ release_names | select('match', '^botato-setup-.*\\.exe$') | first | default('') }}" }
+      loop_control:
+        label: "{{ item.link }} -> {{ item.target }}"
+      when: item.target != ''
 
 # ---- configs
 

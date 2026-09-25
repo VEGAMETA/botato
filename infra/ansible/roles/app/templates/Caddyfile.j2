@@ -27,6 +27,7 @@
 	handle /releases/* {
 		root * /srv
 		header /releases/release.bin Cache-Control no-cache
+		header /releases/botato-latest* Cache-Control no-cache
 		file_server
 	}
 	handle {
