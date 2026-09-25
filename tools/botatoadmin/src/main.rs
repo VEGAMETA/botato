@@ -13,6 +13,9 @@ use proto::Id;
 use proto::enroll::{self, Request};
 use zeroize::Zeroize;
 
+/// An unlocked root key is dropped after this long unused.
+const AUTO_LOCK: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
 /// Admin data directory; override with BOTATO_ADMIN_DIR.
 const DEFAULT_DIR: &str = r"C:\Users\VEGAMETA\botato-admin";
 
@@ -46,13 +49,15 @@ struct App {
     name: String,
     days: u32,
     checked: bool,
-    password: String,
+    unlock_password: String,
+    /// The unlocked root key: in memory only while the app runs, locked again after
+    /// [`AUTO_LOCK`] unused or with the button. One password per session instead of one per action.
+    root: Option<(proto::SigningKey, std::time::Instant)>,
     status: Option<(bool, String)>,
     cert_text: Option<(String, String)>, // (title, text)
     qr: Option<egui::TextureHandle>,
     /// User whose devices are listed for removal.
     selected: Option<String>,
-    remove_password: String,
     release: release::ReleasePanel,
 }
 
@@ -72,13 +77,39 @@ impl App {
             name: String::new(),
             days: DEFAULT_CERT_DAYS as u32,
             checked: false,
-            password: String::new(),
+            unlock_password: String::new(),
+            root: None,
             status: None,
             cert_text: None,
             qr: None,
             selected: None,
-            remove_password: String::new(),
             release: release::ReleasePanel::new(),
+        }
+    }
+
+    /// The root key for an action (refreshes the auto-lock timer); `None` = locked.
+    fn key(&mut self) -> Option<proto::SigningKey> {
+        if self.root.as_ref().is_some_and(|(_, t)| t.elapsed() > AUTO_LOCK) {
+            self.root = None;
+        }
+        let (k, t) = self.root.as_mut()?;
+        *t = std::time::Instant::now();
+        Some(k.clone())
+    }
+
+    fn unlock(&mut self) {
+        let result = match &self.admin {
+            Ok(a) => a.unlock(self.unlock_password.as_bytes()).map_err(|e| e.to_string()),
+            Err(e) => Err(e.clone()),
+        };
+        self.unlock_password.zeroize();
+        self.unlock_password.clear();
+        match result {
+            Ok(k) => {
+                self.root = Some((k, std::time::Instant::now()));
+                self.status = None;
+            }
+            Err(e) => self.status = Some((false, e)),
         }
     }
 
@@ -108,13 +139,14 @@ impl App {
         let Some(req) = self.request.clone() else {
             return;
         };
+        let Some(root) = self.key() else {
+            self.status = Some((false, "Сначала разблокируйте корневой ключ (вверху).".into()));
+            return;
+        };
         let Ok(admin) = self.admin.as_mut() else {
             return;
         };
         let result = (|| -> Result<(Id, String), String> {
-            let root = admin
-                .unlock(self.password.as_bytes())
-                .map_err(|e| e.to_string())?;
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -128,8 +160,6 @@ impl App {
                 .map_err(|e| e.to_string())?;
             Ok((issued.user_id, issued.text))
         })();
-        self.password.zeroize();
-        self.password.clear();
         match result {
             Ok((user, text)) => {
                 self.status = Some((
@@ -148,13 +178,14 @@ impl App {
 
     /// Reissues the owner's cert without the device and signs a manifest revoking it.
     fn remove_device(&mut self, ctx: &egui::Context, device: &str) {
+        let Some(root) = self.key() else {
+            self.status = Some((false, "Сначала разблокируйте корневой ключ (вверху).".into()));
+            return;
+        };
         let Ok(admin) = self.admin.as_mut() else {
             return;
         };
         let result = (|| -> Result<(Option<String>, u64), String> {
-            let root = admin
-                .unlock(self.remove_password.as_bytes())
-                .map_err(|e| e.to_string())?;
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -166,8 +197,6 @@ impl App {
             let (version, _) = admin.sign_manifest(&root, now).map_err(|e| e.to_string())?;
             Ok((issued.map(|i| i.text), version))
         })();
-        self.remove_password.zeroize();
-        self.remove_password.clear();
         match result {
             Ok((cert, version)) => {
                 self.status = Some((
@@ -288,7 +317,38 @@ impl eframe::App for App {
                 });
             });
 
+        if self.root.as_ref().is_some_and(|(_, t)| t.elapsed() > AUTO_LOCK) {
+            self.root = None;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs(60)); // the auto-lock shows up
+        let unlocked = self.root.is_some();
+
         egui::CentralPanel::default().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if unlocked {
+                    ui.colored_label(egui::Color32::LIGHT_GREEN, "Корневой ключ разблокирован");
+                    if ui.button("Заблокировать").clicked() {
+                        self.root = None;
+                    }
+                } else {
+                    ui.label("Пароль корневого ключа:");
+                    let r = ui.add(
+                        egui::TextEdit::singleline(&mut self.unlock_password)
+                            .password(true)
+                            .desired_width(220.0),
+                    );
+                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if (ui
+                        .add_enabled(!self.unlock_password.is_empty(), egui::Button::new("Разблокировать"))
+                        .clicked()
+                        || enter)
+                        && !self.unlock_password.is_empty()
+                    {
+                        self.unlock();
+                    }
+                }
+            });
+            ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if let Some((_, name, devices)) = self
                     .selected
@@ -302,21 +362,13 @@ impl eframe::App for App {
                             self.selected = None;
                         }
                     });
-                    ui.horizontal(|ui| {
-                        ui.label("Пароль корневого ключа:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.remove_password)
-                                .password(true)
-                                .desired_width(220.0),
-                        );
-                    });
                     let mut remove = None;
                     for d in &devices {
                         ui.horizontal(|ui| {
                             ui.monospace(d);
                             if ui
                                 .add_enabled(
-                                    !self.remove_password.is_empty(),
+                                    unlocked,
                                     egui::Button::new("Удалить"),
                                 )
                                 .clicked()
@@ -398,16 +450,8 @@ impl eframe::App for App {
                     });
 
                     ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        ui.label("4. Пароль корневого ключа:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.password)
-                                .password(true)
-                                .desired_width(220.0),
-                        );
-                    });
                     let ready = self.checked
-                        && !self.password.is_empty()
+                        && unlocked
                         && (self.target != Target::NewUser || !self.name.trim().is_empty());
                     if ui
                         .add_enabled(ready, egui::Button::new("Выпустить сертификат"))
@@ -434,8 +478,9 @@ impl eframe::App for App {
                 egui::CollapsingHeader::new(egui::RichText::new("Релиз и выкатка").heading())
                     .default_open(false)
                     .show(ui, |ui| {
+                        let root = self.root.as_ref().map(|(k, _)| k.clone());
                         if let Ok(admin) = self.admin.as_mut() {
-                            self.release.ui(ui, admin);
+                            self.release.ui(ui, admin, root.as_ref());
                         }
                     });
 

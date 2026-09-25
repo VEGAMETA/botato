@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 
 use admin::Admin;
 use eframe::egui;
-use zeroize::Zeroize;
 
 /// The repository (build outputs, Ansible). Override with BOTATO_REPO.
 const DEFAULT_REPO: &str = r"H:\Desktop\botato";
@@ -21,7 +20,6 @@ struct Deploy {
 
 pub struct ReleasePanel {
     repo: PathBuf,
-    password: String,
     deploy: Arc<Mutex<Deploy>>,
     status: Option<(bool, String)>,
 }
@@ -39,7 +37,7 @@ impl ReleasePanel {
         let repo = std::env::var_os("BOTATO_REPO")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_REPO));
-        ReleasePanel { repo, password: String::new(), deploy: Arc::default(), status: None }
+        ReleasePanel { repo, deploy: Arc::default(), status: None }
     }
 
     fn artifacts(&self) -> Result<Artifacts, String> {
@@ -161,7 +159,8 @@ impl ReleasePanel {
         });
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, admin: &mut Admin) {
+    /// `root`: the unlocked root key (the password is entered once, at the top of the window).
+    pub fn ui(&mut self, ui: &mut egui::Ui, admin: &mut Admin, root: Option<&proto::SigningKey>) {
         let ctx = ui.ctx().clone();
         let arts = self.artifacts();
         match &arts {
@@ -178,14 +177,10 @@ impl ReleasePanel {
                 }
             }
         }
-        ui.horizontal(|ui| {
-            ui.label("Пароль корневого ключа:");
-            ui.add(egui::TextEdit::singleline(&mut self.password).password(true).desired_width(220.0));
-        });
         let running = self.deploy.lock().unwrap().running;
         ui.horizontal(|ui| {
             let ready = !running
-                && !self.password.is_empty()
+                && root.is_some()
                 && arts.as_ref().is_ok_and(|a| a.apk.exists() && a.apk32.exists() && a.exe.exists());
             if ui
                 .add_enabled(!running, egui::Button::new("Собрать релиз"))
@@ -195,7 +190,9 @@ impl ReleasePanel {
                 self.build(&ctx);
             }
             if ui.add_enabled(ready, egui::Button::new("Подписать релиз и выкатить")).clicked() {
-                self.sign_and_publish(&ctx, admin, arts.as_ref().ok());
+                if let Some(root) = root {
+                    self.sign_and_publish(&ctx, admin, arts.as_ref().ok(), root);
+                }
             }
             if ui
                 .add_enabled(!running, egui::Button::new("Выкатить только манифест"))
@@ -229,21 +226,18 @@ impl ReleasePanel {
         }
     }
 
-    fn sign_and_publish(&mut self, ctx: &egui::Context, admin: &mut Admin, arts: Option<&Artifacts>) {
+    fn sign_and_publish(&mut self, ctx: &egui::Context, admin: &mut Admin, arts: Option<&Artifacts>, root: &proto::SigningKey) {
         let Some(a) = arts else { return };
         let result = (|| -> Result<(), String> {
-            let root = admin.unlock(self.password.as_bytes()).map_err(|e| e.to_string())?;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
             let files = [
                 (proto::release::ANDROID_ARM64, a.apk.as_path(), format!("botato-{}.apk", a.version)),
                 (proto::release::ANDROID_ARM, a.apk32.as_path(), format!("botato-{}-arm32.apk", a.version)),
                 (proto::release::WINDOWS_X64, a.exe.as_path(), format!("botato-setup-{}.exe", a.version)),
             ];
-            admin.sign_release(&root, &a.version, a.build, &files, now).map_err(|e| e.to_string())?;
+            admin.sign_release(root, &a.version, a.build, &files, now).map_err(|e| e.to_string())?;
             Ok(())
         })();
-        self.password.zeroize();
-        self.password.clear();
         match result {
             Ok(()) => {
                 self.status = Some((true, format!("Релиз {} подписан, выкатываю…", a.version)));
