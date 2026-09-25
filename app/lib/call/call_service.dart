@@ -431,6 +431,7 @@ class CallService extends ChangeNotifier {
         await _remoteDescriptionSet();
       case 'ice':
         final c = RTCIceCandidate(d['candidate'] as String?, d['mid'] as String?, d['mline'] as int?);
+        _log('remote candidate ${_candKind(c.candidate)}${_remoteSet ? '' : ' (buffered)'}');
         if (_remoteSet) {
           await _pc?.addCandidate(c);
         } else {
@@ -690,6 +691,7 @@ class CallService extends ChangeNotifier {
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
       _restartCandidates.add(c);
+      _log('local candidate ${_candKind(c.candidate)}${_peerDevice == null || _holdLocalIce ? ' (held)' : ''}');
       if (_peerDevice == null || _holdLocalIce) {
         _localIce.add(c);
       } else {
@@ -782,10 +784,43 @@ class CallService extends ChangeNotifier {
 
   DateTime? _lostAt;
 
+  /// "relay udp" from a candidate line; never the address.
+  static String _candKind(String? line) {
+    if (line == null) return '?';
+    final typ = RegExp(r' typ (\w+)').firstMatch(line)?.group(1) ?? '?';
+    final proto = RegExp(r'^candidate:\S+ \d+ (\w+)', caseSensitive: false).firstMatch(line)?.group(1) ?? '?';
+    return '$typ ${proto.toLowerCase()}';
+  }
+
+  /// What ICE had to work with when it failed: candidate types on both sides and pair states.
+  Future<void> _logIceSummary() async {
+    final pc = _pc;
+    if (pc == null) return;
+    try {
+      final local = <String, int>{}, remote = <String, int>{}, pairs = <String, int>{};
+      for (final r in await pc.getStats()) {
+        final v = r.values;
+        String k(Map m) => '${m['candidateType']}/${m['protocol']}';
+        switch (r.type) {
+          case 'local-candidate':
+            local.update(k(v), (n) => n + 1, ifAbsent: () => 1);
+          case 'remote-candidate':
+            remote.update(k(v), (n) => n + 1, ifAbsent: () => 1);
+          case 'candidate-pair':
+            pairs.update('${v['state']}', (n) => n + 1, ifAbsent: () => 1);
+        }
+      }
+      _log('ICE summary: local $local, remote $remote, pairs $pairs');
+    } catch (e) {
+      _log('ICE summary failed: $e');
+    }
+  }
+
   /// Network changed or broke. The caller restarts ICE; both sides give up after the deadline.
   void _connectionLost({required bool soft}) {
     if (phase != CallPhase.active && phase != CallPhase.connecting) return;
     _log('connection lost (${soft ? 'disconnected' : 'failed'}), ${_isCaller ? 'caller' : 'callee'}');
+    if (!soft) _logIceSummary();
     if (!reconnecting) {
       _lostAt = DateTime.now();
       reconnecting = true;
