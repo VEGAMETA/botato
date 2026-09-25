@@ -91,6 +91,31 @@ class CallService extends ChangeNotifier {
   MediaStream? _remoteView;
   bool _remoteSet = false;
   final _localIce = <RTCIceCandidate>[]; // outgoing: gathered before the answer
+
+  /// During an ICE restart our new candidates wait until the reoffer/reanswer that carries
+  /// their credentials has been sent: arriving first, the peer would test them against the
+  /// old description and drop them.
+  bool _holdLocalIce = false;
+
+  /// Our candidates since the last ICE restart: re-sent with a repeated reoffer/reanswer,
+  /// in case the first copies went into a relay socket that was already dead.
+  final _restartCandidates = <RTCIceCandidate>[];
+
+  void _resendRestartIce() {
+    for (final c in _restartCandidates) {
+      _sendIce(c);
+    }
+  }
+
+  void _flushLocalIce() {
+    _holdLocalIce = false;
+    if (_peerDevice == null) return;
+    for (final c in _localIce) {
+      _sendIce(c);
+    }
+    _localIce.clear();
+  }
+
   final _remoteIce = <RTCIceCandidate>[]; // arrived before the remote description
   Timer? _ringTimer;
   Timer? _statsTimer;
@@ -381,13 +406,21 @@ class CallService extends ChangeNotifier {
         if (offerSdp != _lastReoffer) {
           _lastReoffer = offerSdp;
           _remoteSet = false; // buffer candidates until the new description is in
+          _holdLocalIce = true;
+          _restartCandidates.clear();
           await _pc!.setRemoteDescription(RTCSessionDescription(offerSdp, 'offer'));
           final answer = await _pc!.createAnswer();
           _lastReanswer = tuneSdp(answer.sdp!);
           await _pc!.setLocalDescription(RTCSessionDescription(_lastReanswer!, 'answer'));
           await _remoteDescriptionSet();
         }
+        final repeat = !_holdLocalIce;
         relay.signal(_peerDevice!, {'type': 'reanswer', 'call': call, 'sdp': _lastReanswer});
+        if (repeat) {
+          _resendRestartIce(); // the caller may have missed them
+        } else {
+          _flushLocalIce();
+        }
       case 'reanswer':
         // Only the answer to the offer we are waiting for; duplicates are ignored.
         if (!_isCaller || _pc == null || _pendingReoffer == null) return;
@@ -656,7 +689,8 @@ class CallService extends ChangeNotifier {
 
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
-      if (_peerDevice == null) {
+      _restartCandidates.add(c);
+      if (_peerDevice == null || _holdLocalIce) {
         _localIce.add(c);
       } else {
         _sendIce(c);
@@ -779,6 +813,7 @@ class CallService extends ChangeNotifier {
           // don't start over; restarting again would abort candidate gathering.
           _log('no reanswer yet, re-sending the same reoffer (relay ${relay.state.name})');
           relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': pending});
+          _resendRestartIce();
         } else if (DateTime.now().difference(_lastRestart) > const Duration(seconds: 15)) {
           _log('answered but still no media, fresh ICE restart');
           _restartIce(); // answered, but still no media: try a fresh restart
@@ -794,10 +829,14 @@ class CallService extends ChangeNotifier {
       _lastRestart = DateTime.now();
       final offer = await pc.createOffer({'iceRestart': true});
       final sdp = tuneSdp(offer.sdp!);
+      _holdLocalIce = true;
+      _restartCandidates.clear();
+      _remoteSet = false; // the callee's new candidates wait for its reanswer
       await pc.setLocalDescription(RTCSessionDescription(sdp, 'offer'));
       _pendingReoffer = sdp;
       _log('ICE restart: reoffer sent (relay ${relay.state.name})');
       relay.signal(_peerDevice!, {'type': 'reoffer', 'call': _callId, 'sdp': sdp});
+      _flushLocalIce();
     } catch (e) {
       _log('ICE restart failed: $e');
     }
@@ -864,6 +903,8 @@ class CallService extends ChangeNotifier {
     _ringing.clear();
     _offer = null;
     _remoteSet = false;
+    _holdLocalIce = false;
+    _restartCandidates.clear();
     _localIce.clear();
     _remoteIce.clear();
     muted = false;
