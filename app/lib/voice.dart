@@ -35,6 +35,7 @@ class VoiceRecorder extends ChangeNotifier {
   Timer? _tick;
   final _clock = Stopwatch();
   String? _path;
+  bool _disposed = false;
 
   bool get recording => _path != null;
   Duration get elapsed => _clock.elapsed;
@@ -61,7 +62,7 @@ class VoiceRecorder extends ChangeNotifier {
       if (_clock.elapsed >= maxVoice) {
         _clock.stop();
       }
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     });
     notifyListeners();
   }
@@ -95,7 +96,7 @@ class VoiceRecorder extends ChangeNotifier {
       await _rec.stop();
     } catch (_) {}
     _path = null;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   /// dBFS samples squeezed into [waveBars] bytes (-50 dB and below = 0, 0 dB = 255).
@@ -113,8 +114,8 @@ class VoiceRecorder extends ChangeNotifier {
 
   @override
   void dispose() {
-    cancel();
-    _rec.dispose();
+    _disposed = true;
+    cancel().whenComplete(_rec.dispose);
     super.dispose();
   }
 }

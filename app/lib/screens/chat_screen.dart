@@ -432,7 +432,7 @@ class _ChatScreenState extends State<ChatScreen> {
   static Future<Uint8List?> _clipboardImage() async {
     try {
       final b = await Pasteboard.image;
-      return b == null || b.isEmpty ? null : b;
+      return b == null || b.isEmpty ? null : await clipboardToPng(b);
     } catch (_) {
       return null;
     }
