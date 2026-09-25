@@ -57,6 +57,8 @@ class CallService extends ChangeNotifier {
   bool cameraOn = false;
   bool screenOn = false;
   bool peerVideo = false; // the peer sends camera or screen
+  bool peerScreen = false; // ... and it is its screen
+  int _idleVideoSamples = 0;
   bool reconnecting = false;
   Timer? _checkTimer;
   String? endReason;
@@ -518,7 +520,8 @@ class CallService extends ChangeNotifier {
           _remoteIce.add(c);
         }
       case 'media':
-        peerVideo = d['video'] == true || d['screen'] == true;
+        peerScreen = d['screen'] == true;
+        _setPeerVideo(d['video'] == true || d['screen'] == true);
         notifyListeners();
       case 'hangup':
         final reason = d['reason'];
@@ -544,6 +547,36 @@ class CallService extends ChangeNotifier {
       'mid': c.sdpMid,
       'mline': c.sdpMLineIndex,
     });
+  }
+
+  void _setPeerVideo(bool on) {
+    if (on && !peerVideo) {
+      // Re-attach the renderer: on Windows it sometimes misses the first frames of a track
+      // that was empty until now (replaceTrack on the peer's side).
+      remoteRenderer.srcObject = _remoteView;
+    }
+    peerVideo = on;
+    _idleVideoSamples = 0;
+  }
+
+  /// The `media` signal is the fast path, but it can be lost with a relay reconnect: frames
+  /// actually arriving show the video anyway, and a long silence hides a stale last frame.
+  void _videoFromStats(CallStats s) {
+    // A still shared screen may send few frames: count the bitrate too.
+    final receiving = s.videoInFps >= 1 || s.videoInKbps >= 5;
+    if (receiving && !peerVideo) {
+      _log('video frames arrive without a media signal, showing');
+      _setPeerVideo(true);
+    } else if (!receiving && peerVideo && phase == CallPhase.active && !reconnecting) {
+      if (++_idleVideoSamples >= 4) {
+        _log('no video frames for a while, hiding');
+        peerVideo = false;
+        peerScreen = false;
+        _idleVideoSamples = 0;
+      }
+    } else {
+      _idleVideoSamples = 0;
+    }
   }
 
   void _sendMediaState() {
@@ -829,6 +862,7 @@ class CallService extends ChangeNotifier {
       if (pc == null) return;
       try {
         stats = await _sampler!.sample(pc);
+        _videoFromStats(stats!);
         notifyListeners();
       } catch (_) {}
     });
@@ -1048,6 +1082,8 @@ class CallService extends ChangeNotifier {
     cameraOn = false;
     screenOn = false;
     peerVideo = false;
+    peerScreen = false;
+    _idleVideoSamples = 0;
     reconnecting = false;
     endReason = null;
     connectedAt = null;

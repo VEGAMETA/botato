@@ -81,6 +81,7 @@ class CallSounds {
   final CallService calls;
   CallPhase _phase = CallPhase.idle;
   bool _screen = false;
+  bool _peerScreen = false;
 
   void _update() {
     final c = calls;
@@ -89,7 +90,7 @@ class CallSounds {
         (_phase == CallPhase.outgoing || _phase == CallPhase.connecting || _phase == CallPhase.active)) {
       Sounds.play('hangup');
     }
-    if (c.screenOn && !_screen) Sounds.play('screen');
+    if ((c.screenOn && !_screen) || (c.peerScreen && !_peerScreen)) Sounds.play('screen');
     final live = c.phase == CallPhase.active || c.phase == CallPhase.connecting;
     final want = switch (c.phase) {
       CallPhase.outgoing => 'ringback',
@@ -100,5 +101,6 @@ class CallSounds {
     want == null ? Sounds.stopLoop() : Sounds.loop(want);
     _phase = c.phase;
     _screen = c.screenOn;
+    _peerScreen = c.peerScreen;
   }
 }
