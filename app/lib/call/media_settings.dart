@@ -77,6 +77,12 @@ class MediaSettings {
   set secureScreen(bool v) => _prefs.setBool('secure_screen', v);
 
   bool get hwAudioProcessing => _prefs.getBool('hw_audio_processing') ?? true;
+
+  /// Android: record the plain microphone (no system voice processing, stereo) instead of the
+  /// call source. Cleaner and louder on some phones; a Bluetooth headset's mic may not be used.
+  /// Chosen when WebRTC starts: applies after an app restart.
+  bool get rawMic => _prefs.getBool('raw_mic') ?? false;
+  set rawMic(bool v) => _prefs.setBool('raw_mic', v);
   set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);
 
   void _set(String key, String? v) => v == null ? _prefs.remove(key) : _prefs.setString(key, v);

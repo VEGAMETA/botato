@@ -166,9 +166,6 @@ class CallNotifier {
 
   bool _proximity = false;
 
-  /// Android: applies the call's audio mode right away (communication, or media for clean audio).
-  Future<void> audioMode({required bool communication}) => _invoke('audioMode', communication);
-
   /// Android: the audio system's state in one line, for the call log.
   Future<String?> audioDiag() async {
     if (!Platform.isAndroid) return null;

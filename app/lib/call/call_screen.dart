@@ -350,7 +350,6 @@ class _CallScreenState extends State<CallScreen> {
 
   /// Only earpiece and loudspeaker: a toggle. With a headset around: pick from the list.
   Future<void> _pickRoute(CallService c) async {
-    if (!c.routable) return _cleanRouteInfo(c);
     final outs = c.audioOutputs;
     if (!outs.contains('bluetooth') && !outs.contains('wired-headset')) return c.toggleSpeaker();
     final id = await showModalBottomSheet<String>(
@@ -371,44 +370,6 @@ class _CallScreenState extends State<CallScreen> {
       ),
     );
     if (id != null) await c.setAudioRoute(id);
-  }
-
-  /// Clean audio plays as media: Android itself chooses the headset or the loudspeaker.
-  Future<void> _cleanRouteInfo(CallService c) async {
-    final toVoice = await showModalBottomSheet<bool>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                tr('Сейчас: ${_routeName(c.audioRoute)}', 'Now: ${_routeName(c.audioRoute)}'),
-                style: Theme.of(ctx).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                tr(
-                  'В режиме «Чистый звук» выход выбирает Android: наушники или Bluetooth, если подключены, иначе громкий динамик. Разговорный динамик и ручной выбор — в режиме «Голос».',
-                  'In the “Clean audio” mode Android picks the output: headphones or Bluetooth if connected, otherwise the loudspeaker. The earpiece and manual choice are available in the “Voice” mode.',
-                ),
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(tr('Переключить на «Голос»', 'Switch to “Voice”')),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (toVoice == true) await c.setAudioMode(AudioMode.voice);
   }
 
   Widget _toggle(IconData icon, bool on, VoidCallback onTap, String label) =>
@@ -637,6 +598,19 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
               ),
               style: TextStyle(color: BotatoColors.smoke, fontSize: 12),
             ),
+            if (Platform.isAndroid)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s.rawMic,
+                onChanged: (v) => setState(() => s.rawMic = v),
+                title: Text(tr('Микрофон без обработки системы', 'Microphone without system processing')),
+                subtitle: Text(
+                  tr(
+                    'Обычный микрофон вместо «звонкового»: громче и чище на некоторых телефонах, но микрофон Bluetooth-гарнитуры может не использоваться. Применится после перезапуска приложения.',
+                    'The plain microphone instead of the call one: louder and cleaner on some phones, but a Bluetooth headset\'s mic may not be used. Applies after restarting the app.',
+                  ),
+                ),
+              ),
             if (Platform.isAndroid)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

@@ -117,21 +117,6 @@ object CallChannel {
                     result.success(null)
                 }
                 "audioDiag" -> result.success(runCatching { AudioDiag.describe(ctx) }.getOrElse { "audio diag failed: ${it.message}" })
-                "audioMode" -> {
-                    // flutter_webrtc stores a new audio mode but applies it only when the next call
-                    // activates the session; a switch during a call is applied here.
-                    val am = ctx.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-                    if (call.arguments as Boolean) {
-                        am.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
-                    } else {
-                        // Media mode: the OS routes by itself (headset if any, else loudspeaker).
-                        if (android.os.Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice()
-                        @Suppress("DEPRECATION")
-                        am.isSpeakerphoneOn = false
-                        am.mode = android.media.AudioManager.MODE_NORMAL
-                    }
-                    result.success(null)
-                }
                 "proximity" -> {
                     Proximity.set(ctx, call.arguments as Boolean)
                     result.success(null)

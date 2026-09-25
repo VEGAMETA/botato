@@ -42,7 +42,9 @@ class Services {
     final media = await MediaSettings.load();
     if (Platform.isAndroid) {
       // The phone's own AEC/NS is chosen when WebRTC starts and can't change mid-call.
-      await WebRTC.initialize(options: {'androidUseHardwareAudioProcessing': media.hwAudioProcessing});
+      await WebRTC.initialize(
+        options: {'androidUseHardwareAudioProcessing': media.hwAudioProcessing, 'bypassVoiceProcessing': media.rawMic},
+      );
     }
     final store = IdentityStore();
     final secret = await store.deviceSecret();

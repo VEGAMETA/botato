@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../l10n.dart';
@@ -27,8 +29,9 @@ class CallStats {
   num videoOutKeyFrames = 0, videoOutPliReceived = 0, videoOutNackReceived = 0;
   bool videoOutActive = false; // a track is attached to the video sender
 
-  /// Loudness 0..1 of our microphone as sent, and of what we receive (quiet-voice diagnostics).
-  double? audioOutLevel, audioInLevel;
+  /// Mean loudness over the last interval (dBFS) of our microphone as sent, and of what we
+  /// receive: quiet-voice diagnostics. Speech is typically around -30..-15.
+  double? audioOutDb, audioInDb;
 
   /// One line for the call log: what each direction of video is doing (no addresses).
   String diag() {
@@ -78,6 +81,15 @@ class CallStatsSampler {
       return (cur - prev) / dt;
     }
 
+    // Mean power from the energy counters (totalAudioEnergy = sum of level² × duration).
+    double? meanDb(String id, Map<String, dynamic> v) {
+      final e = rate(id, v, 'totalAudioEnergy');
+      final t = rate(id, v, 'totalSamplesDuration');
+      if (t <= 0) return null;
+      final p = e / t;
+      return p <= 1e-10 ? -100.0 : 10 * log(p) / ln10;
+    }
+
     String codec(Map<String, dynamic> v) {
       final c = byId[v['codecId']];
       final mime = c?.values['mimeType']?.toString() ?? '';
@@ -98,7 +110,7 @@ class CallStatsSampler {
           final rtt = v['currentRoundTripTime'];
           if (rtt is num) s.rttMs = rtt * 1000;
         case 'media-source':
-          if (kind == 'audio' && v['audioLevel'] is num) s.audioOutLevel = (v['audioLevel'] as num).toDouble();
+          if (kind == 'audio') s.audioOutDb = meanDb(r.id, v);
         case 'outbound-rtp':
           final kbps = rate(r.id, v, 'bytesSent') * 8 / 1000;
           if (kind == 'audio') {
@@ -125,7 +137,7 @@ class CallStatsSampler {
           if (kind == 'audio') {
             s.audioInKbps = kbps;
             s.audioLossPct = loss;
-            if (v['audioLevel'] is num) s.audioInLevel = (v['audioLevel'] as num).toDouble();
+            s.audioInDb = meanDb(r.id, v);
           } else if (kind == 'video') {
             s.videoInKbps = kbps;
             s.videoLossPct = loss;

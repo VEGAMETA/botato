@@ -273,7 +273,7 @@ class CallService extends ChangeNotifier {
 
   /// Android picks outputs only in the voice mode: clean audio runs in media mode, where the
   /// OS routes by itself (Bluetooth or wired headset if connected, else the loudspeaker).
-  bool get routable => settings.audioMode == AudioMode.voice;
+  bool get routable => true;
 
   Future<void> setAudioRoute(String id) async {
     if (!Platform.isAndroid || !routable) return;
@@ -390,7 +390,6 @@ class CallService extends ChangeNotifier {
     _log('audio mode -> ${mode.name}');
     await _reopenMicrophone();
     if (Platform.isAndroid && _pc != null) {
-      await notifier.audioMode(communication: mode == AudioMode.voice);
       await _refreshAudioRoute(video: cameraOn, initial: true);
     }
     notifyListeners();
@@ -620,9 +619,9 @@ class CallService extends ChangeNotifier {
   /// audio state every 30 s. "The other side hears me quietly" shows up as a low `out`.
   void _audioLevels(CallStats s) {
     if (++_audioTick % 5 != 0) return;
-    String f(double? v) => v == null ? '?' : v.toStringAsFixed(3);
+    String f(double? v) => v == null ? '?' : '${v.toStringAsFixed(0)} dBFS';
     _log(
-      'audio: mic out=${f(s.audioOutLevel)} in=${f(s.audioInLevel)} '
+      'audio: mic out=${f(s.audioOutDb)} in=${f(s.audioInDb)} '
       '↑${s.audioOutKbps.toStringAsFixed(0)} ↓${s.audioInKbps.toStringAsFixed(0)} kbps '
       'mode=${settings.audioMode.name} route=$audioRoute',
     );
@@ -728,11 +727,11 @@ class CallService extends ChangeNotifier {
   Future<MediaStreamTrack> _openMicrophone() async {
     final mode = settings.audioMode;
     if (Platform.isAndroid) {
-      // Voice: VOICE_COMMUNICATION source with the phone's hardware AEC/NS.
-      // Clean: plain media source, no system processing.
-      await Helper.setAndroidAudioConfiguration(
-        mode == AudioMode.voice ? AndroidAudioConfiguration.communication : AndroidAudioConfiguration.media,
-      );
+      // Communication mode in both audio modes: Android's MODE_NORMAL with the call mic source
+      // came out very quiet (Samsung), and the output couldn't be chosen. What differs between
+      // voice and clean audio is WebRTC's own processing, channels and bitrate; the mic source
+      // itself is a device setting (MediaSettings.rawMic).
+      await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration.communication);
     }
     final id = isDesktop ? settings.micId : null;
     MediaStream s;
@@ -939,7 +938,9 @@ class CallService extends ChangeNotifier {
     _startStats();
     navigator.mediaDevices.ondevicechange = (_) => _refreshAudioRoute(video: cameraOn);
     await _refreshAudioRoute(video: camera, initial: true);
-    _log('audio at start: mode=${settings.audioMode.name} hwProcessing=${settings.hwAudioProcessing}');
+    _log(
+      'audio at start: mode=${settings.audioMode.name} hwProcessing=${settings.hwAudioProcessing} rawMic=${settings.rawMic}',
+    );
   }
 
   void _startStats() {
