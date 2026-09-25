@@ -231,7 +231,9 @@
   ansible.builtin.command: "{{ compose_bin.stdout }} -p botato restart {{ item.svc }}"
   args:
     chdir: "{{ botato_dir }}"
-  when: item.changed and not compose_up.changed
+  # Single-file bind mounts keep showing the old file after Ansible rewrites it, so restart
+  # whenever the config changed, even if `up` recreated other containers in the same run.
+  when: item.changed
   loop:
     - { svc: caddy, changed: "{{ caddyfile.changed }}" }
     - { svc: coturn, changed: "{{ turnconf.changed }}" }
