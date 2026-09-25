@@ -11,6 +11,7 @@ import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
 import '../emoji.dart';
 import '../image_prep.dart';
+import '../link_text.dart';
 import '../theme.dart';
 import 'photo_view.dart';
 
@@ -170,6 +171,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   title: const Text('Копировать'),
                   onTap: () => Navigator.pop(ctx, 'copy'),
                 ),
+              if (m.text.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.text_fields),
+                  title: const Text('Выделить текст'),
+                  onTap: () => Navigator.pop(ctx, 'select'),
+                ),
               ListTile(
                 leading: const Icon(Icons.forward),
                 title: const Text('Переслать'),
@@ -208,6 +215,14 @@ class _ChatScreenState extends State<ChatScreen> {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: m.text));
         _toast('Скопировано');
+      case 'select':
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            content: SingleChildScrollView(child: SelectableText(m.text, style: const TextStyle(fontSize: 16))),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Закрыть'))],
+          ),
+        );
       case 'forward':
         await _forward(m);
       case 'edit':
@@ -693,16 +708,9 @@ class _Bubble extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerLeft,
                       widthFactor: 1,
-                      child: Text(
-                        bigEmoji > 0 ? m.text.trim() : m.text,
-                        style: TextStyle(
-                          fontSize: switch (bigEmoji) {
-                            0 => 15,
-                            1 => 56,
-                            _ => 40,
-                          },
-                        ),
-                      ),
+                      child: bigEmoji > 0
+                          ? Text(m.text.trim(), style: TextStyle(fontSize: bigEmoji == 1 ? 56 : 40))
+                          : LinkText(m.text, style: const TextStyle(fontSize: 15)),
                     ),
                 ],
                 if (counts.isNotEmpty && !m.deleted)
