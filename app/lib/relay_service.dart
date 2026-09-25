@@ -289,7 +289,9 @@ class RelayService extends ChangeNotifier {
         }
         return;
       case core.ClientEvent_Error(:final message):
-        detail = message;
+        // Not into `detail`: that one describes the connection and shows in the status tooltip.
+        debugPrint('[relay] error: $message');
+        return;
     }
     notifyListeners();
   }

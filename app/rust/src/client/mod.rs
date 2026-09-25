@@ -415,8 +415,15 @@ async fn handle(shared: &Shared, ws: &mut Ws, s: &mut SessionState, frame: Serve
                 emit(Event::MessagesChanged { peer });
             }
         }
-        // A copy the relay refused (quota, revoked device) stays in the outbox: it is retried
-        // on the next connection and dropped at expiry. Same for a refused upload.
+        // A copy for a revoked device can never be delivered: drop it instead of re-sending it
+        // on every connection. (A lying relay gains nothing: it can lose messages anyway.)
+        ServerFrame::Error { r#ref, id: Some(id), code: ErrorCode::Revoked } if r#ref == "send" => {
+            shared.store.lock().unwrap().drop_copy(&id)?;
+        }
+        // Calling a revoked device: nothing to report.
+        ServerFrame::Error { code: ErrorCode::Revoked, .. } => {}
+        // A copy the relay refused otherwise (quota) stays in the outbox: it is retried on the
+        // next connection and dropped at expiry. Same for a refused upload.
         ServerFrame::Error { r#ref, code, .. } => emit(Event::Error { message: format!("{ref}: {code:?}") }),
         ServerFrame::Ok { .. } => {}
         ServerFrame::Challenge { .. } | ServerFrame::Ready { .. } => anyhow::bail!(tr("неожиданный фрейм", "unexpected frame")),

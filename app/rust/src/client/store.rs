@@ -389,6 +389,12 @@ impl Store {
         self.peer_of(&id(msg_id))
     }
 
+    /// A copy that can never be delivered (the relay says its device is revoked).
+    pub fn drop_copy(&self, transport_id: &Id) -> anyhow::Result<()> {
+        self.db.execute("DELETE FROM outbox WHERE id = ?1", [&transport_id.0[..]])?;
+        Ok(())
+    }
+
     /// E2E receipt from `device` for `msg_id`: its copy is done. `recipient` = the device
     /// belongs to the conversation partner (not one of our own devices).
     pub fn on_receipt(&self, msg_id: &Id, device: &Id, recipient: bool) -> anyhow::Result<Option<Id>> {
