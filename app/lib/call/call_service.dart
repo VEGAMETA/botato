@@ -63,7 +63,6 @@ class CallService extends ChangeNotifier {
   DateTime _lastMediaAt = DateTime(0);
   bool reconnecting = false;
   Timer? _checkTimer;
-  Timer? _relayKick;
   String? endReason;
   DateTime? connectedAt;
   CallStats? stats;
@@ -926,6 +925,8 @@ class CallService extends ChangeNotifier {
   // ---- connection state and ICE restart
 
   void _connected() {
+    _lossGrace?.cancel();
+    _lossGrace = null;
     _restartTimer?.cancel();
     _deadline?.cancel();
     _deadline = null;
@@ -989,18 +990,35 @@ class CallService extends ChangeNotifier {
   /// Network changed or broke. The caller restarts ICE; both sides give up after the deadline.
   void _connectionLost({required bool soft}) {
     if (phase != CallPhase.active && phase != CallPhase.connecting) return;
+    if (!soft || reconnecting) {
+      _lossGrace?.cancel();
+      _lossGrace = null;
+      return _connectionLostNow(soft: soft);
+    }
+    // A mere "disconnected" waits a moment first: when the peer hangs up, Android sees the
+    // closed connection a few ms before the hangup signal arrives, and a short network blip
+    // often heals by itself. Nothing shows (or beeps) unless it lasts.
+    if (_lossGrace != null) return;
+    _log('disconnected, waiting ${_lossGraceTime.inMilliseconds} ms before reconnecting');
+    _lossGrace = Timer(_lossGraceTime, () {
+      _lossGrace = null;
+      _connectionLostNow(soft: true);
+    });
+  }
+
+  static const _lossGraceTime = Duration(milliseconds: 1500);
+  Timer? _lossGrace;
+
+  void _connectionLostNow({required bool soft}) {
+    if (phase != CallPhase.active && phase != CallPhase.connecting) return;
     _log('connection lost (${soft ? 'disconnected' : 'failed'}), ${_isCaller ? 'caller' : 'callee'}');
     if (!soft) _logIceSummary();
     if (!reconnecting) {
       _lostAt = DateTime.now();
       reconnecting = true;
-      // The relay socket probably died with the old network too; don't wait to notice. But
-      // not at once on a mere "disconnected": the peer may just have hung up, and its hangup,
-      // arriving right now, would be lost with the replaced connection.
-      _relayKick?.cancel();
-      _relayKick = Timer(soft ? const Duration(milliseconds: 1500) : Duration.zero, () {
-        if (reconnecting) relay.reconnect();
-      });
+      // The relay socket probably died with the old network too; don't wait to notice. (A
+      // hangup from the peer had the grace period to arrive on the old connection.)
+      relay.reconnect();
       _updateNotification();
       notifyListeners();
     }
@@ -1025,8 +1043,8 @@ class CallService extends ChangeNotifier {
       return;
     }
     if (_restartTimer?.isActive == true) return;
-    // "disconnected" often heals by itself; "failed" never does.
-    _restartTimer = Timer(soft ? const Duration(seconds: 1) : Duration.zero, () {
+    // The grace period already gave "disconnected" its chance to heal by itself.
+    _restartTimer = Timer(Duration.zero, () {
       _restartIce();
       _restartTimer = Timer.periodic(const Duration(seconds: 5), (t) {
         if (!reconnecting) return t.cancel();
@@ -1085,7 +1103,8 @@ class CallService extends ChangeNotifier {
     _restartTimer?.cancel();
     _checkTimer?.cancel();
     _checkTimer = null;
-    _relayKick?.cancel();
+    _lossGrace?.cancel();
+    _lossGrace = null;
     _deadline?.cancel();
     _deadline = null;
     endReason = reason;
