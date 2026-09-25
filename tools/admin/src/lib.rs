@@ -479,7 +479,7 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
 }
 
 /// Publishing the signed manifest on the Nostr relays of the manifest (protocol/README.md
-/// §7.3), so clients whose server is gone can find the new one. Prepared with the admin data,
+/// §7.4), so clients whose server is gone can find the new one. Prepared with the admin data,
 /// run anywhere (it blocks: a background thread in the GUI).
 pub struct NostrJob {
     relays: Vec<String>,
