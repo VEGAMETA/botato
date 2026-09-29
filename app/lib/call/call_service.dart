@@ -736,11 +736,17 @@ class CallService extends ChangeNotifier {
     final id = isDesktop ? settings.micId : null;
     MediaStream s;
     try {
-      s = await navigator.mediaDevices.getUserMedia({'audio': AudioProfile.constraints(mode, id), 'video': false});
+      s = await navigator.mediaDevices.getUserMedia({
+        'audio': AudioProfile.constraints(mode, id, plain: isDesktop && settings.plainMic),
+        'video': false,
+      });
     } catch (_) {
       if (id == null) rethrow;
       settings.micId = null;
-      s = await navigator.mediaDevices.getUserMedia({'audio': AudioProfile.constraints(mode, null), 'video': false});
+      s = await navigator.mediaDevices.getUserMedia({
+        'audio': AudioProfile.constraints(mode, null, plain: isDesktop && settings.plainMic),
+        'video': false,
+      });
     }
     final t = s.getAudioTracks().first;
     t.enabled = !muted;
@@ -754,7 +760,10 @@ class CallService extends ChangeNotifier {
     try {
       final inputs = (await navigator.mediaDevices.enumerateDevices()).where((d) => d.kind == 'audioinput').toList();
       final names = inputs.map((d) => d.deviceId == chosen ? '[${d.label}]' : d.label).join('; ');
-      _log('mic inputs (${inputs.length}): $names; using ${chosen == null ? 'the default' : 'the saved one'}');
+      _log(
+        'mic inputs (${inputs.length}): $names; using ${chosen == null ? 'the default' : 'the saved one'}'
+        '${settings.plainMic ? ', plain capture (mono, no echo cancellation)' : ''}',
+      );
     } catch (_) {}
   }
 
@@ -999,6 +1008,15 @@ class CallService extends ChangeNotifier {
     if (_silentTicks < 24) return;
     _micWarned = true;
     _log('microphone sends silence');
+    // Windows: an old driver that delivers neither through the Voice Capture DSP (echo
+    // cancellation) nor in stereo (clean audio). Record the simple way, now and from now on.
+    if (Platform.isWindows && !settings.plainMic) {
+      settings.plainMic = true;
+      _log('silent mic: reopening it mono, without echo cancellation');
+      _silentTicks = 0;
+      _micWarned = false;
+      _reopenMicrophone();
+    }
   }
 
   void _startStats() {

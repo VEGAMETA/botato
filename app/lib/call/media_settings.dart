@@ -92,6 +92,13 @@ class MediaSettings {
   /// -12..-15 dBFS. A Bluetooth headset's mic may not be used. Chosen when WebRTC starts:
   /// applies after an app restart.
   bool get rawMic => _prefs.getBool('raw_mic') ?? true;
+
+  /// Windows: the simplest capture (mono, no echo cancellation). Set once the mic sent pure
+  /// silence while other apps heard it (an old laptop): echo cancellation records through the
+  /// system Voice Capture DSP, clean audio asks for stereo, and some old drivers deliver
+  /// neither. This PC then always records the simple way.
+  bool get plainMic => _prefs.getBool('plain_mic') ?? false;
+  set plainMic(bool v) => _prefs.setBool('plain_mic', v);
   set rawMic(bool v) => _prefs.setBool('raw_mic', v);
   set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);
 
@@ -100,20 +107,21 @@ class MediaSettings {
 
 /// Audio capture and send settings per mode (CLAUDE.md §8).
 class AudioProfile {
-  static Map<String, dynamic> constraints(AudioMode mode, String? deviceId) {
+  static Map<String, dynamic> constraints(AudioMode mode, String? deviceId, {bool plain = false}) {
     final voice = mode == AudioMode.voice;
+    final aec = voice && !plain;
     // Voice on Android: echo cancellation only. WebRTC's noise suppression and AGC on top of the
     // plain phone mic made the voice choppy and pumping (-19 / -76 / -30 dBFS on the speaker);
     // that mic is already at a good level. Desktop mics vary a lot: they keep the full chain.
     final shaping = voice && !Platform.isAndroid;
     return {
-      'echoCancellation': voice,
+      'echoCancellation': aec,
       'noiseSuppression': shaping,
       'autoGainControl': shaping,
-      'channelCount': voice ? 1 : 2,
+      'channelCount': voice || plain ? 1 : 2,
       // Older libwebrtc builds (Android) read the goog* names.
       'optional': [
-        {'googEchoCancellation': voice},
+        {'googEchoCancellation': aec},
         {'googNoiseSuppression': shaping},
         {'googAutoGainControl': shaping},
         {'googHighpassFilter': voice},
