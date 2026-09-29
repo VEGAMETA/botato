@@ -10,11 +10,13 @@ import 'package:window_manager/window_manager.dart';
 import '../relay_service.dart';
 import '../src/rust/api/client.dart' as core;
 import '../desktop.dart' show Desktop;
+import '../error_log.dart';
 import 'call_notifier.dart';
 import 'call_screen.dart';
 import 'call_stats.dart';
 import 'media_settings.dart';
 import 'sdp.dart';
+import 'win_mic_privacy.dart';
 import '../l10n.dart';
 
 enum CallPhase { idle, outgoing, incoming, connecting, active, ended }
@@ -751,7 +753,34 @@ class CallService extends ChangeNotifier {
     final t = s.getAudioTracks().first;
     t.enabled = !muted;
     if (isDesktop) _logInputs(settings.micId);
+    if (Platform.isWindows) _checkMicPrivacy();
     return t;
+  }
+
+  /// Windows privacy settings can deny desktop apps the microphone: capture then opens fine and
+  /// records zeros, while the level meter in Windows settings and Store apps still move.
+  void _checkMicPrivacy() {
+    List<String> blocked;
+    try {
+      blocked = windowsMicDenied();
+    } catch (_) {
+      return;
+    }
+    if (blocked.isEmpty) return;
+    _micNote('Windows privacy denies the microphone to: ${blocked.join(', ')}');
+    _toast(
+      tr(
+        'Windows запрещает доступ к микрофону: Параметры → Конфиденциальность → Микрофон, включите доступ для классических приложений',
+        'Windows denies microphone access: Settings → Privacy → Microphone, allow desktop apps',
+      ),
+    );
+  }
+
+  /// Microphone trouble goes to the call log and to the error journal (profile), so it can be
+  /// read on a PC running a release build.
+  void _micNote(String text) {
+    _log(text);
+    ErrorLog.write('mic', text);
   }
 
   /// Call log (desktop): the microphones Windows offers and which one we asked for; a laptop
@@ -760,10 +789,14 @@ class CallService extends ChangeNotifier {
     try {
       final inputs = (await navigator.mediaDevices.enumerateDevices()).where((d) => d.kind == 'audioinput').toList();
       final names = inputs.map((d) => d.deviceId == chosen ? '[${d.label}]' : d.label).join('; ');
-      _log(
-        'mic inputs (${inputs.length}): $names; using ${chosen == null ? 'the default' : 'the saved one'}'
-        '${settings.plainMic ? ', plain capture (mono, no echo cancellation)' : ''}',
-      );
+      final text =
+          'mic inputs (${inputs.length}): $names; using ${chosen == null ? 'the default' : 'the saved one'}; '
+          '${settings.audioMode.name} audio${settings.plainMic ? ', plain capture (mono, no echo cancellation)' : ''}';
+      if (_micWarned || settings.plainMic) {
+        _micNote(text);
+      } else {
+        _log(text);
+      }
     } catch (_) {}
   }
 
@@ -1007,12 +1040,12 @@ class CallService extends ChangeNotifier {
     _silentTicks = db <= -90 ? _silentTicks + 1 : 0;
     if (_silentTicks < 24) return;
     _micWarned = true;
-    _log('microphone sends silence');
+    _micNote('microphone sends silence${settings.plainMic ? ' (plain capture)' : ''}');
     // Windows: an old driver that delivers neither through the Voice Capture DSP (echo
     // cancellation) nor in stereo (clean audio). Record the simple way, now and from now on.
     if (Platform.isWindows && !settings.plainMic) {
       settings.plainMic = true;
-      _log('silent mic: reopening it mono, without echo cancellation');
+      _micNote('silent mic: reopening it mono, without echo cancellation');
       _silentTicks = 0;
       _micWarned = false;
       _reopenMicrophone();
