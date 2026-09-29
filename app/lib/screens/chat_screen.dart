@@ -450,16 +450,26 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _confirmImage(Uint8List bytes) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr('Отправить картинку?', 'Send the image?')),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 360, maxWidth: 420),
-          child: Image.memory(bytes, fit: BoxFit.contain),
+      // Enter sends, as it does for text.
+      builder: (ctx) => CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter): () => Navigator.pop(ctx, true),
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): () => Navigator.pop(ctx, true),
+        },
+        child: Focus(
+          autofocus: true,
+          child: AlertDialog(
+            title: Text(tr('Отправить картинку?', 'Send the image?')),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360, maxWidth: 420),
+              child: Image.memory(bytes, fit: BoxFit.contain),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Отмена', 'Cancel'))),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Отправить', 'Send'))),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Отмена', 'Cancel'))),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Отправить', 'Send'))),
-        ],
       ),
     );
     if (ok == true) await _sendPhoto(bytes);

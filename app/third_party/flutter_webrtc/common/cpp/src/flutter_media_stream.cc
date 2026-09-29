@@ -1,6 +1,7 @@
 #include "flutter_media_stream.h"
 
 #include "flutter_utf8_sanitize.h"
+#include "mic_capture.h"
 
 #define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 720
@@ -173,6 +174,9 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
   RTCAudioOptions audio_options;
   std::string sourceId;
   std::string deviceId;
+  // botato: capture through WASAPI into a custom source (mic_capture.h).
+  bool own_capture = false;
+  int channel_count = 1;
   auto it = constraints.find(EncodableValue("audio"));
   if (it != constraints.end()) {
     EncodableValue audio = it->second;
@@ -204,6 +208,13 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
           localMap, {"autoGainControl", "googAutoGainControl"}, true);
       audio_options.highpass_filter = getAudioProcessingFlag(
           localMap, {"highpassFilter", "googHighpassFilter"}, false);
+      auto own = localMap.find(EncodableValue("botatoWasapi"));
+      own_capture = own != localMap.end() && TypeIs<bool>(own->second) &&
+                    GetValue<bool>(own->second);
+      auto cc = localMap.find(EncodableValue("channelCount"));
+      if (cc != localMap.end() && TypeIs<int>(cc->second)) {
+        channel_count = GetValue<int>(cc->second);
+      }
     }
   }
 
@@ -213,6 +224,7 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
   if (enable_audio) {
     char strRecordingName[256];
     char strRecordingGuid[256];
+    std::string recordingEndpoint;
     int playout_devices = base_->audio_device_->PlayoutDevices();
     int recording_devices = base_->audio_device_->RecordingDevices();
 
@@ -224,6 +236,7 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
               SanitizeDeviceIdFromAudioBuffers(strRecordingName,
                                                strRecordingGuid)) {
         base_->audio_device_->SetRecordingDevice(i);
+        recordingEndpoint = strRecordingGuid;
       }
     }
 
@@ -248,11 +261,25 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       }
     }
 
-    scoped_refptr<RTCAudioSource> source = base_->factory_->CreateAudioSource(
-        "audio_input", RTCAudioSource::SourceType::kMicrophone, audio_options);
     std::string uuid = base_->GenerateUUID();
-    scoped_refptr<RTCAudioTrack> track =
-        base_->factory_->CreateAudioTrack(source, uuid.c_str());
+    std::string own_format;
+    std::string own_error;
+    scoped_refptr<RTCAudioTrack> track;
+    if (own_capture) {
+      scoped_refptr<RTCAudioSource> own_source =
+          base_->factory_->CreateAudioSource(
+              "botato_mic", RTCAudioSource::SourceType::kCustom, audio_options);
+      track = base_->factory_->CreateAudioTrack(own_source, uuid.c_str());
+      own_error = StartMicCapture(uuid, own_source, recordingEndpoint,
+                                  channel_count,
+                                  audio_options.echo_cancellation, own_format);
+      if (!own_error.empty()) track = nullptr;  // back to the regular capture
+    }
+    if (!track) {
+      scoped_refptr<RTCAudioSource> source = base_->factory_->CreateAudioSource(
+          "audio_input", RTCAudioSource::SourceType::kMicrophone, audio_options);
+      track = base_->factory_->CreateAudioTrack(source, uuid.c_str());
+    }
 
     std::string track_id = track->id().std_string();
 
@@ -275,6 +302,10 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
     settings[EncodableValue("noiseSuppression")] =
         EncodableValue(audio_options.noise_suppression);
     settings[EncodableValue("channelCount")] = EncodableValue(1);
+    if (own_capture) {
+      settings[EncodableValue("botatoWasapi")] =
+          EncodableValue(own_error.empty() ? own_format : "failed: " + own_error);
+    }
     settings[EncodableValue("latency")] = EncodableValue(0);
     track_info[EncodableValue("settings")] = EncodableValue(settings);
 
@@ -586,6 +617,7 @@ void FlutterMediaStream::MediaStreamDispose(
   vector<scoped_refptr<RTCAudioTrack>> audio_tracks = stream->audio_tracks();
 
   for (auto track : audio_tracks.std_vector()) {
+    StopMicCapture(track->id().std_string());
     stream->RemoveTrack(track);
     base_->local_tracks_.erase(track->id().std_string());
   }
@@ -636,6 +668,7 @@ void FlutterMediaStream::MediaStreamTrackSwitchCamera(
 void FlutterMediaStream::MediaStreamTrackDispose(
     const std::string& track_id,
     std::unique_ptr<MethodResultProxy> result) {
+  StopMicCapture(track_id);
   for (auto it : base_->local_streams_) {
     auto stream = it.second;
     auto audio_tracks = stream->audio_tracks();

@@ -8,3 +8,4 @@ analyzer:
     - macos/**
     - linux/**
     - rust_builder/cargokit/**
+    - third_party/**

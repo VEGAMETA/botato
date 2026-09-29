@@ -402,6 +402,11 @@ class CallService extends ChangeNotifier {
     await _reopenMicrophone();
   }
 
+  Future<void> setWasapiMic(bool on) async {
+    settings.wasapiMic = on;
+    await _reopenMicrophone();
+  }
+
   Future<void> setCamera(String? deviceId) async {
     settings.cameraId = deviceId;
     if (!cameraOn) return;
@@ -739,20 +744,20 @@ class CallService extends ChangeNotifier {
     MediaStream s;
     try {
       s = await navigator.mediaDevices.getUserMedia({
-        'audio': AudioProfile.constraints(mode, id, plain: isDesktop && settings.plainMic),
+        'audio': AudioProfile.constraints(mode, id, wasapi: Platform.isWindows && settings.wasapiMic),
         'video': false,
       });
     } catch (_) {
       if (id == null) rethrow;
       settings.micId = null;
       s = await navigator.mediaDevices.getUserMedia({
-        'audio': AudioProfile.constraints(mode, null, plain: isDesktop && settings.plainMic),
+        'audio': AudioProfile.constraints(mode, null, wasapi: Platform.isWindows && settings.wasapiMic),
         'video': false,
       });
     }
     final t = s.getAudioTracks().first;
     t.enabled = !muted;
-    if (isDesktop) _logInputs(settings.micId);
+    if (isDesktop) _logInputs(settings.micId, t);
     if (Platform.isWindows) _checkMicPrivacy();
     return t;
   }
@@ -785,14 +790,17 @@ class CallService extends ChangeNotifier {
 
   /// Call log (desktop): the microphones Windows offers and which one we asked for; a laptop
   /// whose default input is silent shows up here.
-  Future<void> _logInputs(String? chosen) async {
+  Future<void> _logInputs(String? chosen, MediaStreamTrack track) async {
     try {
       final inputs = (await navigator.mediaDevices.enumerateDevices()).where((d) => d.kind == 'audioinput').toList();
       final names = inputs.map((d) => d.deviceId == chosen ? '[${d.label}]' : d.label).join('; ');
-      final text =
+      var text =
           'mic inputs (${inputs.length}): $names; using ${chosen == null ? 'the default' : 'the saved one'}; '
-          '${settings.audioMode.name} audio${settings.plainMic ? ', plain capture (mono, no echo cancellation)' : ''}';
-      if (_micWarned || settings.plainMic) {
+          '${settings.audioMode.name} audio';
+      // WASAPI capture: the endpoint's format and how it was opened, or why it failed.
+      final wasapi = Platform.isWindows && settings.wasapiMic ? track.getSettings()['botatoWasapi'] : null;
+      if (wasapi != null) text += '; WASAPI: $wasapi';
+      if (_micWarned || wasapi != null) {
         _micNote(text);
       } else {
         _log(text);
@@ -1040,16 +1048,7 @@ class CallService extends ChangeNotifier {
     _silentTicks = db <= -90 ? _silentTicks + 1 : 0;
     if (_silentTicks < 24) return;
     _micWarned = true;
-    _micNote('microphone sends silence${settings.plainMic ? ' (plain capture)' : ''}');
-    // Windows: an old driver that delivers neither through the Voice Capture DSP (echo
-    // cancellation) nor in stereo (clean audio). Record the simple way, now and from now on.
-    if (Platform.isWindows && !settings.plainMic) {
-      settings.plainMic = true;
-      _micNote('silent mic: reopening it mono, without echo cancellation');
-      _silentTicks = 0;
-      _micWarned = false;
-      _reopenMicrophone();
-    }
+    _micNote('microphone sends silence${settings.wasapiMic ? ' (WASAPI capture)' : ''}');
   }
 
   void _startStats() {

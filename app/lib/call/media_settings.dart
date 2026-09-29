@@ -93,12 +93,12 @@ class MediaSettings {
   /// applies after an app restart.
   bool get rawMic => _prefs.getBool('raw_mic') ?? true;
 
-  /// Windows: the simplest capture (mono, no echo cancellation). Set once the mic sent pure
-  /// silence while other apps heard it (an old laptop): echo cancellation records through the
-  /// system Voice Capture DSP, clean audio asks for stereo, and some old drivers deliver
-  /// neither. This PC then always records the simple way.
-  bool get plainMic => _prefs.getBool('plain_mic') ?? false;
-  set plainMic(bool v) => _prefs.setBool('plain_mic', v);
+  /// Windows: record the mic through WASAPI in whatever format it takes (our plugin patch,
+  /// mic_capture.h) instead of libwebrtc's capture, which records silence on some laptop mic
+  /// arrays. WebRTC's echo cancellation doesn't apply there; voice mode asks Windows for its
+  /// communications processing instead.
+  bool get wasapiMic => _prefs.getBool('wasapi_mic') ?? false;
+  set wasapiMic(bool v) => _prefs.setBool('wasapi_mic', v);
   set rawMic(bool v) => _prefs.setBool('raw_mic', v);
   set hwAudioProcessing(bool v) => _prefs.setBool('hw_audio_processing', v);
 
@@ -107,9 +107,9 @@ class MediaSettings {
 
 /// Audio capture and send settings per mode (CLAUDE.md §8).
 class AudioProfile {
-  static Map<String, dynamic> constraints(AudioMode mode, String? deviceId, {bool plain = false}) {
+  static Map<String, dynamic> constraints(AudioMode mode, String? deviceId, {bool wasapi = false}) {
     final voice = mode == AudioMode.voice;
-    final aec = voice && !plain;
+    final aec = voice;
     // Voice on Android: echo cancellation only. WebRTC's noise suppression and AGC on top of the
     // plain phone mic made the voice choppy and pumping (-19 / -76 / -30 dBFS on the speaker);
     // that mic is already at a good level. Desktop mics vary a lot: they keep the full chain.
@@ -118,7 +118,8 @@ class AudioProfile {
       'echoCancellation': aec,
       'noiseSuppression': shaping,
       'autoGainControl': shaping,
-      'channelCount': voice || plain ? 1 : 2,
+      'channelCount': voice ? 1 : 2,
+      if (wasapi) 'botatoWasapi': true,
       // Older libwebrtc builds (Android) read the goog* names.
       'optional': [
         {'googEchoCancellation': aec},

@@ -19,7 +19,11 @@ dependencies:
     sdk: flutter
   flutter_rust_bridge: 2.13.0
   flutter_secure_storage: ^11.2.0
-  flutter_webrtc: ^1.6.2+hotfix.3
+  # 1.6.2+hotfix.3 with a WASAPI microphone capture on Windows (botatoWasapi,
+  # common/cpp/include/mic_capture.h): libwebrtc's own capture records silence on some
+  # laptop mic arrays.
+  flutter_webrtc:
+    path: third_party/flutter_webrtc
   freezed_annotation: ^3.1.0
   image_picker: ^1.2.3
   local_notifier: ^0.1.6

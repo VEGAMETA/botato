@@ -614,6 +614,17 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
               ),
             if (c.isDesktop) ...[
               _picker(tr('Микрофон', 'Microphone'), 'audioinput', s.micId, c.setMicrophone),
+              if (Platform.isWindows)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: s.wasapiMic,
+                  onChanged: (v) async {
+                    await c.setWasapiMic(v);
+                    setState(() {});
+                  },
+                  title: Text(tr('Прямой захват микрофона', 'Direct microphone capture')),
+                  subtitle: Text(tr('если вас не слышно', "if you can't be heard")),
+                ),
               _picker(tr('Вывод звука', 'Audio output'), 'audiooutput', s.outputId, c.setOutput),
               _picker(tr('Камера', 'Camera'), 'videoinput', s.cameraId, c.setCamera),
             ] else if (c.cameraOn)
