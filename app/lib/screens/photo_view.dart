@@ -178,8 +178,16 @@ class _PhotoViewerState extends State<PhotoViewer> {
   /// Toolbar and arrows are shown; a tap on the photo toggles them (Telegram-like).
   bool _chrome = true;
 
-  /// Vertical drag of an unzoomed photo: far or fast enough closes the viewer.
+  /// Vertical drag of an unzoomed photo: far or fast enough closes the viewer. Tracked from raw
+  /// pointer events, not a drag recognizer: a recognizer took the first finger of a pinch
+  /// before the second one landed, and zooming rarely worked.
   double _dragDy = 0;
+  int _pointers = 0;
+  bool _dismissing = false;
+  Offset _downAt = Offset.zero;
+  Offset _lastAt = Offset.zero;
+  Duration _lastTime = Duration.zero;
+  double _velocity = 0; // px/s, vertical
 
   static bool get _desktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -198,13 +206,42 @@ class _PhotoViewerState extends State<PhotoViewer> {
 
   void _toggleChrome() => setState(() => _chrome = !_chrome);
 
-  void _dragEnd(DragEndDetails d) {
-    final fast = (d.primaryVelocity ?? 0).abs() > 900;
-    if (_dragDy.abs() > 120 || fast) {
-      Navigator.of(context).maybePop();
-    } else {
-      setState(() => _dragDy = 0);
+  void _pointerDown(PointerDownEvent e) {
+    _pointers++;
+    if (_pointers == 1) {
+      _downAt = _lastAt = e.position;
+      _lastTime = e.timeStamp;
+      _velocity = 0;
+    } else if (_dismissing) {
+      _dismissing = false; // a second finger: it's a pinch after all
+      _dragDy = 0;
     }
+    setState(() {}); // page swiping off while two fingers are down
+  }
+
+  void _pointerMove(PointerMoveEvent e) {
+    if (_pointers != 1 || _zoomed) return;
+    final d = e.position - _downAt;
+    if (!_dismissing && d.dy.abs() > 18 && d.dy.abs() > d.dx.abs() * 1.5) _dismissing = true;
+    if (!_dismissing) return;
+    final dt = (e.timeStamp - _lastTime).inMicroseconds;
+    if (dt > 0) _velocity = (e.position.dy - _lastAt.dy) / dt * 1e6;
+    _lastAt = e.position;
+    _lastTime = e.timeStamp;
+    setState(() => _dragDy = d.dy);
+  }
+
+  void _pointerUp(PointerEvent e) {
+    _pointers = (_pointers - 1).clamp(0, 10);
+    if (_pointers == 0 && _dismissing) {
+      _dismissing = false;
+      if (_dragDy.abs() > 120 || _velocity.abs() > 900) {
+        Navigator.of(context).maybePop();
+        return;
+      }
+      _dragDy = 0;
+    }
+    setState(() {});
   }
 
   void _go(int delta) {
@@ -316,28 +353,35 @@ class _PhotoViewerState extends State<PhotoViewer> {
                 ),
           body: Stack(
             children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _toggleChrome,
-                onVerticalDragUpdate: _zoomed ? null : (d) => setState(() => _dragDy += d.delta.dy),
-                onVerticalDragEnd: _zoomed ? null : _dragEnd,
-                child: Transform.translate(
-                  offset: Offset(0, _dragDy),
-                  child: PageView.builder(
-                    controller: _pages,
-                    physics: _zoomed ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
-                    itemCount: count,
-                    onPageChanged: (i) => setState(() {
-                      _index = i;
-                      _zoomed = false;
-                    }),
-                    itemBuilder: (_, i) => _ZoomablePhoto(
-                      key: ValueKey(widget.ids[i]),
-                      msgId: widget.ids[i],
-                      turns: _turns[widget.ids[i]] ?? 0,
-                      onZoomed: (z) {
-                        if (z != _zoomed) setState(() => _zoomed = z);
-                      },
+              Listener(
+                onPointerDown: _pointerDown,
+                onPointerMove: _pointerMove,
+                onPointerUp: _pointerUp,
+                onPointerCancel: _pointerUp,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleChrome,
+                  child: Transform.translate(
+                    offset: Offset(0, _dragDy),
+                    child: PageView.builder(
+                      controller: _pages,
+                      // No page swiping while zoomed, pinching (two fingers) or dismissing.
+                      physics: _zoomed || _pointers > 1 || _dismissing
+                          ? const NeverScrollableScrollPhysics()
+                          : const PageScrollPhysics(),
+                      itemCount: count,
+                      onPageChanged: (i) => setState(() {
+                        _index = i;
+                        _zoomed = false;
+                      }),
+                      itemBuilder: (_, i) => _ZoomablePhoto(
+                        key: ValueKey(widget.ids[i]),
+                        msgId: widget.ids[i],
+                        turns: _turns[widget.ids[i]] ?? 0,
+                        onZoomed: (z) {
+                          if (z != _zoomed) setState(() => _zoomed = z);
+                        },
+                      ),
                     ),
                   ),
                 ),

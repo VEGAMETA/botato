@@ -744,7 +744,18 @@ class CallService extends ChangeNotifier {
     }
     final t = s.getAudioTracks().first;
     t.enabled = !muted;
+    if (isDesktop) _logInputs(settings.micId);
     return t;
+  }
+
+  /// Call log (desktop): the microphones Windows offers and which one we asked for; a laptop
+  /// whose default input is silent shows up here.
+  Future<void> _logInputs(String? chosen) async {
+    try {
+      final inputs = (await navigator.mediaDevices.enumerateDevices()).where((d) => d.kind == 'audioinput').toList();
+      final names = inputs.map((d) => d.deviceId == chosen ? '[${d.label}]' : d.label).join('; ');
+      _log('mic inputs (${inputs.length}): $names; using ${chosen == null ? 'the default' : 'the saved one'}');
+    } catch (_) {}
   }
 
   Future<void> _applyOutput() async {
@@ -943,7 +954,55 @@ class CallService extends ChangeNotifier {
     );
   }
 
+  /// Loudness 0..1 of our microphone as it is sent, for the mic button (4× a second).
+  final micLevel = ValueNotifier<double>(0);
+  Timer? _micTimer;
+  (num, num)? _micPrev; // totalAudioEnergy, totalSamplesDuration
+  int _silentTicks = 0;
+  bool _micWarned = false;
+
+  void _startMicMeter() {
+    _micTimer?.cancel();
+    _micPrev = null;
+    _silentTicks = 0;
+    _micWarned = false;
+    _micTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
+      final pc = _pc;
+      final track = _audioTrack;
+      if (pc == null || track == null) return;
+      try {
+        for (final r in await pc.getStats(track)) {
+          final v = r.values;
+          if (r.type != 'media-source' || (v['kind'] ?? v['mediaType']) != 'audio') continue;
+          final e = v['totalAudioEnergy'], d = v['totalSamplesDuration'];
+          if (e is! num || d is! num) continue;
+          final prev = _micPrev;
+          _micPrev = (e, d);
+          if (prev == null || d - prev.$2 <= 0) return;
+          final p = (e - prev.$1) / (d - prev.$2);
+          final db = p <= 1e-10 ? -100.0 : 10 * log(p) / ln10;
+          // -55 dBFS (room noise) .. -10 dBFS (loud speech); fast up, slow down.
+          final target = muted ? 0.0 : ((db + 55) / 45).clamp(0.0, 1.0);
+          micLevel.value = max(target, micLevel.value * 0.6);
+          _checkSilentMic(db);
+          return;
+        }
+      } catch (_) {}
+    });
+  }
+
+  /// A microphone that sends pure silence for 6 s (a wrong input device, Windows privacy
+  /// settings blocking desktop apps from the mic): noted once per call in the log.
+  void _checkSilentMic(double db) {
+    if (muted || phase != CallPhase.active || _micWarned) return;
+    _silentTicks = db <= -90 ? _silentTicks + 1 : 0;
+    if (_silentTicks < 24) return;
+    _micWarned = true;
+    _log('microphone sends silence');
+  }
+
   void _startStats() {
+    _startMicMeter();
     _statsTimer?.cancel();
     _sampler = CallStatsSampler();
     _statsTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
@@ -1164,6 +1223,9 @@ class CallService extends ChangeNotifier {
     navigator.mediaDevices.ondevicechange = null;
     _statsTimer?.cancel();
     _statsTimer = null;
+    _micTimer?.cancel();
+    _micTimer = null;
+    micLevel.value = 0;
     stats = null;
     final pc = _pc;
     final audio = _audioTrack;

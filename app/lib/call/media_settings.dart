@@ -22,13 +22,12 @@ class MediaSettings {
   String? get outputId => _prefs.getString('output');
   set outputId(String? v) => _set('output', v);
 
-  /// Phones default to clean audio: WebRTC processing on the plain phone mic sounded choppy
-  /// and squashed in tests (the price: echo for the other side on the loudspeaker without
-  /// headphones). Desktop defaults to voice: speakers without echo cancellation echo.
+  /// Voice by default everywhere (echo cancellation; clean audio echoes on a loudspeaker, heard
+  /// on a Xiaomi); the choice, once made, is kept.
   AudioMode get audioMode => switch (_prefs.getString('audio_mode')) {
     'clean' => AudioMode.clean,
     'voice' => AudioMode.voice,
-    _ => Platform.isAndroid ? AudioMode.clean : AudioMode.voice,
+    _ => AudioMode.voice,
   };
 
   set audioMode(AudioMode m) => _prefs.setString('audio_mode', m.name);

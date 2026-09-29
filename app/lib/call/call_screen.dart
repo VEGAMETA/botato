@@ -323,7 +323,7 @@ class _CallScreenState extends State<CallScreen> {
       spacing: 20,
       runSpacing: 16,
       children: [
-        _toggle(c.muted ? Icons.mic_off : Icons.mic, c.muted, c.toggleMute, tr('Микрофон', 'Microphone')),
+        _micButton(c),
         if (live)
           _toggle(c.cameraOn ? Icons.videocam : Icons.videocam_off, c.cameraOn, c.toggleCamera, tr('Камера', 'Camera')),
         if (live) _toggle(Icons.screen_share, c.screenOn, () => _shareScreen(c), tr('Экран', 'Screen')),
@@ -370,6 +370,51 @@ class _CallScreenState extends State<CallScreen> {
       ),
     );
     if (id != null) await c.setAudioRoute(id);
+  }
+
+  /// The mic button fills from the bottom with the loudness actually sent: you see that the
+  /// microphone works (and that it doesn't).
+  Widget _micButton(CallService c) {
+    final on = c.muted;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 64,
+          height: 64,
+          child: ClipOval(
+            child: Stack(
+              children: [
+                Positioned.fill(child: ColoredBox(color: on ? Colors.white : Colors.white24)),
+                if (!on)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: c.micLevel,
+                      builder: (_, level, _) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        height: 64 * level,
+                        color: BotatoColors.potato.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                Positioned.fill(
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      onTap: c.toggleMute,
+                      child: Icon(on ? Icons.mic_off : Icons.mic, color: on ? Colors.black : Colors.white, size: 28),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(tr('Микрофон', 'Microphone'), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ],
+    );
   }
 
   Widget _toggle(IconData icon, bool on, VoidCallback onTap, String label) =>
@@ -540,6 +585,17 @@ class _MediaSettingsSheetState extends State<_MediaSettingsSheet> {
                 setState(() {});
               },
             ),
+            if (s.audioMode == AudioMode.clean)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  tr(
+                    'Без наушников собеседник может слышать эхо',
+                    'Without headphones the other side may hear an echo',
+                  ),
+                  style: const TextStyle(color: BotatoColors.smoke, fontSize: 12),
+                ),
+              ),
             if (Platform.isAndroid)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
