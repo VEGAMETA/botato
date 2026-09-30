@@ -140,9 +140,12 @@ class WasapiMicCapturer {
     hr = client->GetMixFormat(&mix);
     if (FAILED(hr) || !mix) return "GetMixFormat " + Hex(hr);
 
-    // 1) Our format, Windows converts (any channel count, depth and rate).
-    // 2) The endpoint's own mix format, converted here.
-    // Each with the communications category first when asked, then without.
+    // Formats: ours, converted by Windows (any channel count, depth and rate), or the endpoint's
+    // own mix format, converted here. Stream modes: communications (asked in voice mode: the
+    // driver's echo cancellation), default, then RAW, which skips the system effects (APOs):
+    // a laptop whose effects driver is broken (a Win11 machine on Win10 drivers) refuses the
+    // default mode with E_INVALIDARG, and that's how Chrome opens mics. Event-driven first,
+    // then polled. Every refusal is reported, so the journal shows what the driver takes.
     WAVEFORMATEX want = {};
     want.wFormatTag = WAVE_FORMAT_PCM;
     want.nChannels = static_cast<WORD>(out_channels_);
@@ -151,56 +154,78 @@ class WasapiMicCapturer {
     want.nBlockAlign = static_cast<WORD>(want.nChannels * 2);
     want.nAvgBytesPerSec = want.nSamplesPerSec * want.nBlockAlign;
 
-    const DWORD base = AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
-                       AUDCLNT_STREAMFLAGS_NOPERSIST;
     const DWORD convert = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
                           AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
-    std::string last;
-    for (int comm = communications_ ? 1 : 0; comm >= 0; --comm) {
-      for (int own = 1; own >= 0; --own) {
-        if (!client) {
-          hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
-                                reinterpret_cast<void**>(&client));
-          if (FAILED(hr)) return "Activate " + Hex(hr);
-        }
-        if (comm) SetCategory(client, true);
-        const WAVEFORMATEX* fmt = own ? &want : mix;
-        // 20 ms buffer: low latency, and room for a late wakeup.
-        hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                                base | (own ? convert : 0), 200000, 0, fmt,
-                                nullptr);
-        if (SUCCEEDED(hr)) {
-          if (!SetupFormat(fmt)) {
-            return "unsupported format " + Describe(fmt);
+    enum Mode { kComm, kDefault, kRaw };
+    static const char* kModeName[] = {"comm", "default", "raw"};
+    std::vector<Mode> modes;
+    if (communications_) modes.push_back(kComm);
+    modes.push_back(kDefault);
+    modes.push_back(kRaw);
+
+    std::string tried;
+    for (int polled = 0; polled <= 1; ++polled) {
+      for (Mode mode : modes) {
+        for (int own = 1; own >= 0; --own) {
+          if (!client) {
+            hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                  reinterpret_cast<void**>(&client));
+            if (FAILED(hr)) return "Activate " + Hex(hr);
           }
-          hr = client->SetEventHandle(event_);
-          if (FAILED(hr)) return "SetEventHandle " + Hex(hr);
-          hr = client->GetService(IID_PPV_ARGS(&capture));
-          if (FAILED(hr)) return "GetService " + Hex(hr);
-          hr = client->Start();
-          if (FAILED(hr)) return "Start " + Hex(hr);
-          format_ = std::string(own ? "converted by Windows from " : "own conversion of ") +
-                    Describe(mix) + (comm ? ", communications" : "");
-          return "";
+          HRESULT props_hr = SetMode(client, mode == kComm, mode == kRaw);
+          const WAVEFORMATEX* fmt = own ? &want : mix;
+          const DWORD flags = AUDCLNT_STREAMFLAGS_NOPERSIST |
+                              (polled ? 0 : AUDCLNT_STREAMFLAGS_EVENTCALLBACK) |
+                              (own ? convert : 0);
+          // Buffer: the engine's default period for events; 50 ms when polled every 10 ms.
+          hr = FAILED(props_hr)
+                   ? props_hr
+                   : client->Initialize(AUDCLNT_SHAREMODE_SHARED, flags,
+                                        polled ? 500000 : 0, 0, fmt, nullptr);
+          if (SUCCEEDED(hr)) {
+            if (!SetupFormat(fmt)) {
+              return "unsupported format " + Describe(fmt);
+            }
+            if (!polled) {
+              hr = client->SetEventHandle(event_);
+              if (FAILED(hr)) return "SetEventHandle " + Hex(hr);
+            }
+            polled_ = polled != 0;
+            hr = client->GetService(IID_PPV_ARGS(&capture));
+            if (FAILED(hr)) return "GetService " + Hex(hr);
+            hr = client->Start();
+            if (FAILED(hr)) return "Start " + Hex(hr);
+            format_ = std::string(own ? "converted by Windows from " : "own conversion of ") +
+                      Describe(mix) + ", " + kModeName[mode] + " mode" +
+                      (polled ? ", polled" : "") +
+                      (tried.empty() ? "" : " (refused: " + tried + ")");
+            return "";
+          }
+          if (!tried.empty()) tried += "; ";
+          tried += std::string(kModeName[mode]) + (own ? " converted" : " mix") +
+                   (polled ? " polled " : " ") + Hex(hr);
+          SafeRelease(client);  // an IAudioClient initializes only once
         }
-        last = std::string(own ? "converted" : "mix format") +
-               (comm ? " comm" : "") + " " + Hex(hr);
-        SafeRelease(client);  // an IAudioClient initializes only once
       }
     }
-    return "Initialize failed (" + last + ", endpoint " + Describe(mix) + ")";
+    return "Initialize failed: " + tried + " (endpoint " + Describe(mix) + ")";
   }
 
-  static void SetCategory(IAudioClient* client, bool communications) {
+  // Stream category and RAW mode go in before Initialize (IAudioClient2, Windows 8.1+).
+  static HRESULT SetMode(IAudioClient* client, bool communications, bool raw) {
+    if (!communications && !raw) return S_OK;
     IAudioClient2* client2 = nullptr;
-    if (FAILED(client->QueryInterface(IID_PPV_ARGS(&client2)))) return;
+    HRESULT hr = client->QueryInterface(IID_PPV_ARGS(&client2));
+    if (FAILED(hr)) return hr;
     AudioClientProperties props = {};
     props.cbSize = sizeof(props);
     props.bIsOffload = FALSE;
     props.eCategory =
         communications ? AudioCategory_Communications : AudioCategory_Other;
-    client2->SetClientProperties(&props);
+    props.Options = raw ? AUDCLNT_STREAMOPTIONS_RAW : AUDCLNT_STREAMOPTIONS_NONE;
+    hr = client2->SetClientProperties(&props);
     client2->Release();
+    return hr;
   }
 
   static std::string Describe(const WAVEFORMATEX* f) {
@@ -297,7 +322,8 @@ class WasapiMicCapturer {
   void Loop(IAudioCaptureClient* capture) {
     const size_t chunk = static_cast<size_t>(rate_ / 100);
     while (running_) {
-      DWORD w = WaitForSingleObject(event_, 200);
+      // Event-driven: woken per period. Polled: the event is never set, read every 10 ms.
+      DWORD w = WaitForSingleObject(event_, polled_ ? 10 : 200);
       if (!running_) break;
       if (w == WAIT_FAILED) break;
       UINT32 packet = 0;
@@ -335,6 +361,7 @@ class WasapiMicCapturer {
   size_t bytes_per_sample_ = 0;
   int rate_ = 48000;
   bool is_float_ = false;
+  bool polled_ = false;
   std::vector<int16_t> pending_;
 };
 
