@@ -294,7 +294,7 @@ nftables: входящие по умолчанию `drop` (молча, без re
 
 | Порт | Что | Доступ |
 |---|---|---|
-| 443/tcp | Caddy → relay (`/ws`, `/manifest`) | всем |
+| 443/tcp | Xray семейного VPN (Reality self-steal) → не-VPN TLS отдаёт Caddy на 127.0.0.1:8443 → relay (`/ws`, `/manifest`) | всем |
 | 3478/udp+tcp | STUN/TURN | всем |
 | 5349/tcp | TURN over TLS | всем |
 | 49160–49299/udp | relay-порты coturn | всем |
@@ -304,6 +304,7 @@ nftables: входящие по умолчанию `drop` (молча, без re
 
 - coturn: слушает только публичный IP; `denied-peer-ip` на приватные и служебные диапазоны **и собственный публичный IP сервера** (иначе через TURN можно достучаться до локальных сервисов); `no-tcp-relay`, `no-multicast-peers`, `no-cli`; TLS не ниже 1.2 (в coturn 4.10 это умолчание). Relay-порты открыты в файрволе, но coturn пересылает только для аутентифицированных аллокаций. Проверено: чужой пир — ок, 10.0.0.1 и свой IP — 403.
 - **Docker обходит nftables** для опубликованных портов. Поэтому coturn работает в `network_mode: host`, relay наружу не публикуется (только внутренняя сеть до Caddy), Caddy публикует только 443. После деплоя проверять сканом снаружи.
+- **На этом же сервере — вход семейного VPN** (`H:\Desktop\vpn`, хост `ru-entry`): 3x-ui/Xray слушает 443 на хосте, Caddy публикуется только на `127.0.0.1:8443` (`caddy_behind_xray: true` в `group_vars/all.yml`, `false` — Caddy снова сам на 443). Xray — это Reality с dest = Caddy: всё, что не VPN (клиенты botato, проверки ACME TLS-ALPN), без изменений уходит в Caddy, поэтому Caddy видит всех как 127.0.0.1 (лимиты relay — на соединение, не на IP). Если Xray лежит, relay недоступен. Порт 443 в `inet botato` открыт ради Xray. Пользователи, sshd, nftables и fwknop по-прежнему принадлежат botato; VPN-репозиторий ставит только 3x-ui, обновление geodata и BBR.
 - SSH: только ключи, `PasswordAuthentication no`, `PermitRootLogin no`. Ansible стучит в `pre_tasks` (`delegate_to: localhost`). На свежем VPS SSH открыт до конца первого прогона, файрвол включается последним шагом.
 - fwknop: ключи в `~/.fwknoprc` (WSL), запись `[vpn-srv]`, `ALLOW_IP source` (без сторонних сервисов определения IP). В `~/.ssh/config` стоит `Match originalhost vpn-srv exec "fwknop ..."` — `ssh vpn-srv` стучит сам. SPA живёт 60 с: часы управляющей машины должны быть синхронизированы (служба w32time в Windows включена).
 - Файрвол применяется с автооткатом: `systemd-run` через 180 с удаляет таблицу, если Ansible не смог заново подключиться через knock.
@@ -316,6 +317,7 @@ nftables: входящие по умолчанию `drop` (молча, без re
   - `vegameta` — администратор, вход по ключу, sudo с паролем;
   - `deploy` — для Ansible и Claude Code, ключ `~/.ssh/deploy_ed25519`, `NOPASSWD` sudo через `/etc/sudoers.d/deploy`;
   - вход по паролю и для root закрыт (`/etc/ssh/sshd_config.d/00-hardening.conf`), пароль root заблокирован.
+- **С 2026-10-12 Caddy за Xray** семейного VPN (`caddy_behind_xray: true`): `*:443` — `xray-linux-amd64` (3x-ui), Caddy — `127.0.0.1:8443`. Проверено после переключения: `/manifest`, сертификат Let's Encrypt, `probe`, nmap (443 открыт, 22/8443 закрыты), TURN (TLS 5349, STUN 3478). Продление сертификата Caddy (TLS-ALPN-01) идёт через Reality и вживую ещё не проходило. Откат: `ssh vpn-srv 'sudo systemctl stop x-ui'` → `caddy_behind_xray: false` → `deploy.yml --tags app --skip-tags manifest,release -e relay_tag=<текущий тег>` → `deploy.yml --tags firewall`. Пока relay не пересобирали, деплой app — только с `-e relay_tag=<тег на сервере>` (без пина роль соберёт образ из HEAD).
 - Развёрнуто всё (base, docker, app, fwknop, firewall). Снаружи открыты только 443/tcp, 3478/tcp+udp, 5349/tcp, relay-порты coturn; 22 — только после knock (проверено сканом).
 - Relay: `wss://<домен>/ws`, TLS от Let's Encrypt через Caddy. Проверка живого relay: `cargo run -p relay --example probe -- wss://<домен>/ws <server_pub>`.
 - Инвентарь: `ansible_user=deploy`, `ansible_ssh_private_key_file=~/.ssh/deploy_ed25519`. SSH-алиас в WSL для диагностики — `vpn-srv`. `tcpdump` на сервере нет (для диагностики подключений хватает `/proc/net/nf_conntrack`).

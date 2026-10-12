@@ -16,3 +16,7 @@ relay_uid: 65532
 coturn_uid: 65534
 coturn_gid: 65533
 repo_root: "{{ playbook_dir }}/../.."
+# Family VPN on the same host (H:\Desktop\vpn): Xray takes 443 and is the Reality front,
+# Caddy moves to 127.0.0.1:caddy_local_port. false = Caddy publishes 443 itself.
+caddy_behind_xray: true  # flipped at the VPN cutover (vpn repo: docs/ru-entry-panel.md)
+caddy_local_port: 8443

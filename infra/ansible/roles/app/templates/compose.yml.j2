@@ -1,6 +1,8 @@
 # Managed by Ansible.
 # Only Caddy publishes a port (443). Docker bypasses nftables for published ports,
 # so nothing else is published; coturn uses the host network behind nftables.
+# caddy_behind_xray: the family VPN's Xray (3x-ui, H:\Desktop\vpn) owns 443 and passes every
+# non-VPN TLS connection to Caddy on 127.0.0.1:{{ caddy_local_port }} (Reality self-steal).
 name: botato
 
 x-hardening: &hardening
@@ -14,7 +16,7 @@ services:
     <<: *hardening
     image: {{ caddy_image }}
     cap_add: [NET_BIND_SERVICE]
-    ports: ["443:443/tcp"]
+    ports: ["{{ ('127.0.0.1:' ~ caddy_local_port) if caddy_behind_xray else '443' }}:443/tcp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

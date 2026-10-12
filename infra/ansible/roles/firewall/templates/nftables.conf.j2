@@ -30,6 +30,11 @@ table inet botato {
 		# coturn relay ports.
 		udp dport {{ turn_min_port }}-{{ turn_max_port }} accept
 
+{% if caddy_behind_xray %}
+		# Xray (family VPN, Reality self-steal) on the host; it forwards non-VPN TLS to Caddy.
+		tcp dport 443 accept
+
+{% endif %}
 		# fwknopd (Debian builds it without pcap: it is a plain UDP listener that never replies).
 		udp dport {{ fwknop_port }} accept
 
