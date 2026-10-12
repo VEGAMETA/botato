@@ -22,6 +22,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
       - ./releases:/srv/releases:ro
+{% if caddy_behind_xray %}
+      # Family VPN subscriptions, kept by the vpn repo (roles/vpn-sub).
+      - /opt/vpn-sub:/srv/vpn-sub:ro
+{% endif %}
     tmpfs: [/tmp]
     networks: [web]
     mem_limit: 128m

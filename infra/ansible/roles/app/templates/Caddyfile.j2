@@ -30,6 +30,18 @@
 		header /releases/botato-latest* Cache-Control no-cache
 		file_server
 	}
+{% if caddy_behind_xray %}
+	# Family VPN subscriptions (vpn repo, roles/vpn-sub): one static file per person, name = secret token.
+	# No browse: /s/ and unknown tokens are 404.
+	handle_path /s/* {
+		root * /srv/vpn-sub
+		header Content-Type "text/plain; charset=utf-8"
+		header Cache-Control no-store
+		header Profile-Update-Interval 6
+		header Profile-Title "base64:0KHQtdC80YzRjyBWUE4="
+		file_server
+	}
+{% endif %}
 	handle {
 		respond 404
 	}
